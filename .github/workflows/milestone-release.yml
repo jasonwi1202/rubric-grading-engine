@@ -1,0 +1,85 @@
+name: Milestone Release
+
+# Triggered when a release/* branch PR is merged into main.
+# Creates a Git tag and a GitHub Release with auto-generated release notes
+# grouped by the labels defined in .github/release.yml.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    # Only run when a release/* branch is actually merged (not just closed)
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+
+    permissions:
+      contents: write   # needed to create tags and releases
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for release note generation
+
+      - name: Derive version tag from branch name
+        id: version
+        # Converts branch name to semver: release/m0 -> v0.1.0, release/m1 -> v0.2.0, etc.
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          MILESTONE="${BRANCH#release/}"
+          N=$(echo "$MILESTONE" | sed 's/[^0-9]//g')
+          MINOR=$((N + 1))
+          TAG="v0.${MINOR}.0"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "milestone=${MILESTONE}" >> "$GITHUB_OUTPUT"
+          echo "Milestone: ${MILESTONE}, Tag: ${TAG}"
+
+      - name: Create tag on merge commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}" "${{ github.event.pull_request.merge_commit_sha }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release with auto-generated notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.version.outputs.tag }}';
+            const milestone = '${{ steps.version.outputs.milestone }}'.toUpperCase();
+            const prNumber = ${{ github.event.pull_request.number }};
+            const mergeCommit = '${{ github.event.pull_request.merge_commit_sha }}';
+
+            const { data: notes } = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              target_commitish: mergeCommit,
+            });
+
+            const body = [
+              `## Milestone ${milestone} Release`,
+              '',
+              `Merges all work from the \`release/${milestone.toLowerCase()}\` integration branch.`,
+              `See [milestone PR #${prNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}) for the full diff.`,
+              '',
+              notes.body,
+            ].join('\n');
+
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `${tag} — Milestone ${milestone}`,
+              body,
+              draft: false,
+              prerelease: false,
+              make_latest: 'true',
+            });
+
+            console.log(`Created release ${tag}`);

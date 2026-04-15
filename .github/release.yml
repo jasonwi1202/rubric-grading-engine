@@ -1,0 +1,37 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - chore
+  categories:
+    - title: "⚠️ Breaking Changes"
+      labels:
+        - breaking-change
+    - title: "✨ New Features"
+      labels:
+        - "type: feature"
+        - "type: feat"
+    - title: "🐛 Bug Fixes"
+      labels:
+        - "type: bug"
+        - "type: fix"
+    - title: "🔒 Security"
+      labels:
+        - "type: security"
+        - security
+    - title: "🗄️ Database Migrations"
+      labels:
+        - "type: migration"
+        - migration
+    - title: "🧪 Tests"
+      labels:
+        - "type: test"
+    - title: "📖 Documentation"
+      labels:
+        - "type: docs"
+        - documentation
+    - title: "🔧 Maintenance"
+      labels:
+        - "type: chore"
+        - "type: refactor"
+        - dependencies

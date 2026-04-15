@@ -1,0 +1,75 @@
+name: Feature / Roadmap Issue
+description: Implement a feature or roadmap task from docs/roadmap.md
+labels: ["type: feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for implementing a planned roadmap issue.
+        Before starting: check `docs/roadmap.md` for the issue description and `docs/architecture/` for relevant context.
+
+  - type: input
+    id: milestone
+    attributes:
+      label: Milestone
+      description: Which milestone does this belong to? (e.g. M0, M1, M2)
+      placeholder: "M1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be built? Copy the description from docs/roadmap.md and expand as needed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How will we know this is complete?
+      placeholder: |
+        - [ ] 
+        - [ ] 
+        - [ ] 
+    validations:
+      required: true
+
+  - type: textarea
+    id: layers
+    attributes:
+      label: Layers Affected
+      description: Which parts of the system does this touch?
+      placeholder: |
+        - [ ] Alembic migration
+        - [ ] SQLAlchemy model
+        - [ ] Service layer
+        - [ ] FastAPI router
+        - [ ] Celery task
+        - [ ] Frontend component
+        - [ ] Frontend hook / query
+        - [ ] Tests
+    validations:
+      required: false
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Relevant Documentation
+      description: Which architecture or feature docs should be read before implementing?
+      placeholder: |
+        - docs/architecture/data-model.md
+        - docs/features/...
+    validations:
+      required: false
+
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blocked By
+      description: List any issues that must be completed before this one can start.
+      placeholder: "Blocked by #N"
+    validations:
+      required: false

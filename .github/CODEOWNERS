@@ -1,0 +1,11 @@
+# CODEOWNERS
+# Defines who is automatically requested to review changes.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @jasonwi1202
+
+# Documentation and instructions
+docs/                              @jasonwi1202
+.github/instructions/              @jasonwi1202
+.github/copilot-instructions.md    @jasonwi1202
