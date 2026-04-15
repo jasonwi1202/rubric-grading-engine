@@ -1,0 +1,55 @@
+# railway.toml — Config-as-code for Railway deployments
+# https://docs.railway.com/config-as-code/reference
+#
+# This file defines build and deploy settings for all services in this monorepo.
+# Each service in Railway must also have its Root Directory set manually in the UI
+# (backend/ or frontend/) since railway.toml does not set root directories.
+#
+# Service mapping:
+#   backend  → root dir: backend/, uses this [[services.backend]] block
+#   worker   → root dir: backend/, uses this [[services.worker]] block
+#   frontend → root dir: frontend/, uses this [[services.frontend]] block
+
+[build]
+# Railway detects Dockerfiles automatically. No build command override needed.
+
+# ---------------------------------------------------------------------------
+# Backend (FastAPI API server)
+# ---------------------------------------------------------------------------
+[[services]]
+name = "backend"
+
+[services.deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Run Alembic migrations before each deploy — zero-downtime schema changes
+preDeployCommand = "alembic upgrade head"
+
+# ---------------------------------------------------------------------------
+# Worker (Celery async task processor — same image as backend)
+# ---------------------------------------------------------------------------
+[[services]]
+name = "worker"
+
+[services.deploy]
+startCommand = "celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+# Workers have no HTTP port — no healthcheck path
+
+# ---------------------------------------------------------------------------
+# Frontend (Next.js)
+# ---------------------------------------------------------------------------
+[[services]]
+name = "frontend"
+
+[services.deploy]
+startCommand = "npm start"
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

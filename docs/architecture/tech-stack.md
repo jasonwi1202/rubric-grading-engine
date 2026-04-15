@@ -128,6 +128,12 @@ Redis is not optional for this architecture. The async grading pipeline depends 
 
 ## Infrastructure & Local Dev
 
+### Hosting: Railway
+- Staging and production run on [Railway](https://railway.com)
+- Railway manages PostgreSQL (pgvector template), Redis, object storage buckets, and all application services
+- Services auto-deploy from GitHub on merge to `main` (staging) or manual promotion (production)
+- See `docs/architecture/deployment.md` for the full Railway setup guide
+
 ### Docker + Docker Compose
 - Local development runs entirely in Docker Compose: Next.js, FastAPI, PostgreSQL, Redis, MinIO, Celery worker
 - Single `docker compose up` to get a full working environment
@@ -136,7 +142,7 @@ Redis is not optional for this architecture. The async grading pipeline depends 
 ### Environment Configuration
 - All secrets and environment-specific config via environment variables
 - `.env` for local dev (gitignored) — copy from `.env.example` at the repo root
-- No secrets in source control — ever
+- Production secrets managed in Railway's environment variable UI — never in source control
 
 ---
 
