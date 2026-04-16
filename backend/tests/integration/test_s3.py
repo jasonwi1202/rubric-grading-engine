@@ -17,13 +17,13 @@ CI times low.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from collections.abc import Generator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import boto3
-import docker.errors
 import httpx
 import pytest
 from testcontainers.core.container import DockerContainer
@@ -53,6 +53,7 @@ def minio_endpoint() -> Generator[str, None, None]:
     If Docker is not available, the test session is skipped with a clear
     message rather than failing with an obscure Docker error.
     """
+    container = None
     try:
         container = (
             DockerContainer(_MINIO_IMAGE)
@@ -62,16 +63,18 @@ def minio_endpoint() -> Generator[str, None, None]:
             .with_command(f"server /data --address :{_MINIO_PORT}")
         )
         container.start()
-    except (docker.errors.DockerException, OSError, httpx.ReadError, Exception) as exc:
-        pytest.skip(f"Docker not available — skipping MinIO integration tests: {exc}")
 
-    host = container.get_container_host_ip()
-    port = container.get_exposed_port(_MINIO_PORT)
-    endpoint = f"http://{host}:{port}"
-
-    # Wait until MinIO is ready and yield; always stop the container on exit.
-    try:
+        host = container.get_container_host_ip()
+        port = container.get_exposed_port(_MINIO_PORT)
+        endpoint = f"http://{host}:{port}"
         _wait_for_minio(endpoint)
+    except Exception as exc:
+        if container is not None:
+            with contextlib.suppress(Exception):
+                container.stop()
+        pytest.skip(f"MinIO container not available — skipping integration tests: {exc}")
+
+    try:
         yield endpoint
     finally:
         container.stop()
