@@ -23,6 +23,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import boto3
+import docker.errors
 import httpx
 import pytest
 from testcontainers.core.container import DockerContainer
@@ -61,7 +62,7 @@ def minio_endpoint() -> Generator[str, None, None]:
             .with_command(f"server /data --address :{_MINIO_PORT}")
         )
         container.start()
-    except Exception as exc:
+    except (docker.errors.DockerException, OSError) as exc:
         pytest.skip(f"Docker not available — skipping MinIO integration tests: {exc}")
 
     host = container.get_container_host_ip()

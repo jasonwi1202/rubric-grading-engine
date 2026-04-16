@@ -25,6 +25,7 @@ import logging
 from typing import Any
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import settings
@@ -54,7 +55,14 @@ def _make_client() -> Any:  # boto3 client is not easily typed without mypy extr
         "aws_secret_access_key": settings.aws_secret_access_key,
     }
     if settings.s3_endpoint_url:
+        # Force path-style addressing for S3-compatible endpoints (e.g. MinIO).
+        # AWS S3 uses virtual-host style (bucket.s3.amazonaws.com) by default,
+        # but MinIO and other self-hosted stores require path style
+        # (host/bucket/key) to resolve correctly on the local network.
+        # This config block is intentionally absent when s3_endpoint_url is
+        # not set so that AWS S3 retains its default addressing behaviour.
         kwargs["endpoint_url"] = settings.s3_endpoint_url
+        kwargs["config"] = Config(s3={"addressing_style": "path"})
     return boto3.client(**kwargs)
 
 

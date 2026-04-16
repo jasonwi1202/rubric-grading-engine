@@ -249,6 +249,40 @@ class TestMakeClient:
             f"endpoint_url not forwarded: {call_kwargs}"
         )
 
+    def test_path_style_addressing_set_when_endpoint_url_present(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Path-style addressing must be configured when a custom endpoint is used."""
+        mock_boto3_client = mocker.patch("app.storage.s3.boto3.client")
+        mocker.patch.object(settings, "s3_endpoint_url", "http://localhost:9000")
+
+        from app.storage.s3 import _make_client
+
+        _make_client()
+
+        call_kwargs = mock_boto3_client.call_args.kwargs
+        cfg = call_kwargs.get("config")
+        assert cfg is not None, "config should be set when endpoint_url is present"
+        assert cfg.s3 == {"addressing_style": "path"}, (
+            f"Expected path-style addressing, got: {cfg.s3}"
+        )
+
+    def test_no_config_override_when_endpoint_url_is_none(
+        self, mocker: MockerFixture
+    ) -> None:
+        """No addressing_style config override when using AWS S3 (no custom endpoint)."""
+        mock_boto3_client = mocker.patch("app.storage.s3.boto3.client")
+        mocker.patch.object(settings, "s3_endpoint_url", None)
+
+        from app.storage.s3 import _make_client
+
+        _make_client()
+
+        call_kwargs = mock_boto3_client.call_args.kwargs
+        assert "config" not in call_kwargs, (
+            "config should not be set when using AWS S3 (no endpoint_url)"
+        )
+
     def test_endpoint_url_omitted_when_none(self, mocker: MockerFixture) -> None:
         mock_boto3_client = mocker.patch("app.storage.s3.boto3.client")
         mocker.patch.object(settings, "s3_endpoint_url", None)
