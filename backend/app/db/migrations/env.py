@@ -11,15 +11,33 @@ docs:  https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with
 Running concurrently-created indexes
 --------------------------------------
 Migrations that create indexes with ``CREATE INDEX CONCURRENTLY`` must run
-outside a transaction.  Follow the project-standard pattern documented in
-``docs/architecture/migrations.md`` for these migrations, which describes
-the required Alembic environment settings needed to disable per-migration
-transactions when creating concurrent indexes.
+outside a transaction.  This env.py supports this via Alembic's
+``autocommit_block()`` context manager (requires Alembic ≥ 1.7).
 
-Keep concurrent index creation in a dedicated migration file and use only
-the documented, tested non-transactional approach from the migration guide.
-Do not rely on ad hoc ``op.execute(..., execution_options={"autocommit": True})``
-patterns; that approach is not supported by this env.py implementation.
+``do_run_migrations`` uses ``transaction_per_migration=True`` (each migration
+runs in its own transaction) without an outer ``context.begin_transaction()``
+wrapper, so ``autocommit_block()`` can temporarily switch the connection to
+autocommit mode.  In the migration file, wrap the concurrent-index operation::
+
+    def upgrade() -> None:
+        with op.get_context().autocommit_block():
+            op.create_index(
+                "ix_essays_assignment_id",
+                "essays",
+                ["assignment_id"],
+                postgresql_concurrently=True,
+            )
+
+    def downgrade() -> None:
+        with op.get_context().autocommit_block():
+            op.drop_index(
+                "ix_essays_assignment_id",
+                table_name="essays",
+                postgresql_concurrently=True,
+            )
+
+Keep concurrent-index creation in a dedicated migration file.  See
+``docs/architecture/migrations.md`` for the full zero-downtime index guidance.
 """
 
 import asyncio
@@ -91,14 +109,20 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    """Configure and run migrations with per-migration transaction control.
+
+    ``transaction_per_migration=True`` wraps each migration in its own
+    transaction.  This allows individual migrations to use
+    ``op.get_context().autocommit_block()`` for operations that cannot run
+    inside a transaction (e.g. ``CREATE INDEX CONCURRENTLY``).
+    """
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        transaction_per_migration=True,
     )
-
-    with context.begin_transaction():
-        context.run_migrations()
+    context.run_migrations()
 
 
 async def run_async_migrations() -> None:

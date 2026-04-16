@@ -148,7 +148,26 @@ op.create_index(
     postgresql_concurrently=True
 )
 ```
-Note: `CONCURRENTLY` cannot run inside a transaction. Set `transaction_per_migration = False` in `env.py` for migrations that use it.
+Note: `CONCURRENTLY` cannot run inside a transaction. Wrap the `op.create_index()` call in `op.get_context().autocommit_block()` (Alembic ≥ 1.7, supported by this project's `env.py`):
+```python
+def upgrade() -> None:
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "ix_essays_assignment_id",
+            "essays",
+            ["assignment_id"],
+            postgresql_concurrently=True,
+        )
+
+def downgrade() -> None:
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "ix_essays_assignment_id",
+            table_name="essays",
+            postgresql_concurrently=True,
+        )
+```
+Keep concurrent-index operations in a dedicated migration file.
 
 ---
 
