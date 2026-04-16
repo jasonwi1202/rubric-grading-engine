@@ -97,6 +97,10 @@ export function middleware(request: NextRequest): NextResponse {
   if (!hasSession) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
+    // Clear any query params carried over from the original URL before we
+    // set our own, so requests like /dashboard?tab=worklist don't produce
+    // /login?tab=worklist&next=/dashboard?tab=worklist.
+    loginUrl.search = "";
     // Preserve the original destination (path + query string) so we can
     // redirect back after login.  Only store it if it's a safe relative path
     // (guards against open redirect).

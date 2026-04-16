@@ -105,6 +105,10 @@ describe("middleware", () => {
       expect(redirectUrl.searchParams.get("next")).toBe(
         "/dashboard?tab=worklist",
       );
+      // Original query params must NOT be leaked onto the /login URL itself.
+      expect(redirectUrl.searchParams.has("tab"), "tab param must not appear on /login URL").toBe(false);
+      // Only the 'next' param should be present.
+      expect(Array.from(redirectUrl.searchParams.keys())).toEqual(["next"]);
     });
   });
 
