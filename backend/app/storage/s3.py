@@ -12,7 +12,11 @@ Usage::
     url = generate_presigned_url("essays/abc123.pdf")
 
 Both functions raise :class:`StorageError` on failure.  The original
-:class:`botocore.exceptions.ClientError` is chained as the ``__cause__``.
+:class:`botocore.exceptions.BotoCoreError` (which includes
+:class:`~botocore.exceptions.ClientError`,
+:class:`~botocore.exceptions.EndpointConnectionError`, and
+:class:`~botocore.exceptions.NoCredentialsError`) is chained as the
+``__cause__``.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ import logging
 from typing import Any
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.config import settings
 
@@ -68,7 +72,8 @@ def upload_file(key: str, data: bytes, content_type: str) -> None:
         content_type: MIME type of the content, e.g. ``"application/pdf"``.
 
     Raises:
-        StorageError: If the upload fails for any reason.
+        StorageError: If the upload fails for any reason (HTTP error, connection
+            failure, missing credentials, etc.).
     """
     client = _make_client()
     try:
@@ -78,7 +83,7 @@ def upload_file(key: str, data: bytes, content_type: str) -> None:
             Body=data,
             ContentType=content_type,
         )
-    except ClientError as exc:
+    except (BotoCoreError, ClientError) as exc:
         logger.error(
             "S3 upload failed",
             extra={"key": key, "error_type": type(exc).__name__},
@@ -98,7 +103,8 @@ def generate_presigned_url(key: str, expires_in: int | None = None) -> str:
         A pre-signed URL string valid for *expires_in* seconds.
 
     Raises:
-        StorageError: If URL generation fails.
+        StorageError: If URL generation fails (HTTP error, connection failure,
+            missing credentials, etc.).
     """
     if expires_in is None:
         expires_in = settings.s3_presigned_url_expire_seconds
@@ -110,7 +116,7 @@ def generate_presigned_url(key: str, expires_in: int | None = None) -> str:
             ExpiresIn=expires_in,
         )
         return url
-    except ClientError as exc:
+    except (BotoCoreError, ClientError) as exc:
         logger.error(
             "S3 presigned URL generation failed",
             extra={"key": key, "error_type": type(exc).__name__},

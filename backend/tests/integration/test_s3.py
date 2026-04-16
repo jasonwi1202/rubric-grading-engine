@@ -17,7 +17,6 @@ CI times low.
 
 from __future__ import annotations
 
-import time
 import uuid
 from collections.abc import Generator
 from typing import Any
@@ -27,12 +26,13 @@ import boto3
 import httpx
 import pytest
 from testcontainers.core.container import DockerContainer
+from testcontainers.core.waiting_utils import wait_container_is_ready
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_MINIO_IMAGE = "minio/minio:latest"
+_MINIO_IMAGE = "minio/minio:RELEASE.2024-01-16T16-07-38Z"
 _MINIO_PORT = 9000
 _ACCESS_KEY = "minioadmin"
 _SECRET_KEY = "minioadmin"
@@ -76,23 +76,20 @@ def minio_endpoint() -> Generator[str, None, None]:
     container.stop()
 
 
-def _wait_for_minio(endpoint: str, timeout: int = 30) -> None:
-    """Poll MinIO's liveness endpoint until it responds 200 or *timeout* seconds pass."""
+def _wait_for_minio(endpoint: str) -> None:
+    """Wait until MinIO's health endpoint returns 200.
+
+    Uses testcontainers' built-in ``wait_container_is_ready`` retry mechanism
+    so there is no manual sleep loop.
+    """
     health_url = f"{endpoint}/minio/health/live"
-    deadline = time.monotonic() + timeout
-    last_exc: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            resp = httpx.get(health_url, timeout=2)
-            if resp.status_code == 200:
-                return
-        except httpx.RequestError as exc:
-            last_exc = exc
-        time.sleep(0.5)
-    raise TimeoutError(
-        f"MinIO at {endpoint} did not become healthy within {timeout}s"
-        + (f": {last_exc}" if last_exc else "")
-    )
+
+    @wait_container_is_ready(httpx.RequestError, httpx.HTTPStatusError)
+    def _probe() -> None:
+        resp = httpx.get(health_url, timeout=2.0)
+        resp.raise_for_status()
+
+    _probe()
 
 
 @pytest.fixture(scope="session")
@@ -228,7 +225,7 @@ class TestS3IntegrationPresignedUrl:
         )
 
         # Verify the URL is accessible and returns the correct content.
-        response = httpx.get(url)
+        response = httpx.get(url, timeout=30.0)
         assert response.status_code == 200, f"Presigned URL returned HTTP {response.status_code}"
         assert response.content == content, (
             f"Content mismatch: expected {content!r}, got {response.content!r}"
@@ -243,7 +240,7 @@ class TestS3IntegrationPresignedUrl:
 
         url = _presign(minio_endpoint, key, expires_in=60)
 
-        response = httpx.get(url)
+        response = httpx.get(url, timeout=30.0)
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code} for presigned URL"
         )

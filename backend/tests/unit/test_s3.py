@@ -15,7 +15,7 @@ connection is made.  The tests verify that:
 from unittest.mock import MagicMock
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, NoCredentialsError
 from pytest_mock import MockerFixture
 
 from app.config import settings
@@ -114,6 +114,26 @@ class TestUploadFile:
         call_kwargs = mock_client.put_object.call_args.kwargs
         assert call_kwargs["Body"] == payload
 
+    def test_raises_storage_error_on_botocore_error(self, mocker: MockerFixture) -> None:
+        """Non-ClientError BotoCoreError subclasses (e.g. NoCredentialsError) are also wrapped."""
+        mock_client = _patch_make_client(mocker)
+        mock_client.put_object.side_effect = NoCredentialsError()
+
+        with pytest.raises(StorageError, match="key="):
+            upload_file("key", b"data", "text/plain")
+
+    def test_botocore_error_chains_original_exception(self, mocker: MockerFixture) -> None:
+        mock_client = _patch_make_client(mocker)
+        original = NoCredentialsError()
+        mock_client.put_object.side_effect = original
+
+        with pytest.raises(StorageError) as exc_info:
+            upload_file("key", b"data", "text/plain")
+
+        assert exc_info.value.__cause__ is original, (
+            "StorageError should chain the original BotoCoreError as __cause__"
+        )
+
 
 # ---------------------------------------------------------------------------
 # generate_presigned_url
@@ -186,6 +206,26 @@ class TestGeneratePresignedUrl:
             generate_presigned_url("key")
 
         assert exc_info.value.__cause__ is original
+
+    def test_raises_storage_error_on_botocore_error(self, mocker: MockerFixture) -> None:
+        """Non-ClientError BotoCoreError subclasses (e.g. NoCredentialsError) are also wrapped."""
+        mock_client = _patch_make_client(mocker)
+        mock_client.generate_presigned_url.side_effect = NoCredentialsError()
+
+        with pytest.raises(StorageError, match="key="):
+            generate_presigned_url("bad/key")
+
+    def test_botocore_error_chains_original_exception(self, mocker: MockerFixture) -> None:
+        mock_client = _patch_make_client(mocker)
+        original = NoCredentialsError()
+        mock_client.generate_presigned_url.side_effect = original
+
+        with pytest.raises(StorageError) as exc_info:
+            generate_presigned_url("key")
+
+        assert exc_info.value.__cause__ is original, (
+            "StorageError should chain the original BotoCoreError as __cause__"
+        )
 
 
 # ---------------------------------------------------------------------------
