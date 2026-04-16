@@ -41,7 +41,7 @@ const FEATURES = [
   {
     id: "class-insights",
     heading: "Class insights and teacher worklist",
-    body: "The class heatmap surfaces patterns across the whole cohort — common errors, score distributions, and criteria where most students struggled. The teacher worklist turns those patterns into prioritised actions so you know exactly what to teach next.",
+    body: "The class heatmap surfaces patterns across the whole cohort — common errors, score distributions, and criteria where most students struggled. The teacher worklist turns those patterns into prioritized actions so you know exactly what to teach next.",
     imageAlt:
       "Screenshot of the class insights heatmap and teacher worklist showing instructional priorities",
     imageWidth: 800,
