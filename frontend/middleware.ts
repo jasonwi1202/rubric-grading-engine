@@ -1,17 +1,22 @@
 /**
- * Next.js middleware — route protection for the (dashboard) route group.
+ * Next.js middleware — route protection and public-site auth redirects.
  *
  * Strategy:
- * - Protected routes: everything that is NOT an auth page, a Next.js
- *   internal path, or a static asset.
+ * - Public paths (marketing site, login, sign-up) are always accessible
+ *   without a session.
+ * - Authenticated users visiting /login or /signup are redirected to
+ *   /dashboard so they land in the app immediately.
+ * - Protected routes (the (dashboard) route group: /dashboard, /classes,
+ *   /rubrics, /worklist, …) require a session; unauthenticated requests are
+ *   redirected to /login with the original destination preserved.
+ *
+ * Session detection:
  * - The backend sets an httpOnly Secure SameSite=Strict cookie named
  *   `refresh_token` after a successful login. Middleware can read this
  *   cookie from the incoming request to determine whether the browser has
  *   a valid session (a present cookie is a necessary — though not
  *   sufficient — condition for a valid session; the backend validates the
  *   token itself on every authenticated API call).
- * - If the cookie is absent on a protected route the request is redirected
- *   to /login.
  *
  * Limitations:
  * - Middleware runs on the Edge runtime and cannot call the backend to
@@ -29,11 +34,38 @@ import { isSafeRedirectPath } from "@/lib/utils/redirect";
 /** Cookie name set by the backend on successful login. */
 const REFRESH_TOKEN_COOKIE = "refresh_token";
 
-/** Paths that are always publicly accessible — no session required. */
-const PUBLIC_PATHS = ["/login"];
+/**
+ * Paths that are always accessible without a session. Includes both the
+ * marketing pages under the (public) route group and the auth-entry pages
+ * under the (auth) route group (/login) or (public) (/signup).
+ * Root "/" is handled separately by the pathname === "/" check below.
+ */
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/product",
+  "/how-it-works",
+  "/pricing",
+  "/about",
+  "/ai",
+  "/legal",
+];
+
+/**
+ * Auth-entry paths: if the user already has a session and visits one of
+ * these, redirect them straight to /dashboard.
+ */
+const AUTH_ENTRY_PATHS = ["/login", "/signup"];
 
 function isPublicPath(pathname: string): boolean {
+  if (pathname === "/") return true;
   return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
+function isAuthEntryPath(pathname: string): boolean {
+  return AUTH_ENTRY_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 }
@@ -41,22 +73,38 @@ function isPublicPath(pathname: string): boolean {
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
-  // Always allow public paths (login) through.
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
   // Check for the refresh-token cookie. Its presence indicates the browser
   // completed a successful login and the backend set a session cookie.
   const hasSession = request.cookies.has(REFRESH_TOKEN_COOKIE);
 
+  // Authenticated users visiting /login or /signup should go straight to the
+  // dashboard — they have no reason to see the auth entry pages.
+  if (hasSession && isAuthEntryPath(pathname)) {
+    const dashboardUrl = request.nextUrl.clone();
+    dashboardUrl.pathname = "/dashboard";
+    dashboardUrl.search = "";
+    return NextResponse.redirect(dashboardUrl);
+  }
+
+  // Allow all public (marketing) paths through, regardless of session state.
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  // Everything else is a protected route. Redirect unauthenticated requests
+  // to /login, preserving the original destination so we can redirect back
+  // after a successful login.
   if (!hasSession) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
+    // Clear any query params carried over from the original URL before we
+    // set our own, so requests like /dashboard?tab=worklist don't produce
+    // /login?tab=worklist&next=/dashboard?tab=worklist.
+    loginUrl.search = "";
     // Preserve the original destination (path + query string) so we can
     // redirect back after login.  Only store it if it's a safe relative path
     // (guards against open redirect).
-    const { pathname, search } = request.nextUrl;
+    const { search } = request.nextUrl;
     const destination = search ? `${pathname}${search}` : pathname;
     if (isSafeRedirectPath(destination) && pathname !== "/login") {
       loginUrl.searchParams.set("next", destination);
@@ -74,8 +122,8 @@ export const config = {
    * - API routes proxied to the backend (/api/...)
    * - The favicon
    *
-   * This covers the entire (dashboard) route group which maps to `/`,
-   * `/classes`, `/rubrics`, `/worklist`, and all their sub-paths.
+   * This covers both the (public) marketing pages and the (dashboard) app
+   * routes so that auth redirects apply everywhere.
    */
   matcher: [
     "/((?!api(?:/|$)|_next/static|_next/image|favicon\\.ico).*)",
