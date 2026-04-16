@@ -35,8 +35,8 @@ export function SiteFooter() {
           <div>
             <p className="text-lg font-bold text-gray-900">{PRODUCT_NAME}</p>
             <p className="mt-2 text-sm text-gray-500">
-              AI-assisted grading for K-12 writing instruction. Teacher always
-              in control.
+              AI-assisted grading for K-12 writing instruction. Teachers are
+              always in control.
             </p>
           </div>
 

@@ -35,7 +35,9 @@ import { isSafeRedirectPath } from "@/lib/utils/redirect";
 const REFRESH_TOKEN_COOKIE = "refresh_token";
 
 /**
- * Paths under the (public) route group — always accessible without a session.
+ * Paths that are always accessible without a session. Includes both the
+ * marketing pages under the (public) route group and the auth-entry pages
+ * under the (auth) route group (/login) or (public) (/signup).
  * Root "/" is handled separately by the pathname === "/" check below.
  */
 const PUBLIC_PATHS = [

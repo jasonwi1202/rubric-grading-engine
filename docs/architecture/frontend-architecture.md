@@ -50,7 +50,7 @@ frontend/
 │   │       └── page.tsx
 │
 ├── components/
-│   ├── ui/                       # Base primitives (shadcn/ui wrappers)
+│   ├── ui/                       # Base primitives (shadcn/ui wrappers) — populated in a future milestone
 │   ├── layout/                   # SiteHeader, SiteFooter (public site); sidebar, nav (dashboard)
 │   ├── grading/                  # Essay review, score controls, feedback editor
 │   ├── rubric/                   # Rubric builder components
@@ -102,11 +102,13 @@ all these paths through unconditionally.
 /legal/dpa
 ```
 
-### `(auth)` — auth entry pages
+### `(auth)` — auth route group
 
-Centred, chrome-free layout for login and future password-reset pages.
-Authenticated users visiting `/login` or `/signup` are redirected to
-`/dashboard` by middleware.
+Centred, chrome-free layout for `/login` and future password-reset pages.
+`/signup` is a public route under `(public)`, not part of this route group.
+Middleware still treats both `/login` and `/signup` as auth-entry pages for
+redirect purposes, so authenticated users visiting either route are sent to
+`/dashboard`.
 
 ### `(dashboard)` — authenticated teacher area
 
