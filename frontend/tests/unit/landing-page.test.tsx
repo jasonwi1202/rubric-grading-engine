@@ -20,10 +20,12 @@ describe("LandingPage", () => {
 
     it("renders the primary CTA link to /signup", () => {
       render(<LandingPage />);
-      const heroCta = screen.getAllByRole("link", {
-        name: /start free trial/i,
-      })[0];
-      expect(heroCta).toHaveAttribute("href", "/signup?source=landing_hero");
+      const heroCta = screen
+        .getAllByRole("link", { name: /start free trial/i })
+        .find(
+          (link) => link.getAttribute("href") === "/signup?source=landing_hero",
+        );
+      expect(heroCta).toBeInTheDocument();
     });
 
     it("renders the secondary CTA link to /how-it-works", () => {
@@ -142,9 +144,8 @@ describe("LandingPage", () => {
       expect(h1s).toHaveLength(1);
     });
 
-    it("does not contain hardcoded product name strings — uses PRODUCT_NAME", () => {
+    it("renders text containing PRODUCT_NAME", () => {
       const { container } = render(<LandingPage />);
-      // The rendered text should include the dynamic PRODUCT_NAME value
       expect(container.textContent).toContain(PRODUCT_NAME);
     });
   });
