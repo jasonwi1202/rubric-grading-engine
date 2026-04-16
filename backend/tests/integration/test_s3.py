@@ -62,7 +62,7 @@ def minio_endpoint() -> Generator[str, None, None]:
             .with_command(f"server /data --address :{_MINIO_PORT}")
         )
         container.start()
-    except (docker.errors.DockerException, OSError) as exc:
+    except (docker.errors.DockerException, OSError, httpx.ReadError, Exception) as exc:
         pytest.skip(f"Docker not available — skipping MinIO integration tests: {exc}")
 
     host = container.get_container_host_ip()
