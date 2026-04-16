@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getAccessToken,
   setSessionToken,
+  login,
   silentRefresh,
   logout,
 } from "@/lib/auth/session";
@@ -119,5 +120,62 @@ describe("logout", () => {
       expect.stringContaining("/auth/logout"),
       expect.objectContaining({ method: "POST", credentials: "include" }),
     );
+  });
+});
+
+describe("login", () => {
+  it("returns tokens, stores access token in memory, and calls the correct endpoint", async () => {
+    mockFetch.mockReturnValueOnce(
+      makeResponse({
+        data: { access_token: "access-123", token_type: "bearer" },
+      }),
+    );
+
+    const result = await login("teacher@example.com", "secret");
+
+    expect(result).toEqual({ access_token: "access-123", token_type: "bearer" });
+    expect(getAccessToken()).toBe("access-123");
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/login"),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({ email: "teacher@example.com", password: "secret" }),
+      }),
+    );
+  });
+
+  it("throws an Error with the server message on non-ok response", async () => {
+    mockFetch.mockReturnValueOnce(
+      makeResponse(
+        { error: { code: "UNAUTHORIZED", message: "Invalid credentials" } },
+        401,
+      ),
+    );
+
+    await expect(login("x@x.com", "wrong")).rejects.toThrow("Invalid credentials");
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it("throws a generic 'Login failed' message when error body is not parseable", async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve(
+        new Response("Internal Server Error", {
+          status: 500,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      ),
+    );
+
+    await expect(login("x@x.com", "pw")).rejects.toThrow("Login failed");
+  });
+
+  it("does not store a token when login fails", async () => {
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "UNAUTHORIZED", message: "Bad creds" } }, 401),
+    );
+
+    await expect(login("x@x.com", "bad")).rejects.toThrow();
+    expect(getAccessToken()).toBeNull();
   });
 });
