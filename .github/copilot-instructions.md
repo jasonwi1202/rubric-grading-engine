@@ -103,7 +103,7 @@ The GitHub Copilot coding agent (assigned via GitHub Issues) creates branches na
 
 **When assigning an issue to Copilot:**
 1. In the "Assign Copilot to issue" dialog, click the base branch dropdown
-2. Select `release/mN` (e.g. `release/m0`) — do **not** leave it on `main`
+2. Select `release/mN` (e.g. `release/m1`) — do **not** leave it on `main`
 3. Copilot will branch off `release/mN` and open its PR targeting `release/mN`
 
 ### PR and Issue Labels
