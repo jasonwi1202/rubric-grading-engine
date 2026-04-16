@@ -52,16 +52,30 @@ Reference: `docs/architecture/security.md#5-ferpa-compliance`
 
 ## Audit Log
 
-Every endpoint that changes grade state must write an audit log entry:
+Every endpoint that changes grade state or performs a consequential access/admin action must write an audit log entry. See the full action catalog in `docs/architecture/data-model.md#auditlog`.
 
+**Grade events** (every change to grade state):
 - [ ] `score_override` on any criterion score change
 - [ ] `feedback_edited` on any feedback text change
 - [ ] `grade_locked` when a grade is locked
+- [ ] `score_clamped` when the LLM returns an out-of-range score that is clamped
 - [ ] `regrade_resolved` on regrade request resolution
 - [ ] Audit entries include `before_value` and `after_value` as JSONB
-- [ ] Audit table is INSERT-only — no UPDATE or DELETE on `audit_logs`
 
-Reference: `docs/architecture/data-model.md#auditlog`
+**Auth events** (required for SOC 2 CC6):
+- [ ] `login_success` and `login_failure` on every auth attempt — include `ip_address`
+- [ ] `logout` on explicit logout
+- [ ] `token_refreshed` on every refresh token use
+
+**Data access events** (required for SOC 2 + FERPA):
+- [ ] `export_requested` and `export_downloaded` on all export operations
+- [ ] `student_data_deletion_requested` and `student_data_deletion_completed` on FERPA deletion requests
+
+**Audit table rules:**
+- [ ] Audit table is INSERT-only — no UPDATE or DELETE on `audit_logs` anywhere in the codebase
+- [ ] `teacher_id` is nullable — system-generated events (e.g., `score_clamped`) may have no acting teacher
+
+Reference: `docs/architecture/data-model.md#auditlog`, `docs/architecture/security.md#6-soc-2-readiness`
 
 ## Rubric Snapshot Rule
 

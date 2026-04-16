@@ -65,7 +65,12 @@ Reference: `docs/architecture/security.md#4-file-upload-security`
 ## Audit Trail
 
 - [ ] Every change to a grade (score override, feedback edit, lock) writes an audit log entry with `before_value` and `after_value`
+- [ ] Auth events (login success/failure, logout, token refresh) write audit log entries with `ip_address`
+- [ ] Export and data deletion events write audit log entries
 - [ ] `audit_logs` table is INSERT-only — no UPDATE or DELETE paths introduced anywhere
+- [ ] `score_clamped` is logged when LLM returns an out-of-range score
+
+Reference: `docs/architecture/security.md#6-soc-2-readiness`, `docs/architecture/data-model.md#auditlog`
 
 ## Input Validation
 

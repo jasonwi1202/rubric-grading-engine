@@ -251,15 +251,39 @@ Append-only record of every consequential action. Never updated or deleted.
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | Primary key |
-| teacher_id | UUID | FK → User |
-| entity_type | VARCHAR(50) | e.g., `grade`, `criterion_score`, `essay` |
-| entity_id | UUID | ID of the affected entity |
-| action | VARCHAR(100) | e.g., `score_override`, `grade_locked`, `feedback_edited` |
+| teacher_id | UUID | FK → User — nullable for system-generated events |
+| entity_type | VARCHAR(50) | e.g., `grade`, `criterion_score`, `essay`, `auth`, `export` |
+| entity_id | UUID | Nullable — ID of the affected entity (null for auth events) |
+| action | VARCHAR(100) | See action catalog below |
 | before_value | JSONB | Nullable — state before the change |
 | after_value | JSONB | Nullable — state after the change |
+| ip_address | INET | Nullable — client IP for auth and access events |
 | created_at | TIMESTAMPTZ | |
 
-**Index:** `(entity_type, entity_id)`, `(teacher_id, created_at DESC)`
+**Index:** `(entity_type, entity_id)`, `(teacher_id, created_at DESC)`, `(action, created_at DESC)`
+
+**Action catalog** (required for SOC 2 CC6 and PI1 — see `docs/architecture/security.md#6-soc-2-readiness`):
+
+| Category | `action` value | `entity_type` | Notes |
+|---|---|---|---|
+| Auth | `login_success` | `auth` | `after_value`: `{teacher_id}` |
+| Auth | `login_failure` | `auth` | `after_value`: `{email_attempted}` — no PII beyond the attempt |
+| Auth | `logout` | `auth` | |
+| Auth | `token_refreshed` | `auth` | |
+| Auth | `password_reset_requested` | `auth` | |
+| Auth | `password_reset_completed` | `auth` | |
+| Grade | `score_override` | `criterion_score` | `before_value`/`after_value`: `{score, feedback}` |
+| Grade | `feedback_edited` | `grade` | `before_value`/`after_value`: `{summary_feedback}` |
+| Grade | `grade_locked` | `grade` | |
+| Grade | `score_clamped` | `criterion_score` | `before_value`: LLM raw score; `after_value`: clamped score |
+| Grade | `regrade_resolved` | `grade` | |
+| Data access | `export_requested` | `export` | `after_value`: `{assignment_id, format}` |
+| Data access | `export_downloaded` | `export` | |
+| Data lifecycle | `student_data_deletion_requested` | `student` | FERPA deletion request |
+| Data lifecycle | `student_data_deletion_completed` | `student` | Background job completion |
+| Data lifecycle | `class_archived` | `class` | |
+| Admin | `teacher_account_created` | `user` | |
+| Admin | `teacher_account_deactivated` | `user` | |
 
 ---
 

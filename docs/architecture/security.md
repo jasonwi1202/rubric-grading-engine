@@ -163,19 +163,121 @@ The Family Educational Rights and Privacy Act (FERPA) applies to any system that
 - OpenAI API calls must be made with data processing agreements in place (OpenAI's enterprise/API terms)
 - Third-party integrity checking services must have signed DPAs before student data is sent to them
 
-**Data retention:**
+**Data retention and deletion:**
 - Default retention: data is kept for the duration of the school's subscription plus 1 year
-- Schools can configure shorter retention periods
-- Student data is deleted within 30 days of a deletion request
+- Schools can request shorter retention periods
+- Student data (essays, grades, profiles) is deleted within 30 days of a deletion request
+- The `DELETE /schools/{id}/data` admin endpoint must perform a cascade soft-delete across all student-linked records, followed by a hard-delete background job after 30 days
+- Deletion is logged in `AuditLog` with `action: data_deletion_requested` and `action: data_deletion_completed`
+
+**Data subject rights (FERPA §99.10–99.12):**
+- Schools must be able to export all records for a specific student on request — this maps to the export feature; the export must be completable by an admin without engineering involvement
+- Schools must be able to correct inaccurate records — teacher grade overrides satisfy this; the override + audit trail is the correction mechanism
+- These rights belong to the school/teacher (as the institution), not directly to students or parents in our product
 
 **Logging:**
 - Student names and essay content are never written to application logs
-- Logs reference entity IDs only (essay_id, student_id) — no PII
-- Log aggregation services (Datadog, etc.) must have DPAs in place before receiving any logs containing entity IDs that could be correlated to students
+- Logs reference entity IDs only (`essay_id`, `student_id`) — no PII
+- Log aggregation services must have DPAs in place before receiving any logs containing entity IDs that could be correlated to students
 
 **Data residency:**
-- Default: US-only data storage (AWS us-east-1 or us-west-2)
-- EU customers require separate data residency consideration (GDPR in addition to FERPA)
+- Default: US-only data storage via Railway's US region
+- EU customers require separate consideration (GDPR applies in addition to FERPA — not in scope for Phase 1)
+
+**Subprocessors that receive student data** (must have signed DPAs before student data is sent):
+| Subprocessor | Purpose | DPA status |
+|---|---|---|
+| OpenAI | Essay grading and feedback generation via API | OpenAI API Terms + Data Processing Addendum required |
+| Railway | Infrastructure hosting (compute, storage, database) | Railway DPA available for Pro/Enterprise plans |
+| Log drain provider (e.g., Logtail) | Log aggregation | DPA required before enabling log drain in production |
+| Integrity checking provider (Phase 2) | AI detection / similarity | DPA required before any student data is sent |
+
+---
+
+## 6. SOC 2 Readiness
+
+SOC 2 Type II certification is a goal for commercial viability with US school districts. This section defines the implementation requirements across the five Trust Service Criteria that must be addressed as the system is built — not retrofitted later.
+
+SOC 2 auditors will look for evidence that controls were in place and operating consistently over an audit period (typically 6–12 months). **Building these controls from day one is mandatory** — they cannot be added the week before an audit.
+
+### Security (CC6 — Logical and Physical Access)
+
+Already covered in sections 1–4 and 7 above. Additional requirements:
+
+- **Access provisioning is logged** — every login, failed login, token refresh, and logout writes to `AuditLog` (see data model)
+- **Principle of least privilege** — the application database user has only the permissions it needs; no `SUPERUSER`; migrations run as a separate user with DDL rights
+- **Dependency vulnerability scanning** — `pip-audit` and `npm audit` run in CI on every PR; high/critical CVEs block merge
+- **Infrastructure access** — Railway dashboard access is restricted to named team members; MFA required on Railway account
+
+### Availability (A1)
+
+- **Health checks** — `GET /api/v1/health` on backend; Railway monitors and restarts failed containers
+- **Uptime target** — 99.5% monthly (appropriate for an educational tool; not 24/7 critical infrastructure)
+- **Celery queue monitoring** — alert if grading queue depth > 50 for > 5 minutes (indicates worker failure)
+- **Database backups** — Railway volume backups enabled; daily automated backup retained for 30 days
+- **Incident response** — see Incident Response section below
+
+### Processing Integrity (PI1)
+
+SOC 2 requires that system processing is complete, valid, accurate, and authorized. For an AI grading system, this has specific meaning:
+
+- **Every AI-generated grade is teacher-reviewed before it is final** — the HITL (human-in-the-loop) workflow is the processing integrity control; no grade is locked without teacher action
+- **Audit log captures before/after values** on every grade change — this is the evidence that processing was authorized
+- **Score clamping is logged** — when the LLM returns an out-of-range score that is clamped, `AuditLog` records `action: score_clamped` with the original and clamped values
+- **LLM model version is recorded** — `Grade.ai_model` and `Grade.prompt_version` ensure every grade can be traced to the exact model and prompt that produced it
+- **Failed grading tasks are surfaced** — no essay silently fails; all failures are visible in the assignment review UI
+
+### Confidentiality (C1)
+
+- **Encryption in transit** — TLS 1.2+ enforced on all public endpoints (Railway handles this automatically)
+- **Encryption at rest** — Railway PostgreSQL and storage buckets are encrypted at rest by default
+- **S3 bucket policy** — storage bucket is private; no public read access; all access via pre-signed URLs
+- **No student data in error messages** — API error responses never include student PII (enforced in error handling guide)
+- **No student data in analytics** — no third-party analytics SDK (Mixpanel, Amplitude, etc.) may be added to the frontend without explicit review
+
+### Privacy (P1–P8)
+
+Overlaps with FERPA above. Additional SOC 2 Privacy criteria:
+
+- **Privacy notice** — a privacy policy describing data collection, use, retention, and deletion must be published before launch and kept accurate
+- **Consent** — schools agree to Terms of Service and Data Processing Agreement at sign-up; this is the legal basis for processing student data
+- **Data minimization** — collect only what is needed for grading and instruction; do not collect student email addresses, photos, or demographic data unless explicitly required for a feature
+- **Breach notification** — if student data is exposed, affected schools must be notified within 72 hours (see Incident Response below)
+
+### Incident Response
+
+An incident response plan is required for SOC 2. The following defines the minimum procedure:
+
+**Severity classification:**
+| Severity | Definition | Response time |
+|---|---|---|
+| P1 — Critical | Student data exposed externally; system completely down | Immediate; notify affected schools within 72 hours |
+| P2 — High | Grading pipeline down; auth failures; data integrity issue | Within 2 hours |
+| P3 — Medium | Degraded performance; non-critical feature broken | Within 24 hours |
+
+**Response steps for a data exposure incident (P1):**
+1. Identify scope — which teachers/students/data was potentially exposed
+2. Contain — revoke affected tokens, rotate secrets, take affected service offline if necessary
+3. Assess — determine whether data was actually accessed or only potentially accessible
+4. Notify — email affected school administrators within 72 hours with: what happened, what data was involved, what was done, what they need to do
+5. Remediate — fix the vulnerability; deploy; verify
+6. Post-mortem — written within 5 business days; stored in internal incident log
+
+**Implementation requirement:** An internal incident log must exist (even a simple tracked document) before the SOC 2 audit period begins. Auditors will ask for evidence of incident tracking.
+
+### Audit Log Coverage for SOC 2
+
+The `AuditLog` table (see data model) must capture the following event types to satisfy SOC 2 CC6 and PI1 requirements:
+
+| Event category | `action` values |
+|---|---|
+| Authentication | `login_success`, `login_failure`, `logout`, `token_refreshed`, `password_reset_requested`, `password_reset_completed` |
+| Grade changes | `score_override`, `feedback_edited`, `grade_locked`, `score_clamped` |
+| Data access | `export_requested`, `export_downloaded` |
+| Data lifecycle | `student_data_deletion_requested`, `student_data_deletion_completed`, `class_archived` |
+| Admin actions | `teacher_account_created`, `teacher_account_deactivated` |
+
+This expands the scope beyond grade changes only. See the data model for the `AuditLog` schema.
 
 ---
 
