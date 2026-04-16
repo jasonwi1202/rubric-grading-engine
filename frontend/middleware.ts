@@ -53,10 +53,13 @@ export function middleware(request: NextRequest): NextResponse {
   if (!hasSession) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    // Preserve the original destination so we can redirect back after login.
-    // Only store it if it's a safe relative path (guards against open redirect).
+    // Preserve the original destination (path + query string) so we can
+    // redirect back after login.  Only store it if it's a safe relative path
+    // (guards against open redirect).
+    const { pathname, search } = request.nextUrl;
+    const destination = search ? `${pathname}${search}` : pathname;
     if (isSafeRedirectPath(pathname) && pathname !== "/login") {
-      loginUrl.searchParams.set("next", pathname);
+      loginUrl.searchParams.set("next", destination);
     }
     return NextResponse.redirect(loginUrl);
   }
@@ -75,6 +78,6 @@ export const config = {
    * `/classes`, `/rubrics`, `/worklist`, and all their sub-paths.
    */
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!api(?:/|$)|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };

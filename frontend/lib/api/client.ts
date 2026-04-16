@@ -20,6 +20,14 @@ import {
   setSessionToken,
   silentRefresh,
 } from "@/lib/auth/session";
+import { isSafeRedirectPath } from "@/lib/utils/redirect";
+import { ApiError } from "@/lib/api/errors";
+import type { ApiErrorBody } from "@/lib/api/errors";
+
+// Re-export shared error types so callers that already import from this
+// module do not need to change their import path.
+export { ApiError };
+export type { ApiErrorBody };
 
 // ---------------------------------------------------------------------------
 // Access token proxy — delegates to session.ts
@@ -34,30 +42,6 @@ import {
  */
 export function setAccessToken(token: string | null): void {
   setSessionToken(token);
-}
-
-// ---------------------------------------------------------------------------
-// Error types
-// ---------------------------------------------------------------------------
-
-export interface ApiErrorBody {
-  code: string;
-  message: string;
-  field?: string;
-}
-
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly field?: string;
-
-  constructor(status: number, body: ApiErrorBody) {
-    super(body.message);
-    this.name = "ApiError";
-    this.status = status;
-    this.code = body.code;
-    this.field = body.field;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -113,12 +97,19 @@ async function apiFetch<T>(
       // Retry the original request with the new token
       return apiFetch<T>(path, init, true);
     }
-    // Refresh failed — redirect to login.
+    // Refresh failed — redirect to login, preserving the current path so
+    // the user can return to the page they were on after re-authentication.
     // We intentionally use window.location.replace (a hard navigation) rather
     // than Next.js router to guarantee a full page reload that clears all
     // in-memory React state (including any stale cached data).
     if (typeof window !== "undefined") {
-      window.location.replace("/login");
+      const currentPathname = window.location.pathname ?? "";
+      const currentSearch = window.location.search ?? "";
+      const currentPath = currentPathname + currentSearch;
+      const nextParam = isSafeRedirectPath(currentPath)
+        ? `?next=${encodeURIComponent(currentPath)}`
+        : "";
+      window.location.replace(`/login${nextParam}`);
     }
     throw new ApiError(401, {
       code: "UNAUTHORIZED",

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, ApiError, setAccessToken } from "@/lib/api/client";
 import { setSessionToken } from "@/lib/auth/session";
 
@@ -10,6 +10,12 @@ beforeEach(() => {
   // Reset access token between tests to avoid state leakage
   setAccessToken(null);
   setSessionToken(null);
+});
+
+afterEach(() => {
+  // Restore all stubbed globals (fetch, window, etc.) to prevent state leakage
+  // between tests and avoid order-dependent failures.
+  vi.unstubAllGlobals();
 });
 
 function makeResponse(body: unknown, status = 200) {
@@ -189,9 +195,11 @@ describe("401 silent refresh", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("redirects to /login when refresh fails", async () => {
+  it("redirects to /login?next=<currentPath> when refresh fails", async () => {
     const replaceSpy = vi.fn();
-    vi.stubGlobal("window", { location: { replace: replaceSpy } });
+    vi.stubGlobal("window", {
+      location: { replace: replaceSpy, pathname: "/protected", search: "" },
+    });
 
     mockFetch.mockReturnValueOnce(
       makeResponse({ error: { code: "TOKEN_EXPIRED", message: "Expired" } }, 401),
@@ -201,7 +209,7 @@ describe("401 silent refresh", () => {
     );
 
     await expect(apiGet("/protected")).rejects.toBeInstanceOf(ApiError);
-    expect(replaceSpy).toHaveBeenCalledWith("/login");
+    expect(replaceSpy).toHaveBeenCalledWith("/login?next=%2Fprotected");
   });
 
   it("does not attempt refresh on 401 from auth endpoints", async () => {

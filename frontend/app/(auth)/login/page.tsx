@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { login } from "@/lib/auth/session";
+import { ApiError } from "@/lib/api/errors";
 import { loginSchema, type LoginFormValues } from "@/lib/schemas/auth";
 import { isSafeRedirectPath } from "@/lib/utils/redirect";
 
@@ -49,9 +50,13 @@ export default function LoginPage() {
       const redirectTo = getSafeRedirectPath(searchParams.get("next"));
       router.replace(redirectTo);
     } catch (err) {
-      setServerError(
-        err instanceof Error ? err.message : "Login failed. Please try again.",
-      );
+      // Map to a small set of user-safe messages — never expose raw server
+      // error text which may contain sensitive detail or change unexpectedly.
+      if (err instanceof ApiError && err.status === 401) {
+        setServerError("Invalid email or password.");
+      } else {
+        setServerError("Login failed. Please try again.");
+      }
     }
   };
 

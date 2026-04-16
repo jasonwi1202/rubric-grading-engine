@@ -8,7 +8,10 @@
  *
  * This module is intentionally independent of lib/api/client.ts so that
  * client.ts can import silentRefresh without creating a circular dependency.
+ * Error types are shared via lib/api/errors.ts (a dependency of both modules).
  */
+
+import { ApiError } from "@/lib/api/errors";
 
 // ---------------------------------------------------------------------------
 // In-memory access token store
@@ -63,15 +66,17 @@ export async function login(
 
   if (!res.ok) {
     let message = "Login failed";
+    let code = "UNKNOWN_ERROR";
     try {
       const json = (await res.json()) as {
         error?: { message?: string; code?: string };
       };
       message = json.error?.message ?? message;
+      code = json.error?.code ?? code;
     } catch {
-      // ignore parse error
+      // ignore parse error — fall back to defaults above
     }
-    throw new Error(message);
+    throw new ApiError(res.status, { code, message });
   }
 
   const json = (await res.json()) as { data: LoginResponse };

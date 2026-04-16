@@ -6,6 +6,7 @@ import {
   silentRefresh,
   logout,
 } from "@/lib/auth/session";
+import { ApiError } from "@/lib/api/errors";
 
 const mockFetch = vi.fn();
 
@@ -145,7 +146,7 @@ describe("login", () => {
     );
   });
 
-  it("throws an Error with the server message on non-ok response", async () => {
+  it("throws an ApiError with the server message on non-ok response", async () => {
     mockFetch.mockReturnValueOnce(
       makeResponse(
         { error: { code: "UNAUTHORIZED", message: "Invalid credentials" } },
@@ -153,11 +154,23 @@ describe("login", () => {
       ),
     );
 
-    await expect(login("x@x.com", "wrong")).rejects.toThrow("Invalid credentials");
+    let caughtError: unknown;
+    try {
+      await login("x@x.com", "wrong");
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(ApiError);
+    expect(caughtError).toMatchObject({
+      status: 401,
+      code: "UNAUTHORIZED",
+      message: "Invalid credentials",
+    });
     expect(getAccessToken()).toBeNull();
   });
 
-  it("throws a generic 'Login failed' message when error body is not parseable", async () => {
+  it("throws an ApiError with UNKNOWN_ERROR when error body is not parseable", async () => {
     mockFetch.mockReturnValueOnce(
       Promise.resolve(
         new Response("Internal Server Error", {
@@ -167,7 +180,15 @@ describe("login", () => {
       ),
     );
 
-    await expect(login("x@x.com", "pw")).rejects.toThrow("Login failed");
+    let caughtError: unknown;
+    try {
+      await login("x@x.com", "pw");
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(ApiError);
+    expect(caughtError).toMatchObject({ status: 500, code: "UNKNOWN_ERROR" });
   });
 
   it("does not store a token when login fails", async () => {
