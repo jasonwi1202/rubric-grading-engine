@@ -53,6 +53,8 @@ export async function baseFetch<T>(
   }
 
   if (response.status === 204) {
+    // 204 No Content carries no body. Callers must use `baseFetch<void>()` for
+    // endpoints that return 204 to preserve type safety.
     return undefined as unknown as T;
   }
 
