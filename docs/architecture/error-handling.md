@@ -40,11 +40,20 @@ class RubricGradingError(Exception):
     code: str = "INTERNAL_ERROR"
 
 class NotFoundError(RubricGradingError):
-    """Resource does not exist or does not belong to the authenticated teacher."""
+    """Resource does not exist.
+
+    Use this only when the requested resource truly does not exist. Do not use
+    it for authorization or tenant-isolation failures; cross-tenant access
+    attempts must raise ``ForbiddenError`` instead.
+    """
     code = "NOT_FOUND"
 
 class ForbiddenError(RubricGradingError):
-    """Authenticated teacher does not have access to this resource."""
+    """Authenticated teacher does not have access to this resource.
+
+    This includes cross-tenant access attempts where the resource exists but
+    does not belong to the authenticated teacher.
+    """
     code = "FORBIDDEN"
 
 class ConflictError(RubricGradingError):
@@ -115,7 +124,9 @@ async def domain_validation_handler(request, exc):
 
 @app.exception_handler(LLMError)
 async def llm_error_handler(request, exc):
-    return JSONResponse(status_code=503, content={"error": {"code": exc.code, "message": str(exc), "field": None}})
+    # Return a generic message — exc message may contain internal context.
+    logger.error("LLM error", extra={"error_code": exc.code, "error_type": type(exc).__name__})
+    return JSONResponse(status_code=503, content={"error": {"code": exc.code, "message": "LLM service is temporarily unavailable.", "field": None}})
 ```
 
 Pydantic's built-in `RequestValidationError` (schema validation) is also intercepted to normalize it into the same envelope with `code: "VALIDATION_ERROR"`.

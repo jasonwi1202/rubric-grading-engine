@@ -13,13 +13,23 @@ class RubricGradingError(Exception):
 
 
 class NotFoundError(RubricGradingError):
-    """Resource does not exist."""
+    """Resource does not exist.
+
+    Use this only when the requested resource truly does not exist. Do not use
+    it for authorization or tenant-isolation failures; authenticated access
+    denials, including cross-tenant access attempts, must raise
+    ``ForbiddenError`` instead.
+    """
 
     code = "NOT_FOUND"
 
 
 class ForbiddenError(RubricGradingError):
-    """Authenticated teacher does not have access to this resource."""
+    """Authenticated teacher does not have access to this resource.
+
+    This includes cross-tenant access attempts where the resource exists but
+    does not belong to the authenticated teacher.
+    """
 
     code = "FORBIDDEN"
 

@@ -26,13 +26,15 @@ from app.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-# Map framework HTTP status codes to structured error codes.
+# Map framework HTTP status codes to documented error codes from the API catalog.
+# Only codes present in docs/architecture/api-design.md#error-codes are used so
+# the frontend's error.code branching logic is always consistent.
 _HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
-    400: "BAD_REQUEST",
+    400: "VALIDATION_ERROR",
     401: "UNAUTHORIZED",
     403: "FORBIDDEN",
     404: "NOT_FOUND",
-    405: "METHOD_NOT_ALLOWED",
+    405: "VALIDATION_ERROR",
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
 }
@@ -43,9 +45,9 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="Rubric Grading Engine",
         version="0.1.0",
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/v1/docs",
+        redoc_url="/api/v1/redoc",
+        openapi_url="/api/v1/openapi.json",
     )
 
     _register_exception_handlers(application)
@@ -128,10 +130,22 @@ def _register_exception_handlers(application: FastAPI) -> None:
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _HTTP_STATUS_TO_ERROR_CODE.get(
             exc.status_code,
-            "INTERNAL_ERROR" if exc.status_code >= 500 else "ERROR",
+            "INTERNAL_ERROR" if exc.status_code >= 500 else "INTERNAL_ERROR",
         )
-        # exc.detail is set by the framework (e.g. "Not Found") and is safe to surface.
-        message = str(exc.detail) if exc.detail else "An unexpected error occurred."
+        if exc.status_code >= 500:
+            logger.error(
+                "HTTP exception",
+                extra={
+                    "path": request.url.path,
+                    "status_code": exc.status_code,
+                    "error_code": code,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            message = "An unexpected error occurred."
+        else:
+            # Surface framework/client error details for non-5xx responses only.
+            message = str(exc.detail) if exc.detail else "An unexpected error occurred."
         return _error_response(exc.status_code, code, message)
 
     @application.exception_handler(RequestValidationError)
