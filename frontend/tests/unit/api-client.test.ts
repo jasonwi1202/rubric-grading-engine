@@ -21,6 +21,16 @@ function makeResponse(body: unknown, status = 200) {
   );
 }
 
+/** Extract the Headers object passed as the second fetch argument. */
+function getCallHeaders(callIndex: number): Headers {
+  const init = mockFetch.mock.calls[callIndex][1] as RequestInit;
+  const h = init.headers;
+  if (h instanceof Headers) return h;
+  // apiFetch always builds a `new Headers(...)` object, so this branch is
+  // unreachable in practice; it satisfies the type-checker.
+  return new Headers(h as HeadersInit);
+}
+
 describe("apiGet", () => {
   it("returns parsed JSON on success", async () => {
     mockFetch.mockReturnValueOnce(
@@ -133,15 +143,13 @@ describe("setAccessToken", () => {
     setAccessToken("test-access-token");
     mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
     await apiGet("/secure");
-    const callHeaders = (mockFetch.mock.calls[0][1] as RequestInit).headers as Headers;
-    expect(callHeaders.get("Authorization")).toBe("Bearer test-access-token");
+    expect(getCallHeaders(0).get("Authorization")).toBe("Bearer test-access-token");
   });
 
   it("omits Authorization header when no token is set", async () => {
     mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
     await apiGet("/public");
-    const callHeaders = (mockFetch.mock.calls[0][1] as RequestInit).headers as Headers;
-    expect(callHeaders.has("Authorization")).toBe(false);
+    expect(getCallHeaders(0).has("Authorization")).toBe(false);
   });
 });
 
@@ -163,8 +171,7 @@ describe("401 silent refresh", () => {
     expect(result).toEqual({ id: "1" });
     expect(mockFetch).toHaveBeenCalledTimes(3);
     // The retried request should carry the new token
-    const retryHeaders = (mockFetch.mock.calls[2][1] as RequestInit).headers as Headers;
-    expect(retryHeaders.get("Authorization")).toBe("Bearer new-token");
+    expect(getCallHeaders(2).get("Authorization")).toBe("Bearer new-token");
   });
 
   it("throws ApiError and does not retry when refresh fails", async () => {

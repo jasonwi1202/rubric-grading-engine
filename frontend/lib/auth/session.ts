@@ -31,7 +31,13 @@ export function setSessionToken(token: string | null): void {
 // ---------------------------------------------------------------------------
 
 function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? "";
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is not set. Add it to your .env.local file.",
+    );
+  }
+  return url;
 }
 
 export interface LoginResponse {

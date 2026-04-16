@@ -113,7 +113,10 @@ async function apiFetch<T>(
       // Retry the original request with the new token
       return apiFetch<T>(path, init, true);
     }
-    // Refresh failed — redirect to login (client-side only)
+    // Refresh failed — redirect to login.
+    // We intentionally use window.location.replace (a hard navigation) rather
+    // than Next.js router to guarantee a full page reload that clears all
+    // in-memory React state (including any stale cached data).
     if (typeof window !== "undefined") {
       window.location.replace("/login");
     }

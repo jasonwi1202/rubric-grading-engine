@@ -1,11 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { login } from "@/lib/auth/session";
 import { loginSchema, type LoginFormValues } from "@/lib/schemas/auth";
+
+/**
+ * Validate that a `next` redirect parameter is a safe relative path within
+ * this application. Guards against open-redirect attacks.
+ */
+function getSafeRedirectPath(next: string | null): string {
+  if (next && next.startsWith("/") && !next.startsWith("//")) {
+    return next;
+  }
+  return "/";
+}
 
 /**
  * Login page — collects teacher credentials and exchanges them for an access
@@ -19,6 +30,7 @@ import { loginSchema, type LoginFormValues } from "@/lib/schemas/auth";
  */
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -33,7 +45,8 @@ export default function LoginPage() {
     setServerError(null);
     try {
       await login(values.email, values.password);
-      router.replace("/");
+      const redirectTo = getSafeRedirectPath(searchParams.get("next"));
+      router.replace(redirectTo);
     } catch (err) {
       setServerError(
         err instanceof Error ? err.message : "Login failed. Please try again.",

@@ -37,6 +37,13 @@ function isPublicPath(pathname: string): boolean {
   );
 }
 
+/** Validate that a redirect target is a safe relative path within this app. */
+function isSafeRedirectPath(path: string): boolean {
+  // Must start with "/" and must not start with "//" (protocol-relative URL)
+  // to prevent open-redirect vulnerabilities.
+  return path.startsWith("/") && !path.startsWith("//");
+}
+
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
@@ -53,7 +60,10 @@ export function middleware(request: NextRequest): NextResponse {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     // Preserve the original destination so we can redirect back after login.
-    loginUrl.searchParams.set("next", pathname);
+    // Only store it if it's a safe relative path (guards against open redirect).
+    if (isSafeRedirectPath(pathname) && pathname !== "/login") {
+      loginUrl.searchParams.set("next", pathname);
+    }
     return NextResponse.redirect(loginUrl);
   }
 
@@ -64,13 +74,13 @@ export const config = {
   /**
    * Run middleware on all routes except:
    * - Next.js internals (_next/static, _next/image)
+   * - API routes proxied to the backend (/api/...)
    * - The favicon
-   * - API routes (handled by the backend, not the frontend)
    *
    * This covers the entire (dashboard) route group which maps to `/`,
    * `/classes`, `/rubrics`, `/worklist`, and all their sub-paths.
    */
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!api|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };
