@@ -46,7 +46,7 @@ class TestNoSyncImports:
         assert spec is not None
         assert spec.origin is not None
 
-        with open(spec.origin) as fh:
+        with open(spec.origin, encoding="utf-8") as fh:
             source = fh.read()
 
         tree = ast.parse(source)

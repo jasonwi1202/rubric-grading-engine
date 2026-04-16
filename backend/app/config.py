@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     def environment_allowed_values(cls, v: str) -> str:
         allowed = {"development", "staging", "production"}
         if v not in allowed:
-            raise ValueError(f"ENVIRONMENT must be one of {allowed}")
+            raise ValueError(f"ENVIRONMENT must be one of {sorted(allowed)}")
         return v
 
     @model_validator(mode="after")

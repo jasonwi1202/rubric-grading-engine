@@ -10,19 +10,16 @@ docs:  https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with
 
 Running concurrently-created indexes
 --------------------------------------
-Migrations that create indexes with ``CREATE INDEX CONCURRENTLY`` must be
-executed outside a transaction.  Because ``do_run_migrations`` always wraps
-execution in ``context.begin_transaction()``, concurrent-index statements
-must be issued via ``op.execute`` with explicit autocommit execution options::
+Migrations that create indexes with ``CREATE INDEX CONCURRENTLY`` must run
+outside a transaction.  Follow the project-standard pattern documented in
+``docs/architecture/migrations.md`` for these migrations, which describes
+the required Alembic environment settings needed to disable per-migration
+transactions when creating concurrent indexes.
 
-    op.execute(
-        "CREATE INDEX CONCURRENTLY ...",
-        execution_options={"autocommit": True},
-    )
-
-Alternatively, split the index creation into its own migration file that
-uses the ``sqlalchemy.text`` approach with an autocommit connection.
-See ``docs/architecture/migrations.md`` for the authoritative guidance.
+Keep concurrent index creation in a dedicated migration file and use only
+the documented, tested non-transactional approach from the migration guide.
+Do not rely on ad hoc ``op.execute(..., execution_options={"autocommit": True})``
+patterns; that approach is not supported by this env.py implementation.
 """
 
 import asyncio
