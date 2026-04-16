@@ -131,20 +131,14 @@ describe("setAccessToken", () => {
     setAccessToken("test-access-token");
     mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
     await apiGet("/secure");
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-access-token",
-        }),
-      }),
-    );
+    const callHeaders = (mockFetch.mock.calls[0][1] as RequestInit).headers as Headers;
+    expect(callHeaders.get("Authorization")).toBe("Bearer test-access-token");
   });
 
   it("omits Authorization header when no token is set", async () => {
     mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
     await apiGet("/public");
-    const callHeaders = (mockFetch.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(callHeaders).not.toHaveProperty("Authorization");
+    const callHeaders = (mockFetch.mock.calls[0][1] as RequestInit).headers as Headers;
+    expect(callHeaders.has("Authorization")).toBe(false);
   });
 });

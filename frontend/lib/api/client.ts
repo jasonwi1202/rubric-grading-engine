@@ -5,9 +5,11 @@
  * Auth: the access token is kept in memory (returned in the login response
  * body and held in React state / React Query cache). The refresh token is
  * stored in an httpOnly Secure SameSite=Strict cookie and is never readable
- * by JavaScript. On the client side we include `credentials: "include"` so
- * the refresh-token cookie is forwarded automatically; Server Components
- * forward cookies via `next/headers`.
+ * by JavaScript. In the browser, `credentials: "include"` forwards the
+ * refresh-token cookie automatically. For server-side calls (including Server
+ * Components), `credentials: "include"` does not propagate the browser's
+ * cookies; callers must read cookies via `next/headers` and pass a `Cookie`
+ * header explicitly when authenticated server-side requests are needed.
  *
  * Call `setAccessToken(token)` after a successful login to attach the Bearer
  * token to all subsequent requests. Call `setAccessToken(null)` on logout.
@@ -68,13 +70,15 @@ async function apiFetch<T>(
 
   const url = `${baseUrl}${path}`;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...((init.headers as Record<string, string>) ?? {}),
-  };
+  const headers = new Headers(init.headers);
+  // Only set Content-Type for requests that carry a body (POST/PUT/PATCH).
+  // Setting it on GET/DELETE triggers unnecessary CORS preflight requests.
+  if (init.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   if (_accessToken) {
-    headers["Authorization"] = `Bearer ${_accessToken}`;
+    headers.set("Authorization", `Bearer ${_accessToken}`);
   }
 
   const response = await fetch(url, {

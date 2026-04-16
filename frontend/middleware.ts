@@ -25,9 +25,10 @@ export function middleware(_request: NextRequest): NextResponse {
 
 export const config = {
   /**
-   * Limit middleware execution to the dashboard route subtree for now.
+   * Limit middleware execution to dashboard routes for now. The dashboard home
+   * is a route-group page served at `/`, so it must be matched explicitly.
    * This keeps the auth stub in place without adding edge/runtime overhead
    * to the rest of the application while auth is not yet implemented.
    */
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/", "/dashboard/:path*"],
 };
