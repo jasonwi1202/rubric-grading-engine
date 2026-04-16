@@ -8,10 +8,14 @@
  *
  * This module is intentionally independent of lib/api/client.ts so that
  * client.ts can import silentRefresh without creating a circular dependency.
- * Error types are shared via lib/api/errors.ts (a dependency of both modules).
+ * Shared fetch logic (base URL, error/envelope parsing) lives in
+ * lib/api/baseFetch.ts which neither module imports from the other.
  */
 
-import { ApiError } from "@/lib/api/errors";
+import { baseFetch } from "@/lib/api/baseFetch";
+
+// Re-export ApiError so callers can catch it without a separate import.
+export { ApiError } from "@/lib/api/errors";
 
 // ---------------------------------------------------------------------------
 // In-memory access token store
@@ -30,18 +34,8 @@ export function setSessionToken(token: string | null): void {
 }
 
 // ---------------------------------------------------------------------------
-// Auth API helpers (raw fetch — no apiFetch to avoid circular imports)
+// Auth API helpers
 // ---------------------------------------------------------------------------
-
-function getBaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_URL;
-  if (!url) {
-    throw new Error(
-      "NEXT_PUBLIC_API_URL is not set. Add it to your .env.local file.",
-    );
-  }
-  return url;
-}
 
 export interface LoginResponse {
   access_token: string;
@@ -51,38 +45,21 @@ export interface LoginResponse {
 /**
  * Exchange credentials for an access token.
  * Stores the access token in memory and returns it.
- * Throws on network error or non-2xx response.
+ * Throws ApiError on network error or non-2xx response.
  */
 export async function login(
   email: string,
   password: string,
 ): Promise<LoginResponse> {
-  const res = await fetch(`${getBaseUrl()}/auth/login`, {
+  // baseFetch parses the { data: T } envelope and throws ApiError on non-2xx.
+  const data = await baseFetch<LoginResponse>("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
     credentials: "include",
   });
-
-  if (!res.ok) {
-    let message = "Login failed";
-    let code = "UNKNOWN_ERROR";
-    try {
-      const json = (await res.json()) as {
-        error?: { message?: string; code?: string };
-      };
-      message = json.error?.message ?? message;
-      code = json.error?.code ?? code;
-    } catch {
-      // ignore parse error — fall back to defaults above
-    }
-    throw new ApiError(res.status, { code, message });
-  }
-
-  const json = (await res.json()) as { data: LoginResponse };
-  const { access_token, token_type } = json.data;
-  setSessionToken(access_token);
-  return { access_token, token_type };
+  setSessionToken(data.access_token);
+  return data;
 }
 
 /**
@@ -92,19 +69,12 @@ export async function login(
  */
 export async function silentRefresh(): Promise<string | null> {
   try {
-    const res = await fetch(`${getBaseUrl()}/auth/refresh`, {
+    const data = await baseFetch<{ access_token: string }>("/auth/refresh", {
       method: "POST",
       credentials: "include",
     });
-
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as {
-      data: { access_token: string };
-    };
-    const token = json.data.access_token;
-    setSessionToken(token);
-    return token;
+    setSessionToken(data.access_token);
+    return data.access_token;
   } catch {
     return null;
   }
@@ -117,7 +87,7 @@ export async function silentRefresh(): Promise<string | null> {
  */
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${getBaseUrl()}/auth/logout`, {
+    await baseFetch<void>("/auth/logout", {
       method: "POST",
       credentials: "include",
     });

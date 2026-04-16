@@ -58,7 +58,7 @@ export function middleware(request: NextRequest): NextResponse {
     // (guards against open redirect).
     const { pathname, search } = request.nextUrl;
     const destination = search ? `${pathname}${search}` : pathname;
-    if (isSafeRedirectPath(pathname) && pathname !== "/login") {
+    if (isSafeRedirectPath(destination) && pathname !== "/login") {
       loginUrl.searchParams.set("next", destination);
     }
     return NextResponse.redirect(loginUrl);

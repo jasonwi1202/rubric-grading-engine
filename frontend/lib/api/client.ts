@@ -21,6 +21,7 @@ import {
   silentRefresh,
 } from "@/lib/auth/session";
 import { isSafeRedirectPath } from "@/lib/utils/redirect";
+import { getBaseUrl } from "@/lib/api/baseFetch";
 import { ApiError } from "@/lib/api/errors";
 import type { ApiErrorBody } from "@/lib/api/errors";
 
@@ -59,14 +60,7 @@ async function apiFetch<T>(
   init: RequestInit = {},
   isRetry = false,
 ): Promise<T> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!baseUrl) {
-    throw new Error(
-      `NEXT_PUBLIC_API_URL is not set. Cannot call ${path}. Add it to your .env.local file.`,
-    );
-  }
-
-  const url = `${baseUrl}${path}`;
+  const url = `${getBaseUrl()}${path}`;
 
   const headers = new Headers(init.headers);
   // Only set Content-Type for requests that carry a body (POST/PUT/PATCH).
