@@ -267,9 +267,7 @@ class TestMakeClient:
             f"Expected path-style addressing, got: {cfg.s3}"
         )
 
-    def test_no_config_override_when_endpoint_url_is_none(
-        self, mocker: MockerFixture
-    ) -> None:
+    def test_no_config_override_when_endpoint_url_is_none(self, mocker: MockerFixture) -> None:
         """No addressing_style config override when using AWS S3 (no custom endpoint)."""
         mock_boto3_client = mocker.patch("app.storage.s3.boto3.client")
         mocker.patch.object(settings, "s3_endpoint_url", None)
