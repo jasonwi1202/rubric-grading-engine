@@ -30,7 +30,7 @@ frontend/
 │   │       ├── ferpa/page.tsx
 │   │       └── dpa/page.tsx
 │   ├── (dashboard)/              # Authenticated teacher area
-│   │   ├── layout.tsx            # Sidebar, nav, session guard
+│   │   ├── layout.tsx            # Stub — sidebar, nav, session guard planned (future milestone)
 │   │   ├── dashboard/page.tsx    # Dashboard home (worklist, recent activity)
 │   │   ├── classes/
 │   │   │   ├── page.tsx          # Class list
@@ -114,8 +114,11 @@ All authenticated routes live under this route group. The root layout for this
 group:
 - Is protected by middleware (unauthenticated requests redirect to `/login`
   with the original destination preserved as `?next=<path>`)
-- Will render the persistent sidebar and navigation chrome (a future milestone)
-- Provides the React Query client to the subtree
+- Will render the persistent sidebar and navigation chrome (planned for a future milestone)
+- Currently a stub (`return <>{children}</>`) — no sidebar or session guard yet
+
+React Query is provided by `app/layout.tsx` via `<Providers>` (the root layout),
+not by the `(dashboard)` layout, so all route groups have access.
 
 Route structure mirrors the domain hierarchy:
 ```

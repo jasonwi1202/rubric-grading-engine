@@ -35,9 +35,9 @@ export function SiteHeader() {
           {PRODUCT_NAME}
         </Link>
 
-        {/* Primary navigation */}
-        <nav aria-label="Main navigation">
-          <ul className="hidden items-center gap-6 md:flex" role="list">
+        {/* Primary navigation — hidden below md to avoid an empty landmark on small screens */}
+        <nav aria-label="Main navigation" className="hidden md:block">
+          <ul className="flex items-center gap-6" role="list">
             {NAV_LINKS.map(({ label, href }) => (
               <li key={href}>
                 <Link

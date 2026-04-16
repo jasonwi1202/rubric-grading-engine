@@ -14,7 +14,7 @@ export default function TermsPage() {
       </h1>
       <p className="mt-4 text-gray-500">
         {/* {TODO: insert Terms of Service} */}
-        Last updated: {new Date().getFullYear()}
+        Last updated: TBD
       </p>
     </section>
   );
