@@ -12,6 +12,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.exceptions import (
     ConflictError,
@@ -80,21 +81,54 @@ def _register_exception_handlers(application: FastAPI) -> None:
     async def llm_parse_error_handler(request: Request, exc: LLMParseError) -> JSONResponse:
         logger.error(
             "LLM parse error",
-            extra={"path": request.url.path, "error_code": exc.code},
+            extra={
+                "path": request.url.path,
+                "error_code": exc.code,
+                "error_type": type(exc).__name__,
+            },
         )
         return _error_response(500, exc.code, "An unexpected error occurred.")
 
     @application.exception_handler(LLMError)
     async def llm_error_handler(request: Request, exc: LLMError) -> JSONResponse:
-        return _error_response(503, exc.code, str(exc))
+        logger.error(
+            "LLM error",
+            extra={
+                "path": request.url.path,
+                "error_code": exc.code,
+                "error_type": type(exc).__name__,
+            },
+        )
+        return _error_response(503, exc.code, "LLM service is temporarily unavailable.")
 
     @application.exception_handler(RubricGradingError)
     async def base_domain_handler(request: Request, exc: RubricGradingError) -> JSONResponse:
         logger.error(
             "Rubric grading error",
-            extra={"path": request.url.path, "error_code": exc.code},
+            extra={
+                "path": request.url.path,
+                "error_code": exc.code,
+                "error_type": type(exc).__name__,
+            },
         )
         return _error_response(500, exc.code, "An unexpected error occurred.")
+
+    @application.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        _status_to_code: dict[int, str] = {
+            400: "BAD_REQUEST",
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            405: "METHOD_NOT_ALLOWED",
+            409: "CONFLICT",
+            422: "VALIDATION_ERROR",
+        }
+        code = _status_to_code.get(
+            exc.status_code,
+            "INTERNAL_ERROR" if exc.status_code >= 500 else "ERROR",
+        )
+        return _error_response(exc.status_code, code, "An unexpected error occurred.")
 
     @application.exception_handler(RequestValidationError)
     async def request_validation_handler(
@@ -102,9 +136,12 @@ def _register_exception_handlers(application: FastAPI) -> None:
     ) -> JSONResponse:
         first = exc.errors()[0] if exc.errors() else {}
         loc = first.get("loc", ())
-        # Strip leading location type segments (body, query, path, header, cookie)
+        # Strip only the leading location type segment (body, query, path, header, cookie)
+        # so a real field named "query" or "path" is preserved further in the tuple.
         _loc_prefixes = {"body", "query", "path", "header", "cookie"}
-        loc_parts = [str(p) for p in loc if str(p) not in _loc_prefixes]
+        loc_parts = [str(p) for p in loc]
+        while loc_parts and loc_parts[0] in _loc_prefixes:
+            loc_parts = loc_parts[1:]
         field: str | None = ".".join(loc_parts) or None
         message = first.get("msg", "Request validation failed")
         return _error_response(422, "VALIDATION_ERROR", str(message), field)

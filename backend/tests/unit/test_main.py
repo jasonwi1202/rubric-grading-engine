@@ -127,7 +127,7 @@ class TestExceptionHandlers:
 
         app = create_app()
 
-        async def _needs_param(count: int = Query(...)) -> dict:  # type: ignore[assignment]
+        async def _needs_param(count: int = Query(...)) -> dict[str, int]:
             return {"count": count}
 
         app.routes.append(APIRoute("/test-validation", _needs_param, methods=["GET"]))
@@ -138,3 +138,10 @@ class TestExceptionHandlers:
         assert body["error"]["code"] == "VALIDATION_ERROR", f"Got {body}"
         # Field name should not include leading 'query' prefix
         assert body["error"]["field"] == "count", f"Got field={body['error']['field']}"
+
+    def test_unknown_route_returns_404_envelope(self, client: TestClient) -> None:
+        """Framework 404 for an unknown route uses the structured error envelope."""
+        resp = client.get("/api/v1/does-not-exist")
+        assert resp.status_code == 404, f"Got {resp.status_code}"
+        body = resp.json()
+        assert body["error"]["code"] == "NOT_FOUND", f"Got {body}"
