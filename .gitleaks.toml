@@ -1,0 +1,23 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks#configuration
+
+title = "rubric-grading-engine gitleaks config"
+
+[extend]
+# Extend the default ruleset
+useDefault = true
+
+[allowlist]
+description = "Ignore vendored dependencies and gitignored local files"
+paths = [
+    # Python virtual environment — gitignored, never committed
+    '''.venv/''',
+    # Local secrets file — gitignored, never committed
+    '''\.env$''',
+    # Next.js build output — gitignored, never committed
+    '''frontend/\.next/''',
+]
+regexes = [
+    # Commented-out optional API key placeholder in .env.example — not a real secret
+    '''#\s*INTEGRITY_API_KEY=''',
+]
