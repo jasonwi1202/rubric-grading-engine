@@ -15,6 +15,22 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
+## Milestone Summary
+
+| Milestone | Name | Description | Issues |
+|---|---|---|---|
+| **0** | Project Scaffold | Monorepo, CI, Docker Compose, authentication, and local dev environment. No product features — everything else depends on this. | 10 |
+| **0.W** | Public Website & Onboarding | Marketing site, legal pages, pricing, AI transparency page, sign-up, and trial onboarding wizard. Can be built in parallel with M1 once 0.2 and 0.3 are done. | 10 |
+| **1** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 |
+| **2** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 |
+| **3** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 |
+| **4** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 |
+| **5** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 |
+| **X** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 |
+| | **Total** | | **95** |
+
+---
+
 ## Milestone 0 — Project Scaffold
 
 > Set up the monorepo, tooling, CI, and local dev environment. No product features yet. Everything in Milestone 1 depends on this being done first.
