@@ -17,11 +17,11 @@ _DEFAULTS: dict[str, str] = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/testdb",
     "REDIS_URL": "redis://localhost:6379/0",
     "JWT_SECRET_KEY": "a" * 32,
-    "OPENAI_API_KEY": "sk-test",
+    "OPENAI_API_KEY": "test_openai_api_key",
     "S3_BUCKET_NAME": "test-bucket",
     "S3_REGION": "us-east-1",
-    "AWS_ACCESS_KEY_ID": "AKIATEST",
-    "AWS_SECRET_ACCESS_KEY": "secret",
+    "AWS_ACCESS_KEY_ID": "test_aws_access_key_id",
+    "AWS_SECRET_ACCESS_KEY": "test_aws_secret_access_key",
     "CORS_ORIGINS": "http://localhost:3000",
 }
 

@@ -18,18 +18,18 @@ _BASE: dict[str, str] = {
     "database_url": "postgresql+asyncpg://user:pass@localhost:5432/testdb",
     "redis_url": "redis://localhost:6379/0",
     "jwt_secret_key": "a" * 32,
-    "openai_api_key": "sk-test",
+    "openai_api_key": "dummy_openai_api_key",
     "s3_bucket_name": "test-bucket",
     "s3_region": "us-east-1",
-    "aws_access_key_id": "AKIATEST",
-    "aws_secret_access_key": "secret",
+    "aws_access_key_id": "dummy_aws_access_key_id",
+    "aws_secret_access_key": "dummy_aws_secret_access_key",
     "cors_origins": "http://localhost:3000",
 }
 
 
 def _make(**overrides: object) -> Settings:
     """Build a Settings instance from _BASE, applying keyword overrides."""
-    return Settings(**{**_BASE, **overrides})  # type: ignore[arg-type]
+    return Settings.model_validate({**_BASE, **overrides})
 
 
 # ---------------------------------------------------------------------------
@@ -42,25 +42,25 @@ class TestRequiredFields:
         monkeypatch.delenv("DATABASE_URL", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "database_url"}
         with pytest.raises(ValidationError, match="database_url"):
-            Settings(**kwargs)  # type: ignore[arg-type]
+            Settings.model_validate(kwargs)
 
     def test_missing_redis_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("REDIS_URL", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "redis_url"}
         with pytest.raises(ValidationError, match="redis_url"):
-            Settings(**kwargs)  # type: ignore[arg-type]
+            Settings.model_validate(kwargs)
 
     def test_missing_jwt_secret_key_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "jwt_secret_key"}
         with pytest.raises(ValidationError, match="jwt_secret_key"):
-            Settings(**kwargs)  # type: ignore[arg-type]
+            Settings.model_validate(kwargs)
 
     def test_missing_cors_origins_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CORS_ORIGINS", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "cors_origins"}
         with pytest.raises(ValidationError, match="cors_origins"):
-            Settings(**kwargs)  # type: ignore[arg-type]
+            Settings.model_validate(kwargs)
 
 
 # ---------------------------------------------------------------------------

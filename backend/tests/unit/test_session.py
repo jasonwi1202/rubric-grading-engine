@@ -57,6 +57,13 @@ class TestNoSyncImports:
                     "sqlalchemy.ext.asyncio"
                 ):
                     pytest.fail(f"session.py imports from synchronous SQLAlchemy module: {module}")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    module = alias.name
+                    if module.startswith("sqlalchemy") and not module.startswith(
+                        "sqlalchemy.ext.asyncio"
+                    ):
+                        pytest.fail(f"session.py imports synchronous SQLAlchemy module: {module}")
 
 
 class TestGetDbDependency:

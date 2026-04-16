@@ -9,10 +9,20 @@ Async support follows the pattern described in the SQLAlchemy 2.0 / Alembic
 docs:  https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic
 
 Running concurrently-created indexes
--------------------------------------
-Migrations that use ``postgresql_concurrently=True`` **must not** run inside
-a transaction.  Set ``transaction_per_migration = False`` at the top of those
-migration files so that ``run_migrations_online`` skips the ``BEGIN`` wrapper.
+--------------------------------------
+Migrations that create indexes with ``CREATE INDEX CONCURRENTLY`` must be
+executed outside a transaction.  Because ``do_run_migrations`` always wraps
+execution in ``context.begin_transaction()``, concurrent-index statements
+must be issued via ``op.execute`` with explicit autocommit execution options::
+
+    op.execute(
+        "CREATE INDEX CONCURRENTLY ...",
+        execution_options={"autocommit": True},
+    )
+
+Alternatively, split the index creation into its own migration file that
+uses the ``sqlalchemy.text`` approach with an autocommit connection.
+See ``docs/architecture/migrations.md`` for the authoritative guidance.
 """
 
 import asyncio

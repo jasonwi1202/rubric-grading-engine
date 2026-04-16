@@ -39,7 +39,6 @@ engine: AsyncEngine = create_async_engine(
     # SQL echo is disabled in all environments: query output can contain
     # parameter values that include student PII.
     echo=False,
-    future=True,
 )
 
 # ---------------------------------------------------------------------------
@@ -51,7 +50,6 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,
-    autocommit=False,
 )
 
 
