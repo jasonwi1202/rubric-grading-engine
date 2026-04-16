@@ -31,6 +31,20 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 RUN npm run build
 
+# ─── Dev ─────────────────────────────────────────────────────────────────────
+# Used by docker-compose for local development with hot reload.
+# node_modules come from the deps stage; source is bind-mounted by compose.
+FROM base AS dev
+
+COPY --from=deps /app/node_modules ./node_modules
+
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+ENV NEXT_TELEMETRY_DISABLED=1
+
+CMD ["npm", "run", "dev"]
+
 # ─── Runner ───────────────────────────────────────────────────────────────────
 FROM base AS runner
 
