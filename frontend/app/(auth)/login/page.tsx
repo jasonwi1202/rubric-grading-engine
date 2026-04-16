@@ -9,6 +9,10 @@ import { ApiError } from "@/lib/api/errors";
 import { loginSchema, type LoginFormValues } from "@/lib/schemas/auth";
 import { isSafeRedirectPath } from "@/lib/utils/redirect";
 
+// The login page reads the `next` query param at request time — opt out of
+// static prerendering so Next.js does not attempt to render it at build time.
+export const dynamic = "force-dynamic";
+
 /**
  * Return a safe redirect path from the `next` query parameter, falling back
  * to "/" if the value is absent or fails the open-redirect check.
