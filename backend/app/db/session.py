@@ -21,11 +21,9 @@ For one-off access outside a request (e.g. in Celery tasks)::
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
+    AsyncSession as AsyncSession,  # re-exported for consumers and type checkers
 )
 
 from app.config import settings
