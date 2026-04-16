@@ -2,14 +2,20 @@
  * Base API client — all backend communication goes through these typed fetch
  * wrappers. No raw `fetch()` calls in components or hooks.
  *
- * Auth: the access token is read from a session cookie (httpOnly on the server;
- * the client reads the non-httpOnly NEXT_PUBLIC_* version for optimistic UI).
- * The underlying cookie is forwarded automatically when running in Server
- * Components; on the client side we include `credentials: "include"`.
+ * Auth: the access token is kept in memory (returned in the login response
+ * body and held in React state / React Query cache). The refresh token is
+ * stored in an httpOnly Secure SameSite=Strict cookie and is never readable
+ * by JavaScript. On the client side we include `credentials: "include"` so
+ * the refresh-token cookie is forwarded automatically; Server Components
+ * forward cookies via `next/headers`.
  */
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+if (!API_BASE_URL) {
+  throw new Error(
+    "NEXT_PUBLIC_API_URL is not set. Add it to your .env.local file.",
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Error types

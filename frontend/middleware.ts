@@ -19,8 +19,10 @@ export function middleware(_request: NextRequest): NextResponse {
 
 export const config = {
   /**
-   * Protect all routes under /(dashboard). Excludes Next.js internals and
-   * static assets to avoid unnecessary middleware overhead.
+   * Run middleware on all application routes except Next.js internals,
+   * static assets, and the /login page (which must remain publicly accessible
+   * so unauthenticated users can sign in). Route groups like (dashboard) are
+   * not part of the URL, so this single pattern covers every guarded page.
    */
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|login).*)",

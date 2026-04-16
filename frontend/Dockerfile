@@ -11,13 +11,13 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # ─── Builder ──────────────────────────────────────────────────────────────────
 FROM base AS builder
 
-COPY package.json package-lock.json ./
-RUN npm ci
+# Reuse the cached node_modules layer from deps to avoid a second npm ci.
+COPY --from=deps /app/node_modules ./node_modules
 
 # Copy source
 COPY . .

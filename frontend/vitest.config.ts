@@ -9,6 +9,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.{test,spec}.{ts,tsx}"],
+    env: {
+      NEXT_PUBLIC_API_URL: "http://localhost:8000/api/v1",
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
