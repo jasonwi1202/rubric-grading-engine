@@ -1,8 +1,8 @@
 """Unit tests for app.tasks.celery_app and app.tasks.debug.
 
-All tests run without a real Redis broker.  The Celery app is configured
-with the ``task_always_eager`` and ``task_eager_propagates`` options for
-in-process task execution, so no broker or worker is required.
+All tests run without a real Redis broker.  Tasks are executed
+synchronously via ``task.apply()``, which runs the task in-process
+without requiring a broker or a running worker.
 """
 
 import pytest
@@ -66,6 +66,10 @@ class TestCeleryAppConfiguration:
 
     def test_debug_task_is_registered(self) -> None:
         assert "tasks.debug.ping" in celery.tasks
+
+    def test_result_expires_from_settings(self) -> None:
+        s = Settings.model_validate(_BASE)
+        assert celery.conf.result_expires == s.celery_result_expires_seconds
 
 
 # ---------------------------------------------------------------------------

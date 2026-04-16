@@ -36,5 +36,5 @@ celery.conf.update(
     task_soft_time_limit=settings.grading_task_soft_time_limit,
     task_time_limit=settings.grading_task_hard_time_limit,
     # Do not store successful task results indefinitely
-    result_expires=3600,
+    result_expires=settings.celery_result_expires_seconds,
 )

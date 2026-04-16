@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     celery_broker_url: str = ""
     celery_result_backend: str = ""
     celery_worker_concurrency: int = 4
+    celery_result_expires_seconds: int = 3600
     grading_task_soft_time_limit: int = 120
     grading_task_hard_time_limit: int = 180
 
