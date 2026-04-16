@@ -24,6 +24,7 @@
  */
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isSafeRedirectPath } from "@/lib/utils/redirect";
 
 /** Cookie name set by the backend on successful login. */
 const REFRESH_TOKEN_COOKIE = "refresh_token";
@@ -35,13 +36,6 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
-}
-
-/** Validate that a redirect target is a safe relative path within this app. */
-function isSafeRedirectPath(path: string): boolean {
-  // Must start with "/" and must not start with "//" (protocol-relative URL)
-  // to prevent open-redirect vulnerabilities.
-  return path.startsWith("/") && !path.startsWith("//");
 }
 
 export function middleware(request: NextRequest): NextResponse {

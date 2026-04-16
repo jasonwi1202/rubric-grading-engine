@@ -189,6 +189,21 @@ describe("401 silent refresh", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("redirects to /login when refresh fails", async () => {
+    const replaceSpy = vi.fn();
+    vi.stubGlobal("window", { location: { replace: replaceSpy } });
+
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "TOKEN_EXPIRED", message: "Expired" } }, 401),
+    );
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "REFRESH_TOKEN_INVALID", message: "Invalid" } }, 401),
+    );
+
+    await expect(apiGet("/protected")).rejects.toBeInstanceOf(ApiError);
+    expect(replaceSpy).toHaveBeenCalledWith("/login");
+  });
+
   it("does not attempt refresh on 401 from auth endpoints", async () => {
     mockFetch.mockReturnValueOnce(
       makeResponse({ error: { code: "UNAUTHORIZED", message: "Bad creds" } }, 401),

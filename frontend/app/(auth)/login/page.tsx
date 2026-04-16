@@ -6,13 +6,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { login } from "@/lib/auth/session";
 import { loginSchema, type LoginFormValues } from "@/lib/schemas/auth";
+import { isSafeRedirectPath } from "@/lib/utils/redirect";
 
 /**
- * Validate that a `next` redirect parameter is a safe relative path within
- * this application. Guards against open-redirect attacks.
+ * Return a safe redirect path from the `next` query parameter, falling back
+ * to "/" if the value is absent or fails the open-redirect check.
  */
 function getSafeRedirectPath(next: string | null): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) {
+  if (next && isSafeRedirectPath(next)) {
     return next;
   }
   return "/";
