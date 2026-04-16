@@ -26,6 +26,17 @@ from app.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# Map framework HTTP status codes to structured error codes.
+_HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
+    400: "BAD_REQUEST",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    405: "METHOD_NOT_ALLOWED",
+    409: "CONFLICT",
+    422: "VALIDATION_ERROR",
+}
+
 
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
@@ -115,20 +126,13 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
     @application.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        _status_to_code: dict[int, str] = {
-            400: "BAD_REQUEST",
-            401: "UNAUTHORIZED",
-            403: "FORBIDDEN",
-            404: "NOT_FOUND",
-            405: "METHOD_NOT_ALLOWED",
-            409: "CONFLICT",
-            422: "VALIDATION_ERROR",
-        }
-        code = _status_to_code.get(
+        code = _HTTP_STATUS_TO_ERROR_CODE.get(
             exc.status_code,
             "INTERNAL_ERROR" if exc.status_code >= 500 else "ERROR",
         )
-        return _error_response(exc.status_code, code, "An unexpected error occurred.")
+        # exc.detail is set by the framework (e.g. "Not Found") and is safe to surface.
+        message = str(exc.detail) if exc.detail else "An unexpected error occurred."
+        return _error_response(exc.status_code, code, message)
 
     @application.exception_handler(RequestValidationError)
     async def request_validation_handler(
