@@ -72,6 +72,7 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `CELERY_BROKER_URL` | No | `$REDIS_URL` | Celery broker URL — defaults to Redis |
 | `CELERY_RESULT_BACKEND` | No | `$REDIS_URL` | Celery result backend — defaults to Redis |
 | `CELERY_WORKER_CONCURRENCY` | No | `4` | Number of concurrent Celery worker processes |
+| `CELERY_RESULT_EXPIRES_SECONDS` | No | `3600` | TTL (seconds) before completed task results are removed from the backend |
 | `GRADING_TASK_SOFT_TIME_LIMIT` | No | `120` | Soft time limit (seconds) for a single grading task before warning |
 | `GRADING_TASK_HARD_TIME_LIMIT` | No | `180` | Hard time limit (seconds) before Celery kills the task |
 
