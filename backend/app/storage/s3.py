@@ -1,0 +1,118 @@
+"""S3/MinIO client wrapper.
+
+Provides :func:`upload_file` and :func:`generate_presigned_url` backed by
+boto3.  All configuration (endpoint URL, credentials, bucket name, presigned
+URL TTL) comes from :mod:`app.config` — no hardcoded values here.
+
+Usage::
+
+    from app.storage.s3 import upload_file, generate_presigned_url
+
+    upload_file("essays/abc123.pdf", pdf_bytes, "application/pdf")
+    url = generate_presigned_url("essays/abc123.pdf")
+
+Both functions raise :class:`StorageError` on failure.  The original
+:class:`botocore.exceptions.ClientError` is chained as the ``__cause__``.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import boto3
+from botocore.exceptions import ClientError
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class StorageError(Exception):
+    """Raised when an S3 / object-storage operation fails."""
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_client() -> Any:  # boto3 client is not easily typed without mypy extras
+    """Create a fresh boto3 S3 client using application settings.
+
+    Supports both AWS S3 (no endpoint override) and S3-compatible endpoints
+    such as MinIO (``S3_ENDPOINT_URL`` set in environment).
+    """
+    kwargs: dict[str, Any] = {
+        "service_name": "s3",
+        "region_name": settings.s3_region,
+        "aws_access_key_id": settings.aws_access_key_id,
+        "aws_secret_access_key": settings.aws_secret_access_key,
+    }
+    if settings.s3_endpoint_url:
+        kwargs["endpoint_url"] = settings.s3_endpoint_url
+    return boto3.client(**kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def upload_file(key: str, data: bytes, content_type: str) -> None:
+    """Upload *data* to the configured S3 bucket under *key*.
+
+    Args:
+        key: Object key (path) within the bucket, e.g. ``"essays/abc123.pdf"``.
+        data: Raw bytes to upload.
+        content_type: MIME type of the content, e.g. ``"application/pdf"``.
+
+    Raises:
+        StorageError: If the upload fails for any reason.
+    """
+    client = _make_client()
+    try:
+        client.put_object(
+            Bucket=settings.s3_bucket_name,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+        )
+    except ClientError as exc:
+        logger.error(
+            "S3 upload failed",
+            extra={"key": key, "error_type": type(exc).__name__},
+        )
+        raise StorageError(f"Failed to upload object: key={key!r}") from exc
+
+
+def generate_presigned_url(key: str, expires_in: int | None = None) -> str:
+    """Return a pre-signed GET URL for the object at *key*.
+
+    Args:
+        key: Object key within the bucket.
+        expires_in: URL lifetime in seconds.  Defaults to
+            ``settings.s3_presigned_url_expire_seconds``.
+
+    Returns:
+        A pre-signed URL string valid for *expires_in* seconds.
+
+    Raises:
+        StorageError: If URL generation fails.
+    """
+    if expires_in is None:
+        expires_in = settings.s3_presigned_url_expire_seconds
+    client = _make_client()
+    try:
+        url: str = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.s3_bucket_name, "Key": key},
+            ExpiresIn=expires_in,
+        )
+        return url
+    except ClientError as exc:
+        logger.error(
+            "S3 presigned URL generation failed",
+            extra={"key": key, "error_type": type(exc).__name__},
+        )
+        raise StorageError(f"Failed to generate presigned URL: key={key!r}") from exc
