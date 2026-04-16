@@ -137,4 +137,4 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()  # type: ignore[call-arg]  # pydantic-settings populates fields from env vars, not constructor args

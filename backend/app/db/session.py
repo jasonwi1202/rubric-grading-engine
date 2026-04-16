@@ -38,8 +38,9 @@ engine: AsyncEngine = create_async_engine(
     settings.database_url,
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_max_overflow,
-    # Echo SQL only in development to avoid leaking query structure in logs.
-    echo=settings.environment == "development",
+    # SQL echo is disabled in all environments: query output can contain
+    # parameter values that include student PII.
+    echo=False,
     future=True,
 )
 
