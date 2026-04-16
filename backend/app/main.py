@@ -128,10 +128,7 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
     @application.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        code = _HTTP_STATUS_TO_ERROR_CODE.get(
-            exc.status_code,
-            "INTERNAL_ERROR" if exc.status_code >= 500 else "INTERNAL_ERROR",
-        )
+        code = _HTTP_STATUS_TO_ERROR_CODE.get(exc.status_code, "INTERNAL_ERROR")
         if exc.status_code >= 500:
             logger.error(
                 "HTTP exception",
