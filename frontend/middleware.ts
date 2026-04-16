@@ -4,10 +4,16 @@
  * Currently a no-op that simply continues all requests. Auth logic will be
  * implemented in a later milestone once the backend auth endpoints are ready.
  *
- * When auth is implemented this middleware will:
- * - Verify the JWT access token from the session cookie on all (dashboard) routes
- * - Redirect unauthenticated requests to /login
- * - Attempt a silent token refresh on 401 responses before redirecting
+ * When auth is implemented this middleware should only use information
+ * available on the incoming request. A practical flow is:
+ * - Check for a secure httpOnly refresh/session cookie on protected routes
+ * - If the cookie is present, call the backend to validate the session and/or
+ *   rotate an access token before allowing the request to continue
+ * - Redirect requests with no valid session to /login
+ *
+ * Middleware cannot react to downstream 401 API responses. Any 401 returned
+ * after navigation must be handled by the frontend API client, which can
+ * trigger a refresh flow or redirect to /login as appropriate.
  */
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -19,12 +25,9 @@ export function middleware(_request: NextRequest): NextResponse {
 
 export const config = {
   /**
-   * Run middleware on all application routes except Next.js internals,
-   * static assets, and the /login page (which must remain publicly accessible
-   * so unauthenticated users can sign in). Route groups like (dashboard) are
-   * not part of the URL, so this single pattern covers every guarded page.
+   * Limit middleware execution to the dashboard route subtree for now.
+   * This keeps the auth stub in place without adding edge/runtime overhead
+   * to the rest of the application while auth is not yet implemented.
    */
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|login).*)",
-  ],
+  matcher: ["/dashboard/:path*"],
 };

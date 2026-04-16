@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { apiGet, apiPost, apiPatch, apiDelete, ApiError } from "@/lib/api/client";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, ApiError, setAccessToken } from "@/lib/api/client";
 
 const mockFetch = vi.fn();
 
 beforeEach(() => {
   vi.stubGlobal("fetch", mockFetch);
   mockFetch.mockReset();
+  // Reset access token between tests to avoid state leakage
+  setAccessToken(null);
 });
 
 function makeResponse(body: unknown, status = 200) {
@@ -19,7 +21,9 @@ function makeResponse(body: unknown, status = 200) {
 
 describe("apiGet", () => {
   it("returns parsed JSON on success", async () => {
-    mockFetch.mockReturnValueOnce(makeResponse({ id: "1", name: "test" }));
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ data: { id: "1", name: "test" } }),
+    );
     const result = await apiGet<{ id: string; name: string }>("/test");
     expect(result).toEqual({ id: "1", name: "test" });
   });
@@ -52,7 +56,7 @@ describe("apiGet", () => {
 
 describe("apiPost", () => {
   it("sends JSON body and returns parsed response", async () => {
-    mockFetch.mockReturnValueOnce(makeResponse({ created: true }, 201));
+    mockFetch.mockReturnValueOnce(makeResponse({ data: { created: true } }, 201));
     const result = await apiPost<{ created: boolean }>("/items", { name: "x" });
     expect(result).toEqual({ created: true });
     expect(mockFetch).toHaveBeenCalledWith(
@@ -65,9 +69,24 @@ describe("apiPost", () => {
   });
 });
 
+describe("apiPut", () => {
+  it("sends PUT with body and returns parsed response", async () => {
+    mockFetch.mockReturnValueOnce(makeResponse({ data: { updated: true } }));
+    const result = await apiPut<{ updated: boolean }>("/items/1", { name: "updated" });
+    expect(result).toEqual({ updated: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/items/1"),
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ name: "updated" }),
+      }),
+    );
+  });
+});
+
 describe("apiPatch", () => {
   it("sends PATCH with body", async () => {
-    mockFetch.mockReturnValueOnce(makeResponse({ updated: true }));
+    mockFetch.mockReturnValueOnce(makeResponse({ data: { updated: true } }));
     await apiPatch("/items/1", { score: 5 });
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/items/1"),
@@ -104,5 +123,28 @@ describe("ApiError", () => {
       field: "email",
     });
     expect(err.field).toBe("email");
+  });
+});
+
+describe("setAccessToken", () => {
+  it("attaches Authorization Bearer header when a token is set", async () => {
+    setAccessToken("test-access-token");
+    mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
+    await apiGet("/secure");
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-access-token",
+        }),
+      }),
+    );
+  });
+
+  it("omits Authorization header when no token is set", async () => {
+    mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
+    await apiGet("/public");
+    const callHeaders = (mockFetch.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(callHeaders).not.toHaveProperty("Authorization");
   });
 });

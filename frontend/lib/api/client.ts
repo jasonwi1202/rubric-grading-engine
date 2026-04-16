@@ -8,13 +8,23 @@
  * by JavaScript. On the client side we include `credentials: "include"` so
  * the refresh-token cookie is forwarded automatically; Server Components
  * forward cookies via `next/headers`.
+ *
+ * Call `setAccessToken(token)` after a successful login to attach the Bearer
+ * token to all subsequent requests. Call `setAccessToken(null)` on logout.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-if (!API_BASE_URL) {
-  throw new Error(
-    "NEXT_PUBLIC_API_URL is not set. Add it to your .env.local file.",
-  );
+// ---------------------------------------------------------------------------
+// Access token state — kept in module scope (memory only; never persisted)
+// ---------------------------------------------------------------------------
+
+let _accessToken: string | null = null;
+
+/**
+ * Store the access token in memory. Call after login; call with `null` on
+ * logout. The token is attached as `Authorization: Bearer …` on every request.
+ */
+export function setAccessToken(token: string | null): void {
+  _accessToken = token;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,12 +59,23 @@ async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!baseUrl) {
+    throw new Error(
+      `NEXT_PUBLIC_API_URL is not set. Cannot call ${path}. Add it to your .env.local file.`,
+    );
+  }
 
-  const headers: HeadersInit = {
+  const url = `${baseUrl}${path}`;
+
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(init.headers ?? {}),
+    ...((init.headers as Record<string, string>) ?? {}),
   };
+
+  if (_accessToken) {
+    headers["Authorization"] = `Bearer ${_accessToken}`;
+  }
 
   const response = await fetch(url, {
     ...init,
@@ -81,7 +102,9 @@ async function apiFetch<T>(
     return undefined as unknown as T;
   }
 
-  return response.json() as Promise<T>;
+  // Unwrap the standard API response envelope: { data: T, meta?: ... }
+  const json = (await response.json()) as { data: T };
+  return json.data;
 }
 
 // ---------------------------------------------------------------------------

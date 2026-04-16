@@ -4,11 +4,13 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
+# Install libc6-compat in the shared base so all stages (build and runtime)
+# have it available.  Some native npm packages need it at install time AND at
+# container startup; putting it only in deps would leave the runner without it.
+RUN apk add --no-cache libc6-compat
+
 # ─── Dependencies ─────────────────────────────────────────────────────────────
 FROM base AS deps
-
-# Install libc6-compat for Alpine compatibility with some npm packages.
-RUN apk add --no-cache libc6-compat
 
 COPY package.json package-lock.json ./
 RUN npm ci
