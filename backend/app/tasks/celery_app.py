@@ -32,7 +32,7 @@ celery.conf.update(
     enable_utc=True,
     # Worker concurrency comes from settings
     worker_concurrency=settings.celery_worker_concurrency,
-    # Time limits for grading tasks
+    # Global default time limits for all tasks; individual tasks may override these
     task_soft_time_limit=settings.grading_task_soft_time_limit,
     task_time_limit=settings.grading_task_hard_time_limit,
     # Do not store successful task results indefinitely

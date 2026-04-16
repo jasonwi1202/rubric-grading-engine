@@ -8,26 +8,9 @@ without requiring a broker or a running worker.
 import pytest
 from celery import Celery
 
-from app.config import Settings
+from app.config import settings
 from app.tasks.celery_app import celery
 from app.tasks.debug import ping
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_BASE: dict[str, str] = {
-    "database_url": "postgresql+asyncpg://user:pass@localhost:5432/testdb",
-    "redis_url": "redis://localhost:6379/0",
-    "jwt_secret_key": "a" * 32,
-    "openai_api_key": "dummy_openai_api_key",
-    "s3_bucket_name": "test-bucket",
-    "s3_region": "us-east-1",
-    "aws_access_key_id": "dummy_aws_access_key_id",
-    "aws_secret_access_key": "dummy_aws_secret_access_key",
-    "cors_origins": "http://localhost:3000",
-}
-
 
 # ---------------------------------------------------------------------------
 # Celery app configuration
@@ -42,12 +25,10 @@ class TestCeleryAppConfiguration:
         assert celery.main == "rubric_grading_engine"
 
     def test_broker_url_from_settings(self) -> None:
-        s = Settings.model_validate(_BASE)
-        assert celery.conf.broker_url == s.celery_broker_url
+        assert celery.conf.broker_url == settings.celery_broker_url
 
     def test_result_backend_from_settings(self) -> None:
-        s = Settings.model_validate(_BASE)
-        assert celery.conf.result_backend == s.celery_result_backend
+        assert celery.conf.result_backend == settings.celery_result_backend
 
     def test_task_serializer_is_json(self) -> None:
         assert celery.conf.task_serializer == "json"
@@ -68,8 +49,7 @@ class TestCeleryAppConfiguration:
         assert "tasks.debug.ping" in celery.tasks
 
     def test_result_expires_from_settings(self) -> None:
-        s = Settings.model_validate(_BASE)
-        assert celery.conf.result_expires == s.celery_result_expires_seconds
+        assert celery.conf.result_expires == settings.celery_result_expires_seconds
 
 
 # ---------------------------------------------------------------------------
