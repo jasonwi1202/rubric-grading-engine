@@ -11,13 +11,27 @@ The frontend is a Next.js 14+ application using the App Router. It is a teacher-
 ```
 frontend/
 ├── app/                          # Next.js App Router — routes and layouts
-│   ├── layout.tsx                # Root layout (auth shell, global providers)
+│   ├── layout.tsx                # Root layout (global providers, fonts)
 │   ├── (auth)/
 │   │   ├── login/page.tsx
-│   │   └── layout.tsx
+│   │   └── layout.tsx            # Centred, chrome-free layout for auth pages
+│   ├── (public)/                 # Public marketing site (no auth required)
+│   │   ├── layout.tsx            # SiteHeader + SiteFooter wrapper
+│   │   ├── page.tsx              # Landing page (/)
+│   │   ├── product/page.tsx
+│   │   ├── how-it-works/page.tsx
+│   │   ├── pricing/page.tsx
+│   │   ├── about/page.tsx
+│   │   ├── ai/page.tsx           # AI transparency page
+│   │   ├── signup/page.tsx
+│   │   └── legal/
+│   │       ├── terms/page.tsx
+│   │       ├── privacy/page.tsx
+│   │       ├── ferpa/page.tsx
+│   │       └── dpa/page.tsx
 │   ├── (dashboard)/              # Authenticated teacher area
 │   │   ├── layout.tsx            # Sidebar, nav, session guard
-│   │   ├── page.tsx              # Dashboard home (worklist, recent activity)
+│   │   ├── dashboard/page.tsx    # Dashboard home (worklist, recent activity)
 │   │   ├── classes/
 │   │   │   ├── page.tsx          # Class list
 │   │   │   └── [classId]/
@@ -37,12 +51,12 @@ frontend/
 │
 ├── components/
 │   ├── ui/                       # Base primitives (shadcn/ui wrappers)
+│   ├── layout/                   # SiteHeader, SiteFooter (public site); sidebar, nav (dashboard)
 │   ├── grading/                  # Essay review, score controls, feedback editor
 │   ├── rubric/                   # Rubric builder components
 │   ├── assignments/              # Assignment creation, submission tracking
 │   ├── students/                 # Student profile, skill charts
-│   ├── classes/                  # Class roster, heatmap, insights
-│   └── layout/                   # Sidebar, nav, breadcrumbs, page shells
+│   └── classes/                  # Class roster, heatmap, insights
 │
 ├── lib/
 │   ├── api/                      # Typed API client (fetch wrappers per resource)
@@ -53,10 +67,11 @@ frontend/
 │   │   └── ...
 │   ├── hooks/                    # React Query hooks (useAssignment, useGrade, etc.)
 │   ├── schemas/                  # Zod schemas for form validation
-│   └── utils/                    # Formatting, date helpers, etc.
+│   ├── constants.ts              # PRODUCT_NAME and other app-wide constants
+│   └── utils/                    # Formatting, date helpers, redirect safety, etc.
 │
 ├── types/                        # Shared TypeScript types (mirrors backend schemas)
-├── middleware.ts                 # Auth route protection (Next.js middleware)
+├── middleware.ts                 # Route protection + auth-entry redirects
 ├── tailwind.config.ts
 └── next.config.ts
 ```
@@ -65,13 +80,46 @@ frontend/
 
 ## Routing Model
 
-All authenticated routes live under the `(dashboard)` route group. The root layout for this group:
-- Validates the session token via middleware before rendering
-- Renders the persistent sidebar and navigation chrome
+The app uses three route groups to keep layout concerns strictly separated:
+
+### `(public)` — marketing site
+
+Public routes are accessible without authentication. They share a common
+`SiteHeader` + `SiteFooter` layout (`(public)/layout.tsx`). Middleware allows
+all these paths through unconditionally.
+
+```
+/                    # Landing page
+/product
+/how-it-works
+/pricing
+/about
+/ai                  # AI transparency
+/signup
+/legal/terms
+/legal/privacy
+/legal/ferpa
+/legal/dpa
+```
+
+### `(auth)` — auth entry pages
+
+Centred, chrome-free layout for login and future password-reset pages.
+Authenticated users visiting `/login` or `/signup` are redirected to
+`/dashboard` by middleware.
+
+### `(dashboard)` — authenticated teacher area
+
+All authenticated routes live under this route group. The root layout for this
+group:
+- Is protected by middleware (unauthenticated requests redirect to `/login`
+  with the original destination preserved as `?next=<path>`)
+- Will render the persistent sidebar and navigation chrome (a future milestone)
 - Provides the React Query client to the subtree
 
 Route structure mirrors the domain hierarchy:
 ```
+/dashboard
 /classes
 /classes/[classId]
 /classes/[classId]/students/[studentId]
