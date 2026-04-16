@@ -68,12 +68,12 @@ def minio_endpoint() -> Generator[str, None, None]:
     port = container.get_exposed_port(_MINIO_PORT)
     endpoint = f"http://{host}:{port}"
 
-    # Wait until MinIO is ready to accept connections.
-    _wait_for_minio(endpoint)
-
-    yield endpoint
-
-    container.stop()
+    # Wait until MinIO is ready and yield; always stop the container on exit.
+    try:
+        _wait_for_minio(endpoint)
+        yield endpoint
+    finally:
+        container.stop()
 
 
 def _wait_for_minio(endpoint: str) -> None:

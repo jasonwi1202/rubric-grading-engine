@@ -86,9 +86,9 @@ def upload_file(key: str, data: bytes, content_type: str) -> None:
     except (BotoCoreError, ClientError) as exc:
         logger.error(
             "S3 upload failed",
-            extra={"key": key, "error_type": type(exc).__name__},
+            extra={"error_type": type(exc).__name__},
         )
-        raise StorageError(f"Failed to upload object: key={key!r}") from exc
+        raise StorageError("S3 upload failed") from exc
 
 
 def generate_presigned_url(key: str, expires_in: int | None = None) -> str:
@@ -119,6 +119,6 @@ def generate_presigned_url(key: str, expires_in: int | None = None) -> str:
     except (BotoCoreError, ClientError) as exc:
         logger.error(
             "S3 presigned URL generation failed",
-            extra={"key": key, "error_type": type(exc).__name__},
+            extra={"error_type": type(exc).__name__},
         )
-        raise StorageError(f"Failed to generate presigned URL: key={key!r}") from exc
+        raise StorageError("S3 presigned URL generation failed") from exc

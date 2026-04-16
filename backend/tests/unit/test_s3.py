@@ -90,7 +90,7 @@ class TestUploadFile:
         mock_client = _patch_make_client(mocker)
         mock_client.put_object.side_effect = _make_client_error()
 
-        with pytest.raises(StorageError, match="key="):
+        with pytest.raises(StorageError, match="upload"):
             upload_file("bad/key", b"data", "text/plain")
 
     def test_storage_error_chains_original_exception(self, mocker: MockerFixture) -> None:
@@ -119,7 +119,7 @@ class TestUploadFile:
         mock_client = _patch_make_client(mocker)
         mock_client.put_object.side_effect = NoCredentialsError()
 
-        with pytest.raises(StorageError, match="key="):
+        with pytest.raises(StorageError, match="upload"):
             upload_file("key", b"data", "text/plain")
 
     def test_botocore_error_chains_original_exception(self, mocker: MockerFixture) -> None:
@@ -194,7 +194,7 @@ class TestGeneratePresignedUrl:
         mock_client = _patch_make_client(mocker)
         mock_client.generate_presigned_url.side_effect = _make_client_error()
 
-        with pytest.raises(StorageError, match="key="):
+        with pytest.raises(StorageError, match="presigned"):
             generate_presigned_url("bad/key")
 
     def test_storage_error_chains_original_exception(self, mocker: MockerFixture) -> None:
@@ -212,7 +212,7 @@ class TestGeneratePresignedUrl:
         mock_client = _patch_make_client(mocker)
         mock_client.generate_presigned_url.side_effect = NoCredentialsError()
 
-        with pytest.raises(StorageError, match="key="):
+        with pytest.raises(StorageError, match="presigned"):
             generate_presigned_url("bad/key")
 
     def test_botocore_error_chains_original_exception(self, mocker: MockerFixture) -> None:
