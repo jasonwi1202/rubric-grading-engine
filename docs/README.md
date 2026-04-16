@@ -80,6 +80,16 @@ One document per feature. Each covers purpose, user story, key capabilities, acc
 |---|---|
 | [features/platform-infrastructure.md](features/platform-infrastructure.md) | Platform-level infrastructure concerns not covered by individual features |
 
+### Phase 0 — Public Website & Onboarding
+
+| Document | Description |
+|---|---|
+| [features/public-website.md](features/public-website.md) | Landing page, product page, how-it-works, about, and public site layout and route structure |
+| [features/pricing-page.md](features/pricing-page.md) | Pricing tiers, annual/monthly toggle, feature comparison table, FAQ, and school/district inquiry |
+| [features/ai-transparency-page.md](features/ai-transparency-page.md) | How the AI grades, human-in-the-loop guarantee, data use disclosure, and AI accuracy explainer |
+| [features/legal-pages.md](features/legal-pages.md) | Terms of Service, Privacy Policy, FERPA/COPPA notice, Data Processing Agreement, and AI Use Policy |
+| [features/account-onboarding.md](features/account-onboarding.md) | Sign-up, email verification, onboarding wizard, trial lifecycle, and upgrade flow |
+
 ---
 
 ## Architecture

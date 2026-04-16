@@ -34,6 +34,25 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
+## Milestone 0.W — Public Website & Onboarding
+
+> Public marketing site, legal pages, pricing, AI transparency, and trial sign-up flow. Must be complete before any real teacher data is collected. Can be built in parallel with Milestone 1 once 0.2 and 0.3 are done.
+
+| # | Issue Title | Description |
+|---|---|---|
+| 0.W.1 | Public site layout and route structure | Shared public layout: site header (nav: Product, How It Works, Pricing, AI, About, Sign In, Start Trial CTA), footer (nav links + legal links). Route group `/(public)/` in Next.js App Router. `/(dashboard)/` route group for the app. `middleware.ts` redirects authenticated users from `/login` and `/signup` to `/dashboard`. Spec: `docs/features/public-website.md`. |
+| 0.W.2 | Landing page (`/`) | Hero section, problem/solution block, feature highlight cards (3–4), abbreviated how-it-works steps, CTA section. All copy uses `PRODUCT_NAME` constant. Static page — no API calls. Spec: `docs/features/public-website.md`. |
+| 0.W.3 | Product page (`/product`) and How It Works (`/how-it-works`) | `/product`: feature deep-dive sections with screenshot placeholders, trust/compliance callout. `/how-it-works`: numbered step-by-step workflow with visual timeline. Both static. Spec: `docs/features/public-website.md`. |
+| 0.W.4 | About page (`/about`) | Mission statement, team placeholder, principles, contact. Static. Spec: `docs/features/public-website.md`. |
+| 0.W.5 | Pricing page (`/pricing`) | Tier cards (Trial/Teacher/School/District), annual/monthly toggle, feature comparison table, FAQ accordion, school inquiry form. Inquiry form POSTs to `POST /api/v1/contact/inquiry` and sends notification email — no third-party form service. Spec: `docs/features/pricing-page.md`. |
+| 0.W.6 | AI transparency page (`/ai`) | How the AI grades (5 steps), what it can/can't do, HITL guarantee callout, data use disclosure, confidence score explainer. Static. Spec: `docs/features/ai-transparency-page.md`. |
+| 0.W.7 | Legal pages (`/legal/*`) | Terms of Service, Privacy Policy, FERPA/COPPA Notice, DPA info page, AI Use Policy. All static-rendered. DPA request form POSTs to backend (stored + email notification). "Last updated" date and version on each. All `[ATTORNEY DRAFT REQUIRED]` placeholders marked — page cannot deploy to production with placeholder text present. Spec: `docs/features/legal-pages.md`. |
+| 0.W.8 | Sign-up flow (`/signup`) | Sign-up form with email/password + school name. Server-side account creation. Verification email via Celery task. `/signup/verify` holding page. Verification link handler. Rate limiting on sign-up endpoint. Spec: `docs/features/account-onboarding.md`. |
+| 0.W.9 | Onboarding wizard (`/onboarding`) | 2-step wizard: create first class, build/import/skip rubric. Progress indicator. Skip available at each step. `/onboarding/done` completion page. Trial status banner in dashboard header. Spec: `docs/features/account-onboarding.md`. |
+| 0.W.10 | Trial lifecycle emails | Celery-scheduled email tasks: trial expiry at 7 days, 1 day, and 0 days. Welcome email on verification. All emails are plain HTML. No student PII. Unsubscribe link on non-transactional emails. Spec: `docs/features/account-onboarding.md`. |
+
+---
+
 ## Milestone 1 — Foundation (Phase 1)
 
 > Best-in-class rubric-based grading with transparent, editable AI feedback. This milestone produces the core product.
