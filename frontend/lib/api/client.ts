@@ -2,31 +2,38 @@
  * Base API client — all backend communication goes through these typed fetch
  * wrappers. No raw `fetch()` calls in components or hooks.
  *
- * Auth: the access token is kept in memory (returned in the login response
- * body and held in React state / React Query cache). The refresh token is
- * stored in an httpOnly Secure SameSite=Strict cookie and is never readable
- * by JavaScript. In the browser, `credentials: "include"` forwards the
- * refresh-token cookie automatically. For server-side calls (including Server
- * Components), `credentials: "include"` does not propagate the browser's
- * cookies; callers must read cookies via `next/headers` and pass a `Cookie`
- * header explicitly when authenticated server-side requests are needed.
+ * Auth: the access token is kept in memory via lib/auth/session.ts. The
+ * refresh token is stored in an httpOnly Secure SameSite=Strict cookie and
+ * is never readable by JavaScript. In the browser, `credentials: "include"`
+ * forwards the refresh-token cookie automatically.
  *
- * Call `setAccessToken(token)` after a successful login to attach the Bearer
- * token to all subsequent requests. Call `setAccessToken(null)` on logout.
+ * On a 401 response (for any request that is not itself an auth endpoint),
+ * the client attempts a silent token refresh. If the refresh succeeds the
+ * original request is retried with the new token. If the refresh fails the
+ * user is redirected to /login.
+ *
+ * Call `setAccessToken(token)` after a successful login to store the Bearer
+ * token. Call `setAccessToken(null)` on logout.
  */
+import {
+  getAccessToken,
+  setSessionToken,
+  silentRefresh,
+} from "@/lib/auth/session";
 
 // ---------------------------------------------------------------------------
-// Access token state — kept in module scope (memory only; never persisted)
+// Access token proxy — delegates to session.ts
 // ---------------------------------------------------------------------------
-
-let _accessToken: string | null = null;
 
 /**
  * Store the access token in memory. Call after login; call with `null` on
  * logout. The token is attached as `Authorization: Bearer …` on every request.
+ *
+ * This is a convenience re-export so callers that already import from
+ * `@/lib/api/client` do not need to change their import path.
  */
 export function setAccessToken(token: string | null): void {
-  _accessToken = token;
+  setSessionToken(token);
 }
 
 // ---------------------------------------------------------------------------
@@ -54,12 +61,19 @@ export class ApiError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// Auth endpoint paths that must not trigger the 401-refresh cycle
+// ---------------------------------------------------------------------------
+
+const AUTH_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
+
+// ---------------------------------------------------------------------------
 // Internal fetch wrapper
 // ---------------------------------------------------------------------------
 
 async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
+  isRetry = false,
 ): Promise<T> {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!baseUrl) {
@@ -77,8 +91,9 @@ async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  if (_accessToken) {
-    headers.set("Authorization", `Bearer ${_accessToken}`);
+  const token = getAccessToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(url, {
@@ -86,6 +101,27 @@ async function apiFetch<T>(
     headers,
     credentials: "include",
   });
+
+  // ----- 401 handling: attempt silent refresh then retry once -----
+  if (
+    response.status === 401 &&
+    !isRetry &&
+    !AUTH_PATHS.has(path)
+  ) {
+    const newToken = await silentRefresh();
+    if (newToken) {
+      // Retry the original request with the new token
+      return apiFetch<T>(path, init, true);
+    }
+    // Refresh failed — redirect to login (client-side only)
+    if (typeof window !== "undefined") {
+      window.location.replace("/login");
+    }
+    throw new ApiError(401, {
+      code: "UNAUTHORIZED",
+      message: "Session expired. Please log in again.",
+    });
+  }
 
   if (!response.ok) {
     let errorBody: ApiErrorBody;

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, ApiError, setAccessToken } from "@/lib/api/client";
+import { setSessionToken } from "@/lib/auth/session";
 
 const mockFetch = vi.fn();
 
@@ -8,6 +9,7 @@ beforeEach(() => {
   mockFetch.mockReset();
   // Reset access token between tests to avoid state leakage
   setAccessToken(null);
+  setSessionToken(null);
 });
 
 function makeResponse(body: unknown, status = 200) {
@@ -142,3 +144,71 @@ describe("setAccessToken", () => {
     expect(callHeaders.has("Authorization")).toBe(false);
   });
 });
+
+describe("401 silent refresh", () => {
+  it("retries the request with a new token after a successful silent refresh", async () => {
+    // First call: 401 (token expired)
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "TOKEN_EXPIRED", message: "Expired" } }, 401),
+    );
+    // Second call: refresh succeeds, returning new access token
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ data: { access_token: "new-token", token_type: "bearer" } }),
+    );
+    // Third call: retried original request succeeds
+    mockFetch.mockReturnValueOnce(makeResponse({ data: { id: "1" } }));
+
+    const result = await apiGet<{ id: string }>("/protected");
+
+    expect(result).toEqual({ id: "1" });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // The retried request should carry the new token
+    const retryHeaders = (mockFetch.mock.calls[2][1] as RequestInit).headers as Headers;
+    expect(retryHeaders.get("Authorization")).toBe("Bearer new-token");
+  });
+
+  it("throws ApiError and does not retry when refresh fails", async () => {
+    // First call: 401
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "TOKEN_EXPIRED", message: "Expired" } }, 401),
+    );
+    // Refresh call: also fails
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "REFRESH_TOKEN_INVALID", message: "Invalid" } }, 401),
+    );
+
+    await expect(apiGet("/protected")).rejects.toBeInstanceOf(ApiError);
+    // Only two fetch calls: original + refresh attempt (no retry)
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not attempt refresh on 401 from auth endpoints", async () => {
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "UNAUTHORIZED", message: "Bad creds" } }, 401),
+    );
+
+    await expect(apiPost("/auth/login", {})).rejects.toBeInstanceOf(ApiError);
+    // Only one fetch call — no refresh attempt on auth paths
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a retried request that returns 401 again", async () => {
+    // First call: 401
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "TOKEN_EXPIRED" } }, 401),
+    );
+    // Refresh succeeds
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ data: { access_token: "new-token", token_type: "bearer" } }),
+    );
+    // Retried original: 401 again
+    mockFetch.mockReturnValueOnce(
+      makeResponse({ error: { code: "UNAUTHORIZED" } }, 401),
+    );
+
+    await expect(apiGet("/protected")).rejects.toBeInstanceOf(ApiError);
+    // Three calls: original + refresh + retry (no further refresh on isRetry=true)
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+});
+
