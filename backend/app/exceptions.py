@@ -13,7 +13,7 @@ class RubricGradingError(Exception):
 
 
 class NotFoundError(RubricGradingError):
-    """Resource does not exist or does not belong to the authenticated teacher."""
+    """Resource does not exist."""
 
     code = "NOT_FOUND"
 

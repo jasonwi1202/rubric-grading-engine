@@ -97,10 +97,10 @@ class TestExceptionHandlers:
         assert resp.status_code == 503
         assert resp.json()["error"]["code"] == "LLM_UNAVAILABLE"
 
-    def test_llm_parse_error_returns_503_with_specific_code(self) -> None:
+    def test_llm_parse_error_returns_500_with_specific_code(self) -> None:
         client = _make_client_with_route(LLMParseError("bad json"))
         resp = client.get("/test-error")
-        assert resp.status_code == 503
+        assert resp.status_code == 500
         assert resp.json()["error"]["code"] == "LLM_PARSE_ERROR"
 
     def test_unhandled_exception_returns_500_structured(self) -> None:
@@ -119,3 +119,22 @@ class TestExceptionHandlers:
         assert "code" in error
         assert "message" in error
         assert "field" in error
+
+    def test_request_validation_error_returns_422_envelope(self) -> None:
+        """RequestValidationError is normalized to the structured error envelope."""
+        from fastapi import Query
+        from fastapi.routing import APIRoute
+
+        app = create_app()
+
+        async def _needs_param(count: int = Query(...)) -> dict:  # type: ignore[assignment]
+            return {"count": count}
+
+        app.routes.append(APIRoute("/test-validation", _needs_param, methods=["GET"]))
+        c = TestClient(app, raise_server_exceptions=False)
+        resp = c.get("/test-validation")  # omit required `count` param
+        assert resp.status_code == 422, f"Got {resp.status_code}"
+        body = resp.json()
+        assert body["error"]["code"] == "VALIDATION_ERROR", f"Got {body}"
+        # Field name should not include leading 'query' prefix
+        assert body["error"]["field"] == "count", f"Got field={body['error']['field']}"

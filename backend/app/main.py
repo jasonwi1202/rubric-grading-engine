@@ -17,6 +17,7 @@ from app.exceptions import (
     ConflictError,
     ForbiddenError,
     LLMError,
+    LLMParseError,
     NotFoundError,
     RubricGradingError,
     ValidationError,
@@ -75,30 +76,49 @@ def _register_exception_handlers(application: FastAPI) -> None:
     async def domain_validation_handler(request: Request, exc: ValidationError) -> JSONResponse:
         return _error_response(422, exc.code, str(exc), exc.field)
 
+    @application.exception_handler(LLMParseError)
+    async def llm_parse_error_handler(request: Request, exc: LLMParseError) -> JSONResponse:
+        logger.error(
+            "LLM parse error",
+            extra={"path": request.url.path, "error_code": exc.code},
+        )
+        return _error_response(500, exc.code, "An unexpected error occurred.")
+
     @application.exception_handler(LLMError)
     async def llm_error_handler(request: Request, exc: LLMError) -> JSONResponse:
         return _error_response(503, exc.code, str(exc))
 
     @application.exception_handler(RubricGradingError)
     async def base_domain_handler(request: Request, exc: RubricGradingError) -> JSONResponse:
-        return _error_response(500, exc.code, str(exc))
+        logger.error(
+            "Rubric grading error",
+            extra={"path": request.url.path, "error_code": exc.code},
+        )
+        return _error_response(500, exc.code, "An unexpected error occurred.")
 
     @application.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         first = exc.errors()[0] if exc.errors() else {}
-        field: str | None = ".".join(str(p) for p in first.get("loc", [])) or None
+        loc = first.get("loc", ())
+        # Strip leading location type segments (body, query, path, header, cookie)
+        _loc_prefixes = {"body", "query", "path", "header", "cookie"}
+        loc_parts = [str(p) for p in loc if str(p) not in _loc_prefixes]
+        field: str | None = ".".join(loc_parts) or None
         message = first.get("msg", "Request validation failed")
         return _error_response(422, "VALIDATION_ERROR", str(message), field)
 
     @application.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.error(
-            "Unhandled exception",
-            exc_info=exc,
-            extra={"path": request.url.path},
-        )
+        log_extra = {
+            "path": request.url.path,
+            "error_type": type(exc).__name__,
+        }
+        if application.debug:
+            logger.exception("Unhandled exception", extra=log_extra)
+        else:
+            logger.error("Unhandled exception", extra=log_extra)
         return _error_response(500, "INTERNAL_ERROR", "An unexpected error occurred.")
 
 
