@@ -14,6 +14,8 @@ paths = [
     '''.venv/''',
     # Local secrets file — gitignored, never committed
     '''\.env$''',
+    # Next.js build output — gitignored, never committed
+    '''frontend/\.next/''',
 ]
 regexes = [
     # Commented-out optional API key placeholder in .env.example — not a real secret
