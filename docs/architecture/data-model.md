@@ -258,6 +258,7 @@ Append-only record of every consequential action. Never updated or deleted.
 | before_value | JSONB | Nullable — state before the change |
 | after_value | JSONB | Nullable — state after the change |
 | ip_address | INET | Nullable — client IP for auth and access events |
+| metadata | TEXT | Nullable — free-form extra context that doesn't fit `before_value`/`after_value` (e.g. user-agent string) |
 | created_at | TIMESTAMPTZ | |
 
 **Index:** `(entity_type, entity_id)`, `(teacher_id, created_at DESC)`, `(action, created_at DESC)`

@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # -------------------------------------------------------------------------
+    # Email verification
+    # -------------------------------------------------------------------------
+    # Secret used to HMAC-sign verification tokens.  Must be at least 32 chars.
+    # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    email_verification_hmac_secret: str
+    # TTL in seconds for verification tokens stored in Redis (default: 24 h).
+    verification_token_ttl_seconds: int = 86400
+    # Base URL of the frontend — used to build verification links in emails.
+    frontend_url: str = "http://localhost:3000"
+    # "From" address for verification emails.  Optional — if not set the task
+    # will use the same address as contact_email, or skip sending if both are
+    # absent.
+    verification_email_from: str | None = None
+
+    # -------------------------------------------------------------------------
     # LLM / OpenAI
     # -------------------------------------------------------------------------
     openai_api_key: str
@@ -98,6 +113,10 @@ class Settings(BaseSettings):
     smtp_port: int = 25
     # Timeout in seconds for SMTP connections; prevents hung Celery workers.
     smtp_timeout: int = 10
+    # When True, extract the real client IP from the CF-Connecting-IP or
+    # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
+    # enable in production behind a trusted proxy; leave False in development.
+    trust_proxy_headers: bool = False
 
     # -------------------------------------------------------------------------
     # Validators
@@ -108,6 +127,13 @@ class Settings(BaseSettings):
     def jwt_secret_key_min_length(cls, v: str) -> str:
         if len(v) < 32:
             raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
+        return v
+
+    @field_validator("email_verification_hmac_secret")
+    @classmethod
+    def email_verification_hmac_secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("EMAIL_VERIFICATION_HMAC_SECRET must be at least 32 characters")
         return v
 
     @field_validator("environment")

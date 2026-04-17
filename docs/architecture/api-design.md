@@ -48,6 +48,9 @@ All list endpoints accept `?page=1&page_size=25`. Default page size: 25. Max: 10
 All endpoints require a valid JWT Bearer token in the `Authorization` header unless explicitly documented as public. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
 
 **Public endpoints (no JWT required):**
+- `POST /auth/signup` — create a new teacher account
+- `GET /auth/verify-email` — verify email address via HMAC token
+- `POST /auth/resend-verification` — resend the verification email
 - `POST /contact/inquiry` — unauthenticated school/district inquiry form submission
 - `POST /contact/dpa-request` — unauthenticated DPA request from a school/district administrator
 
@@ -59,9 +62,36 @@ All endpoints require a valid JWT Bearer token in the `Authorization` header unl
 
 | Method | Path | Description |
 |---|---|---|
+| POST | `/auth/signup` | Create a new teacher account (public) |
+| GET | `/auth/verify-email` | Verify email via HMAC token (public) |
+| POST | `/auth/resend-verification` | Resend verification email (public) |
 | POST | `/auth/login` | Issue access + refresh tokens |
 | POST | `/auth/refresh` | Exchange refresh token for new access token |
 | POST | `/auth/logout` | Invalidate refresh token |
+
+**POST /auth/signup body:**
+```json
+{
+  "email": "teacher@school.edu",
+  "password": "SecurePass1",
+  "first_name": "Alex",
+  "last_name": "Smith",
+  "school_name": "Lincoln High School"
+}
+```
+Returns `201` with `{"data": {"id": "<uuid>", "email": "...", "created_at": "...", "message": "..."}}`.  
+Returns `409` if the email is already registered.  
+Returns `429` if more than 5 sign-up attempts are made from the same IP in one hour.
+
+**GET /auth/verify-email query params:** `?token=<raw_token>`  
+Consumes a single-use token (24 h TTL). The server computes an HMAC-SHA256 tag over the raw token to look up the Redis entry — the token itself is a random URL-safe string, not an encoded signature. Returns `200` on success, `422` for invalid/expired/already-used token.
+
+**POST /auth/resend-verification body:**
+```json
+{ "email": "teacher@school.edu" }
+```
+Always returns `202` regardless of whether the email is registered (avoids account-existence oracle).  
+Returns `429` if more than 3 resend requests are made for the same email in one hour.
 
 ---
 
