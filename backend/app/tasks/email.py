@@ -97,8 +97,9 @@ def send_inquiry_notification(self: object, inquiry_id: str) -> None:
     msg.set_content("\n".join(body_lines))
 
     try:
-        smtp_timeout: int = getattr(settings, "smtp_timeout", 10)
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=smtp_timeout) as smtp:
+        with smtplib.SMTP(
+            settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
+        ) as smtp:
             smtp.send_message(msg)
         logger.info(
             "Inquiry notification email sent",

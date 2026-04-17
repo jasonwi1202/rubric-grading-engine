@@ -8,10 +8,6 @@ vi.mock("@/lib/api/contact", () => ({
 }));
 
 describe("PricingContent", () => {
-  it("renders without throwing", () => {
-    expect(() => render(<PricingContent />)).not.toThrow();
-  });
-
   describe("Page structure", () => {
     it("renders exactly one h1", () => {
       render(<PricingContent />);
