@@ -87,12 +87,14 @@ async def get_current_teacher_optional(
 ) -> uuid.UUID | None:
     """Extract the authenticated teacher's UUID without raising on failure.
 
-    Returns ``None`` if the Authorization header is absent, malformed, or
-    references an unknown account.  Used by the logout endpoint for
-    best-effort audit logging.
+    Returns ``None`` if the Authorization header is absent, the scheme is
+    not ``Bearer``, or the token is malformed/expired/wrong-type.  Does not
+    perform a database lookup — only decodes the JWT claim.  Used by the
+    logout endpoint for best-effort audit logging.
     """
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    # HTTP auth schemes are case-insensitive (RFC 7235 §2.1).
+    if not auth_header.lower().startswith("bearer "):
         return None
 
     token = auth_header[len("Bearer ") :]

@@ -1,9 +1,9 @@
 /**
  * Dashboard layout — wraps all authenticated teacher views.
  *
- * Includes a trial status banner in the header when the teacher's trial
- * is still active, showing remaining days.  The banner is hidden once
- * the trial has expired or the teacher has an active subscription.
+ * Includes a trial status banner in the header when trial status is available.
+ * While the trial is active, it shows remaining days.  Once the trial expires,
+ * it renders an explicit "Your trial has ended" banner with an upgrade link.
  */
 
 "use client";

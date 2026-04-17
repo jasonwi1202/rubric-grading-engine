@@ -32,7 +32,6 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 )
 async def get_status(
     teacher: User = Depends(get_current_teacher),
-    db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
     """Return the current wizard step and completion flag for the teacher.
 

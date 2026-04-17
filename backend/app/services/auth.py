@@ -314,6 +314,11 @@ async def verify_email(
 
     if db_user.email_verified:
         # User was verified by another means (e.g., admin action); treat as success.
+        # Ensure trial_ends_at is set in case it was missing (e.g., pre-migration rows).
+        if db_user.trial_ends_at is None:
+            db_user.trial_ends_at = datetime.now(UTC) + timedelta(days=_TRIAL_DURATION_DAYS)
+            await db.commit()
+            await db.refresh(db_user)
         return db_user
 
     db_user.email_verified = True

@@ -155,3 +155,16 @@ class TestGetCurrentTeacherOptional:
 
         result = await get_current_teacher_optional(request, db)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_accepts_lowercase_bearer_scheme(self) -> None:
+        """HTTP auth schemes are case-insensitive (RFC 7235 §2.1)."""
+        user_id = uuid.uuid4()
+        token = create_access_token(user_id, "teacher@school.edu")
+
+        request = MagicMock()
+        request.headers = {"Authorization": f"bearer {token}"}
+        db = _make_db()
+
+        result = await get_current_teacher_optional(request, db)
+        assert result == user_id

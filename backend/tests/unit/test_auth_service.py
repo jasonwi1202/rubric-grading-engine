@@ -266,6 +266,28 @@ class TestVerifyEmailService:
         assert result is fake_user
         db.commit.assert_not_awaited()  # no re-commit needed
 
+    @pytest.mark.asyncio
+    async def test_sets_trial_ends_at_when_already_verified_and_null(self) -> None:
+        """Pre-migration or manually-verified users with null trial_ends_at get it filled in."""
+        user_id = uuid.uuid4()
+        db, _ = _make_mock_db()
+        redis = _make_mock_redis()
+        redis.getdel = AsyncMock(return_value=str(user_id))
+
+        fake_user = MagicMock()
+        fake_user.id = user_id
+        fake_user.email_verified = True
+        fake_user.trial_ends_at = None  # not yet set
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=fake_user)
+        db.execute = AsyncMock(return_value=mock_result)
+
+        result = await verify_email(db, redis, "some_token")
+
+        assert result is fake_user
+        assert fake_user.trial_ends_at is not None
+        db.commit.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # resend_verification
