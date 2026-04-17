@@ -95,7 +95,11 @@ class TestSubmitInquiryHappyPath:
         ):
             resp = client.post(
                 "/api/v1/contact/inquiry",
-                json={"name": "Bob", "email": "bob@school.edu", "school_name": "Bob School"},
+                json={
+                    "name": "Bob",
+                    "email": "bob@school.edu",
+                    "school_name": "Bob School",
+                },
             )
 
         assert resp.status_code == 201, f"Got {resp.status_code}: {resp.text}"

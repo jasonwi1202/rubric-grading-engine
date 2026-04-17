@@ -9,6 +9,7 @@ service layer using Redis.
 """
 
 import logging
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -30,11 +31,15 @@ class _InquiryResponseEnvelope(BaseModel):
     data: ContactInquiryResponse
 
 
-def _get_redis() -> Redis:
-    """FastAPI dependency that returns an async Redis client."""
+async def _get_redis() -> AsyncGenerator[Redis, None]:
+    """FastAPI dependency that yields an async Redis client and closes it on teardown."""
     from app.config import settings
 
-    return Redis.from_url(settings.redis_url, decode_responses=True)
+    client: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        yield client
+    finally:
+        await client.aclose()
 
 
 def _get_client_ip(request: Request) -> str | None:
