@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from redis import Redis
+from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
 from app.schemas.contact import ContactInquiryRequest, ContactInquiryResponse
@@ -30,24 +30,20 @@ class _InquiryResponseEnvelope(BaseModel):
     data: ContactInquiryResponse
 
 
-def _get_redis() -> Redis:  # type: ignore[type-arg]
-    """FastAPI dependency that returns a Redis client."""
+def _get_redis() -> Redis:
+    """FastAPI dependency that returns an async Redis client."""
     from app.config import settings
 
     return Redis.from_url(settings.redis_url, decode_responses=True)
 
 
 def _get_client_ip(request: Request) -> str | None:
-    """Extract the real client IP from the request.
+    """Extract the client IP address from the direct request connection.
 
-    Checks ``X-Forwarded-For`` first (set by reverse proxies such as nginx or
-    Railway's edge), falling back to the direct connection address.
+    This public unauthenticated endpoint does not trust ``X-Forwarded-For``
+    headers — a caller can spoof them to bypass per-IP rate limiting.  Use
+    the direct socket address instead.
     """
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # The header may contain a comma-separated list; the first entry is the
-        # original client IP.
-        return forwarded_for.split(",")[0].strip()
     if request.client:
         return request.client.host
     return None
@@ -63,7 +59,7 @@ async def submit_inquiry(
     request: Request,
     payload: ContactInquiryRequest,
     db: AsyncSession = Depends(get_db),
-    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+    redis_client: Redis = Depends(_get_redis),
 ) -> JSONResponse:
     """Store an inbound school/district inquiry and enqueue a notification email.
 
@@ -81,15 +77,7 @@ async def submit_inquiry(
     try:
         from app.tasks.email import send_inquiry_notification
 
-        send_inquiry_notification.delay(
-            inquiry_id=str(inquiry.id),
-            name=inquiry.name,
-            school_name=inquiry.school_name,
-            email=inquiry.email,
-            district=inquiry.district,
-            estimated_teachers=inquiry.estimated_teachers,
-            message=inquiry.message,
-        )
+        send_inquiry_notification.delay(inquiry_id=str(inquiry.id))
     except Exception:
         logger.exception(
             "Failed to enqueue inquiry notification task",

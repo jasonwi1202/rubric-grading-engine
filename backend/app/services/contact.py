@@ -9,7 +9,7 @@ No student PII is collected, processed, or stored by this service.
 
 import logging
 
-from redis import Redis
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import RateLimitError
@@ -28,7 +28,7 @@ def _rate_limit_key(ip: str) -> str:
     return f"contact:inquiry:ratelimit:{ip}"
 
 
-def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[type-arg]
+async def _check_rate_limit(redis_client: Redis, ip: str) -> None:
     """Raise RateLimitError if the IP has exceeded the rate limit.
 
     Uses a simple Redis counter with a 1-hour TTL.  The counter is
@@ -36,10 +36,10 @@ def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[typ
     that the window resets naturally after one hour.
     """
     key = _rate_limit_key(ip)
-    current: int = redis_client.incr(key)
+    current: int = await redis_client.incr(key)
     if current == 1:
         # First submission within this window — set the expiry.
-        redis_client.expire(key, _RATE_LIMIT_WINDOW_SECONDS)
+        await redis_client.expire(key, _RATE_LIMIT_WINDOW_SECONDS)
     if current > _RATE_LIMIT_MAX:
         raise RateLimitError(
             "Too many inquiry submissions from this IP. Please try again later.",
@@ -48,7 +48,7 @@ def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[typ
 
 async def create_inquiry(
     db: AsyncSession,
-    redis_client: Redis,  # type: ignore[type-arg]
+    redis_client: Redis,
     payload: ContactInquiryRequest,
     submitter_ip: str | None,
 ) -> ContactInquiry:

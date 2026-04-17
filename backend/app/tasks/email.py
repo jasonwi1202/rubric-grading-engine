@@ -5,32 +5,45 @@ purposes (e.g. new school inquiry alerts).  They do not send email to
 students or process student data.
 """
 
+import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
 
+from sqlalchemy import select
+
+from app.db.session import AsyncSessionLocal
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
+
+
+async def _load_inquiry(inquiry_id: str) -> object:
+    """Load a ContactInquiry record from the database by ID.
+
+    Returns the ORM instance, or ``None`` if not found.  Imported lazily
+    inside the task to avoid circular imports at module load time.
+    """
+    from app.models.contact import ContactInquiry  # noqa: PLC0415
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(ContactInquiry).where(ContactInquiry.id == inquiry_id)  # type: ignore[arg-type]
+        )
+        return result.scalar_one_or_none()
 
 
 @celery.task(  # type: ignore[untyped-decorator]
     name="tasks.email.send_inquiry_notification",
     bind=True,
     max_retries=3,
-    default_retry_delay=60,
 )
-def send_inquiry_notification(
-    self: object,
-    inquiry_id: str,
-    name: str,
-    school_name: str,
-    email: str,
-    district: str | None,
-    estimated_teachers: int | None,
-    message: str | None,
-) -> None:
+def send_inquiry_notification(self: object, inquiry_id: str) -> None:
     """Send an internal notification email when a new contact inquiry arrives.
+
+    Loads the persisted ``ContactInquiry`` record by ``inquiry_id`` so that
+    retries always work from the canonical source of truth rather than a
+    potentially stale serialised payload.
 
     The email is sent to ``settings.contact_email``.  If that setting is not
     configured, the task exits early (no-op) — this allows the feature to
@@ -38,12 +51,6 @@ def send_inquiry_notification(
 
     Args:
         inquiry_id: UUID of the persisted ContactInquiry record.
-        name: Submitter's name.
-        school_name: School or district name from the form.
-        email: Submitter's email address.
-        district: Optional district name.
-        estimated_teachers: Optional teacher count.
-        message: Optional free-text message.
     """
     from app.config import settings  # imported here to avoid circular import at module load
 
@@ -55,21 +62,29 @@ def send_inquiry_notification(
         )
         return
 
+    inquiry = asyncio.run(_load_inquiry(inquiry_id))
+    if inquiry is None:
+        logger.warning(
+            "Inquiry record not found — skipping notification email",
+            extra={"inquiry_id": inquiry_id},
+        )
+        return
+
     body_lines = [
         f"New school/district inquiry received (ID: {inquiry_id})",
         "",
-        f"Name:               {name}",
-        f"Email:              {email}",
-        f"School:             {school_name}",
-        f"District:           {district or '—'}",
-        f"Estimated teachers: {estimated_teachers or '—'}",
+        f"Name:               {inquiry.name}",  # type: ignore[attr-defined]
+        f"Email:              {inquiry.email}",  # type: ignore[attr-defined]
+        f"School:             {inquiry.school_name}",  # type: ignore[attr-defined]
+        f"District:           {inquiry.district or '—'}",  # type: ignore[attr-defined]
+        f"Estimated teachers: {inquiry.estimated_teachers or '—'}",  # type: ignore[attr-defined]
         "",
         "Message:",
-        message or "(none)",
+        inquiry.message or "(none)",  # type: ignore[attr-defined]
     ]
 
     msg = EmailMessage()
-    msg["Subject"] = f"New inquiry from {school_name}"
+    msg["Subject"] = f"New inquiry from {inquiry.school_name}"  # type: ignore[attr-defined]
     msg["From"] = recipient
     msg["To"] = recipient
     msg.set_content("\n".join(body_lines))
@@ -84,6 +99,8 @@ def send_inquiry_notification(
     except (smtplib.SMTPException, OSError) as exc:
         logger.warning(
             "Failed to send inquiry notification email — will retry",
-            extra={"inquiry_id": inquiry_id, "error": str(exc)},
+            extra={"inquiry_id": inquiry_id, "error_type": type(exc).__name__},
         )
-        raise self.retry(exc=exc) from exc  # type: ignore[attr-defined]
+        # Exponential backoff: 60s, 120s, 240s for retries 0, 1, 2.
+        countdown = 60 * (2**self.request.retries)  # type: ignore[attr-defined]
+        raise self.retry(exc=exc, countdown=countdown) from exc  # type: ignore[attr-defined]
