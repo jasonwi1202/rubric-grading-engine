@@ -4,7 +4,9 @@ Revision ID: 004_audit_logs
 Revises: 003_users
 Create Date: 2026-04-17 00:03:00.000000
 
-This migration creates indexes CONCURRENTLY and must run outside a transaction.
+Creates the ``audit_logs`` table and its composite indexes.  The table and
+indexes are created together in a single transaction; ``CONCURRENTLY`` is not
+used here because the indexes are on a brand-new, empty table.
 """
 
 from collections.abc import Sequence

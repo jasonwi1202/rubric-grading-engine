@@ -3,8 +3,9 @@
 Business logic for the teacher sign-up flow:
 
 * ``create_user``          — validate email uniqueness, bcrypt-hash password,
-                             persist account, write audit log, enqueue
-                             verification email.
+                             persist account, and write audit log. The caller
+                             is responsible for generating the verification
+                             token and enqueueing the verification email.
 * ``generate_verification_token`` / ``verify_email_token`` — HMAC-backed,
                              single-use, 24 h TTL tokens stored in Redis.
 * ``resend_verification``  — rate-limited (max 3/h per email) re-send.
@@ -25,6 +26,7 @@ import bcrypt
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.exceptions import ConflictError, RateLimitError, ValidationError
 
@@ -210,8 +212,10 @@ async def create_user(
     if existing.scalar_one_or_none() is not None:
         raise ConflictError("An account with this email already exists.")
 
-    # 3. Hash password
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    # 3. Hash password — CPU-bound; run in a thread to avoid blocking the event loop.
+    hashed = await run_in_threadpool(
+        lambda: bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    )
 
     # 4. Persist user
     new_user = User(
@@ -253,6 +257,12 @@ async def verify_email(
 ) -> User:
     """Mark a teacher's email as verified by consuming the single-use token.
 
+    The token is consumed atomically from Redis on first use (``GETDEL``).
+    A second click on the same link will return ``None`` from Redis and raise
+    ``ValidationError`` — the endpoint is **not** idempotent for subsequent
+    requests after the token has been consumed.  Callers should surface a
+    "resend" link when 422 is returned so users can obtain a fresh token.
+
     Args:
         db: Async database session.
         redis_client: Redis client.  # type: ignore[type-arg]
@@ -285,7 +295,7 @@ async def verify_email(
         )
 
     if db_user.email_verified:
-        # Idempotent — already verified is still a success.
+        # User was verified by another means (e.g., admin action); treat as success.
         return db_user
 
     db_user.email_verified = True

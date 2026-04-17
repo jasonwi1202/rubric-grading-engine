@@ -120,10 +120,10 @@ async def signup(
             user_id=str(new_user.id),
             raw_token=raw_token,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Failed to enqueue verification email task",
-            extra={"user_id": str(new_user.id)},
+            extra={"user_id": str(new_user.id), "error_type": type(exc).__name__},
         )
 
     response_data = SignupResponse(
@@ -158,8 +158,7 @@ async def verify_email_endpoint(
     - Returns 200 on success.
     - Returns 422 for invalid, expired, or already-used tokens.
     """
-    verified_user = await verify_email(db, redis_client, token)
-    _ = verified_user  # result used implicitly; user is now verified
+    await verify_email(db, redis_client, token)
     response = VerifyEmailResponse(message="Email verified successfully. You can now sign in.")
     return JSONResponse(
         status_code=200,
@@ -207,10 +206,10 @@ async def resend_verification_endpoint(
                 user_id=str(db_user.id),
                 raw_token=raw_token,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Failed to enqueue verification email resend task",
-                extra={"user_id": str(db_user.id)},
+                extra={"user_id": str(db_user.id), "error_type": type(exc).__name__},
             )
 
     return JSONResponse(

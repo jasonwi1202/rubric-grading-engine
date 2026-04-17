@@ -7,8 +7,6 @@
  * Security notes:
  * - No student PII is collected or processed in this module.
  * - Passwords are transmitted only over HTTPS (enforced by the backend).
- * - The access token returned after verification is stored in memory via
- *   lib/auth/session.ts — never in localStorage or sessionStorage.
  */
 
 import { apiPost, apiGet } from "@/lib/api/client";

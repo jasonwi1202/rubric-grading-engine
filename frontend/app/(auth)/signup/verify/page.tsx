@@ -4,7 +4,6 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { resendVerification } from "@/lib/api/auth";
-import { ApiError } from "@/lib/api/errors";
 
 /**
  * Inner component that reads the `email` query param via useSearchParams.
@@ -23,12 +22,8 @@ function VerifyContent() {
     try {
       await resendVerification(email);
       setResendStatus("sent");
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 429) {
-        setResendStatus("error");
-      } else {
-        setResendStatus("error");
-      }
+    } catch {
+      setResendStatus("error");
     }
   };
 

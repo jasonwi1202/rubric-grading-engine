@@ -27,13 +27,14 @@ function VerifyContent() {
     }
 
     let cancelled = false;
+    let redirectTimer: ReturnType<typeof setTimeout> | undefined;
 
     verifyEmail(token)
       .then(() => {
         if (!cancelled) {
           setState("success");
           // Redirect to login after a short delay so the user can see the message.
-          setTimeout(() => {
+          redirectTimer = setTimeout(() => {
             router.replace("/login?verified=1");
           }, 2500);
         }
@@ -52,6 +53,7 @@ function VerifyContent() {
 
     return () => {
       cancelled = true;
+      clearTimeout(redirectTimer);
     };
   }, [token, router]);
 
