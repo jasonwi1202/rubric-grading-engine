@@ -1,11 +1,10 @@
 """Contact inquiry router.
 
-Exposes a single public endpoint for school/district purchase inquiries
-submitted from the pricing page.  No authentication is required — this is
-a public-facing form endpoint.
+Exposes public endpoints for school/district purchase inquiries and DPA
+requests.  No authentication is required — these are public-facing form
+endpoints.
 
-Rate limiting (max 5 submissions per IP per hour) is enforced in the
-service layer using Redis.
+Rate limiting is enforced in the service layer using Redis.
 """
 
 import logging
@@ -18,7 +17,9 @@ from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
 from app.schemas.contact import ContactInquiryRequest, ContactInquiryResponse
+from app.schemas.dpa import DpaRequestCreate, DpaRequestResponse
 from app.services.contact import create_inquiry
+from app.services.dpa import create_dpa_request
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,12 @@ class _InquiryResponseEnvelope(BaseModel):
     """Standard data envelope wrapping a ContactInquiryResponse."""
 
     data: ContactInquiryResponse
+
+
+class _DpaResponseEnvelope(BaseModel):
+    """Standard data envelope wrapping a DpaRequestResponse."""
+
+    data: DpaRequestResponse
 
 
 async def _get_redis() -> AsyncGenerator[Redis, None]:
@@ -90,6 +97,47 @@ async def submit_inquiry(
         )
 
     response_data = ContactInquiryResponse.model_validate(inquiry)
+    return JSONResponse(
+        status_code=201,
+        content={"data": response_data.model_dump(mode="json")},
+    )
+
+
+@router.post(
+    "/dpa-request",
+    status_code=201,
+    response_model=_DpaResponseEnvelope,
+    summary="Submit a Data Processing Agreement request",
+)
+async def submit_dpa_request(
+    request: Request,
+    payload: DpaRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(_get_redis),
+) -> JSONResponse:
+    """Store an inbound DPA request and enqueue a notification email.
+
+    - Input is validated by the ``DpaRequestCreate`` Pydantic model.
+    - Rate-limited to 3 requests per IP per hour (raises 429 on excess).
+    - No student PII is collected or stored.
+    - On success, enqueues a Celery task to send a notification email to
+      ``settings.contact_email``.
+    """
+    client_ip = _get_client_ip(request)
+    dpa_req = await create_dpa_request(db, redis_client, payload, client_ip)
+
+    # Enqueue notification email asynchronously.  Fire-and-forget.
+    try:
+        from app.tasks.email import send_dpa_request_notification
+
+        send_dpa_request_notification.delay(dpa_request_id=str(dpa_req.id))
+    except Exception:
+        logger.exception(
+            "Failed to enqueue DPA request notification task",
+            extra={"dpa_request_id": str(dpa_req.id)},
+        )
+
+    response_data = DpaRequestResponse.model_validate(dpa_req)
     return JSONResponse(
         status_code=201,
         content={"data": response_data.model_dump(mode="json")},
