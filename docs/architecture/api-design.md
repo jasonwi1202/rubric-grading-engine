@@ -45,7 +45,10 @@ Errors:
 All list endpoints accept `?page=1&page_size=25`. Default page size: 25. Max: 100.
 
 ### Authentication
-All endpoints require a valid JWT Bearer token in the `Authorization` header. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
+All endpoints require a valid JWT Bearer token in the `Authorization` header unless explicitly documented as public. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
+
+**Public endpoints (no JWT required):**
+- `POST /contact/inquiry` — unauthenticated school/district inquiry form submission
 
 ---
 

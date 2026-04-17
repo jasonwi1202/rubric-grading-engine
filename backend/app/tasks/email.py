@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import smtplib
+import uuid as _uuid_mod
 from email.message import EmailMessage
 from typing import TYPE_CHECKING
 
@@ -34,7 +35,7 @@ async def _load_inquiry(inquiry_id: str) -> ContactInquiry | None:
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(_ContactInquiry).where(_ContactInquiry.id == inquiry_id)  # type: ignore[arg-type]
+            select(_ContactInquiry).where(_ContactInquiry.id == _uuid_mod.UUID(inquiry_id))
         )
         return result.scalar_one_or_none()
 

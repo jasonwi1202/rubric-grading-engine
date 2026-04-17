@@ -67,7 +67,7 @@ async def create_inquiry(
         RateLimitError: If the submitter IP has exceeded the rate limit.
     """
     if submitter_ip:
-        _check_rate_limit(redis_client, submitter_ip)
+        await _check_rate_limit(redis_client, submitter_ip)
 
     inquiry = ContactInquiry(
         name=payload.name,

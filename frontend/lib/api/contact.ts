@@ -11,7 +11,7 @@ export interface ContactInquiryResponse {
 }
 
 /**
- * POST /api/v1/contact/inquiry
+ * POST /contact/inquiry
  *
  * Submits a school/district purchase inquiry.  Returns the created record
  * metadata (id, created_at) on success.
@@ -19,5 +19,5 @@ export interface ContactInquiryResponse {
 export function submitContactInquiry(
   payload: ContactInquiryFormValues,
 ): Promise<ContactInquiryResponse> {
-  return apiPost<ContactInquiryResponse>("/api/v1/contact/inquiry", payload);
+  return apiPost<ContactInquiryResponse>("/contact/inquiry", payload);
 }
