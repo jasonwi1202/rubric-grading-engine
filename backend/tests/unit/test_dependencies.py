@@ -16,7 +16,7 @@ import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.dependencies import get_current_teacher, get_current_teacher_optional
-from app.exceptions import UnauthorizedError, ValidationError
+from app.exceptions import UnauthorizedError
 from app.services.auth import create_access_token
 
 # ---------------------------------------------------------------------------
@@ -67,14 +67,14 @@ class TestGetCurrentTeacher:
             await get_current_teacher(credentials=None, db=db)
 
     @pytest.mark.asyncio
-    async def test_invalid_token_raises_validation_error(self) -> None:
+    async def test_invalid_token_raises_unauthorized(self) -> None:
         credentials = _make_credentials("not_a_valid_jwt_token")
         db = _make_db()
-        with pytest.raises(ValidationError):
+        with pytest.raises(UnauthorizedError):
             await get_current_teacher(credentials=credentials, db=db)
 
     @pytest.mark.asyncio
-    async def test_wrong_token_type_raises_validation_error(self) -> None:
+    async def test_wrong_token_type_raises_unauthorized(self) -> None:
         """A JWT with type != 'access' (e.g. a future refresh-JWT) must be rejected."""
         import jwt as pyjwt
 
@@ -87,27 +87,27 @@ class TestGetCurrentTeacher:
         )
         credentials = _make_credentials(bad_token)
         db = _make_db()
-        with pytest.raises(ValidationError, match="Invalid token type"):
+        with pytest.raises(UnauthorizedError, match="Invalid token type"):
             await get_current_teacher(credentials=credentials, db=db)
 
     @pytest.mark.asyncio
-    async def test_user_not_found_raises_validation_error(self) -> None:
+    async def test_user_not_found_raises_unauthorized(self) -> None:
         user_id = uuid.uuid4()
         token = create_access_token(user_id, "ghost@school.edu")
         credentials = _make_credentials(token)
         db = _make_db(fake_user=None)
 
-        with pytest.raises(ValidationError, match="Account not found"):
+        with pytest.raises(UnauthorizedError, match="Account not found"):
             await get_current_teacher(credentials=credentials, db=db)
 
     @pytest.mark.asyncio
-    async def test_unverified_email_raises_validation_error(self) -> None:
+    async def test_unverified_email_raises_unauthorized(self) -> None:
         user = _make_user(verified=False)
         token = create_access_token(user.id, user.email)
         credentials = _make_credentials(token)
         db = _make_db(fake_user=user)
 
-        with pytest.raises(ValidationError, match="not verified"):
+        with pytest.raises(UnauthorizedError, match="not verified"):
             await get_current_teacher(credentials=credentials, db=db)
 
 

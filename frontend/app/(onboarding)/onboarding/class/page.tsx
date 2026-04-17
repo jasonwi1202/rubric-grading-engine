@@ -82,11 +82,18 @@ export default function OnboardingClassPage() {
       });
       router.push("/onboarding/rubric");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login?next=/onboarding/class");
-      } else {
-        setServerError("Failed to create class. Please try again.");
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          router.replace("/login?next=/onboarding/class");
+          return;
+        }
+        // 404/405: classes endpoint not yet implemented (M3) — soft-advance
+        if (err.status === 404 || err.status === 405) {
+          router.push("/onboarding/rubric");
+          return;
+        }
       }
+      setServerError("Failed to create class. Please try again.");
     }
   };
 

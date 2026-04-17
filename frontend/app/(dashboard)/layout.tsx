@@ -33,7 +33,7 @@ function TrialBanner({ trialEndsAt }: { trialEndsAt: string }) {
       >
         <span className="font-medium text-red-800">Your trial has ended.</span>{" "}
         <a
-          href="/billing/upgrade"
+          href="/pricing"
           className="font-semibold text-red-700 underline hover:text-red-900"
         >
           Upgrade to continue grading
@@ -59,7 +59,7 @@ function TrialBanner({ trialEndsAt }: { trialEndsAt: string }) {
         <>
           {" "}—{" "}
           <a
-            href="/billing/upgrade"
+            href="/pricing"
             className={`font-semibold underline ${linkColor}`}
           >
             Upgrade now

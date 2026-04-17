@@ -98,16 +98,16 @@ Returns `429` if more than 3 resend requests are made for the same email in one 
 { "email": "teacher@school.edu", "password": "SecurePass1" }
 ```
 Returns `200` with `{"data": {"access_token": "<jwt>", "token_type": "bearer"}}`.  
-Sets an `httpOnly; Secure; SameSite=Strict` cookie named `refresh_token` (7-day TTL).  
+Sets an `httpOnly; SameSite=Strict` cookie named `refresh_token` (7-day TTL). The cookie includes `Secure` in staging/production over HTTPS; `Secure` is disabled in local development for `http://localhost`.  
 Returns `422` for invalid credentials or unverified email.
 
 **POST /auth/refresh** (no body; reads `refresh_token` cookie)  
 Returns `200` with a new `{"data": {"access_token": "<jwt>", "token_type": "bearer"}}`.  
-Rotates the refresh token (old token invalidated, new cookie set).  
+Rotates the refresh token (old token invalidated, new cookie set with the same environment-dependent attributes: `Secure` in staging/production, disabled for local development).  
 Returns `401` if the cookie is absent; `422` if the token is invalid or expired.
 
 **POST /auth/logout** (no body; reads `refresh_token` cookie)  
-Returns `204`. Invalidates the refresh token server-side and clears the cookie.  
+Returns `204`. Invalidates the refresh token server-side and clears the cookie using the same environment-appropriate cookie attributes.  
 Idempotent — always returns `204` regardless of whether the cookie was present.
 
 ---

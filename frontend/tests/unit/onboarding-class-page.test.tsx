@@ -189,6 +189,42 @@ describe("OnboardingClassPage — error handling", () => {
     // Raw API error detail must not be shown
     expect(screen.queryByText("Server error.")).not.toBeInTheDocument();
   });
+
+  it("soft-advances to /onboarding/rubric on 404 (classes endpoint not yet implemented)", async () => {
+    mockCreateClass.mockRejectedValueOnce(
+      new ApiError(404, { code: "NOT_FOUND", message: "Not found." }),
+    );
+
+    const user = userEvent.setup();
+    render(<OnboardingClassPage />);
+
+    await fillClassName(user, "Period 3 English");
+    await selectGradeLevel(user, "Grade 9");
+    await user.click(screen.getByRole("button", { name: /create class/i }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/onboarding/rubric");
+    });
+    expect(screen.queryByText(/failed to create class/i)).not.toBeInTheDocument();
+  });
+
+  it("soft-advances to /onboarding/rubric on 405 (method not allowed)", async () => {
+    mockCreateClass.mockRejectedValueOnce(
+      new ApiError(405, { code: "METHOD_NOT_ALLOWED", message: "Method not allowed." }),
+    );
+
+    const user = userEvent.setup();
+    render(<OnboardingClassPage />);
+
+    await fillClassName(user, "Period 3 English");
+    await selectGradeLevel(user, "Grade 9");
+    await user.click(screen.getByRole("button", { name: /create class/i }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith("/onboarding/rubric");
+    });
+    expect(screen.queryByText(/failed to create class/i)).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

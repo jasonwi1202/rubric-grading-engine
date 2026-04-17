@@ -41,27 +41,31 @@ async def get_current_teacher(
     authenticated teacher.
 
     Raises:
-        UnauthorizedError: Bearer header is absent — maps to HTTP 401.
-        ValidationError: Token is malformed, expired, wrong type, or references
-            a deleted / unverified account — maps to HTTP 422.
+        UnauthorizedError: Bearer header is absent, token is malformed/expired,
+            wrong type, or references a deleted / unverified account — maps to
+            HTTP 401.  Returning 401 for all these cases ensures the frontend
+            silent-refresh cycle fires instead of stranding the session.
     """
     if credentials is None:
         raise UnauthorizedError("Authentication required.")
 
-    payload = decode_access_token(credentials.credentials)
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except ValidationError as exc:
+        raise UnauthorizedError("Invalid or expired token.") from exc
 
     # Reject tokens that are not access tokens (e.g. future refresh-JWT types).
     if payload.get("type") != "access":
-        raise ValidationError("Invalid token type.", field="token")
+        raise UnauthorizedError("Invalid token type.")
 
     sub = payload.get("sub")
     if not isinstance(sub, str):
-        raise ValidationError("Invalid token payload.", field="token")
+        raise UnauthorizedError("Invalid token payload.")
 
     try:
         user_id = uuid.UUID(sub)
     except ValueError as exc:
-        raise ValidationError("Invalid token payload.", field="token") from exc
+        raise UnauthorizedError("Invalid token payload.") from exc
 
     from app.models.user import User
 
@@ -69,10 +73,10 @@ async def get_current_teacher(
     db_user = result.scalar_one_or_none()
 
     if db_user is None:
-        raise ValidationError("Account not found.", field="token")
+        raise UnauthorizedError("Account not found.")
 
     if not db_user.email_verified:
-        raise ValidationError("Email address is not verified.", field="token")
+        raise UnauthorizedError("Email address is not verified.")
 
     return db_user
 
@@ -94,7 +98,11 @@ async def get_current_teacher_optional(
     token = auth_header[len("Bearer ") :]
     try:
         payload = decode_access_token(token)
-    except (ValidationError, Exception):
+    except ValidationError:
+        return None
+
+    # Only accept access tokens — reject refresh tokens or unknown types.
+    if payload.get("type") != "access":
         return None
 
     sub = payload.get("sub")

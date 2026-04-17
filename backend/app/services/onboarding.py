@@ -50,14 +50,14 @@ async def get_onboarding_status(
 ) -> tuple[int, bool]:
     """Return the teacher's current onboarding step and completion flag.
 
-    The step is determined as follows:
-    - Step 1 (create class): returned when ``onboarding_complete`` is False
-      and no classes exist (M3 table not yet available — defaults to step 1).
-    - Step 2 (create rubric): returned when classes exist but no rubrics.
-    - ``completed = True``: returned when ``onboarding_complete = True``.
+    The step is currently determined only from ``onboarding_complete``:
 
-    Until the M3 classes/rubrics tables are implemented, ``step`` defaults
-    to 1 for all teachers with ``onboarding_complete = False``.
+    - Step 1 (create class): returned when ``onboarding_complete`` is False.
+    - ``completed = True``: returned when ``onboarding_complete = True``,
+      with step 2.
+
+    Until the M3 classes/rubrics tables are implemented, this service does not
+    derive finer-grained steps from related onboarding data.
 
     Args:
         db: Async database session.
