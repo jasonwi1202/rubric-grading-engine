@@ -8,8 +8,6 @@ verification).  They do not send email to students or process student data.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import logging
 import smtplib
 import uuid
@@ -66,32 +64,50 @@ async def _load_user(user_id: str) -> User | None:
 
 
 def _generate_unsubscribe_token(user_id: str, email_type: str, secret: str) -> str:
-    """Generate an HMAC-SHA256 unsubscribe token scoped to user and email type.
+    """Return an empty token — the unsubscribe flow is not yet implemented.
 
-    The token is deterministic for a given (user_id, email_type, secret) triple
-    so the same link is always re-generatable for verification.
+    The ``/unsubscribe`` frontend route, backend verification endpoint, and
+    persisted opt-out state do not exist yet.  Emitting a signed token that
+    points at a non-existent route would send users to a broken page and imply
+    opt-out support the system cannot honor.  This helper intentionally returns
+    an empty string until the full unsubscribe workflow is implemented.
 
     Args:
-        user_id: UUID string of the teacher.
-        email_type: A short descriptor of the email category (e.g. ``"trial_warning"``).
-        secret: HMAC signing secret from settings.
+        user_id: UUID string of the teacher (reserved for future use).
+        email_type: Email category descriptor (reserved for future use).
+        secret: HMAC signing secret (reserved for future use).
 
     Returns:
-        Hex-encoded SHA-256 digest (64 characters).
+        An empty string.
     """
-    msg = f"{user_id}:{email_type}"
-    return hmac.new(
-        key=secret.encode(),
-        msg=msg.encode(),
-        digestmod=hashlib.sha256,
-    ).hexdigest()
+    _ = user_id
+    _ = email_type
+    _ = secret
+    return ""
 
 
 def _build_unsubscribe_url(user_id: str, email_type: str, frontend_url: str, secret: str) -> str:
-    """Return the full unsubscribe URL with an HMAC-signed token."""
-    token = _generate_unsubscribe_token(user_id, email_type, secret)
-    base = frontend_url.rstrip("/")
-    return f"{base}/unsubscribe?user_id={user_id}&type={email_type}&token={token}"
+    """Return an empty string — the unsubscribe flow is not yet implemented.
+
+    Returning a ``${FRONTEND_URL}/unsubscribe`` URL here would send users to a
+    broken route.  Keep the helper signature stable for call-site compatibility
+    and return an empty string until the full end-to-end unsubscribe flow is
+    implemented.
+
+    Args:
+        user_id: Reserved for future use.
+        email_type: Reserved for future use.
+        frontend_url: Reserved for future use.
+        secret: Reserved for future use.
+
+    Returns:
+        An empty string.
+    """
+    _ = user_id
+    _ = email_type
+    _ = frontend_url
+    _ = secret
+    return ""
 
 
 def _send_smtp_message(msg: EmailMessage) -> None:
@@ -457,7 +473,7 @@ def send_trial_expiry_warning(self: object, user_id: str, days_remaining: int) -
     )
 
     day_label = f"{days_remaining} day{'s' if days_remaining != 1 else ''}"
-    body_lines = [
+    body_lines: list[str] = [
         f"Hi {db_user.first_name},",
         "",
         f"Your Rubric Grading Engine trial ends in {day_label}.",
@@ -467,16 +483,16 @@ def send_trial_expiry_warning(self: object, user_id: str, days_remaining: int) -
         upgrade_url,
         "",
         "Your data is safe — nothing is deleted when your trial ends.",
-        "",
-        "—",
-        f"To stop receiving these reminders: {unsubscribe_url}",
     ]
+    if unsubscribe_url:
+        body_lines += ["", "—", f"To stop receiving these reminders: {unsubscribe_url}"]
 
     msg = EmailMessage()
     msg["Subject"] = f"Your trial ends in {day_label} — upgrade to continue grading"
     msg["From"] = sender
     msg["To"] = db_user.email
-    msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+    if unsubscribe_url:
+        msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
     msg.set_content("\n".join(body_lines))
 
     try:
@@ -534,7 +550,7 @@ def send_trial_expired(self: object, user_id: str) -> None:
         user_id, "trial_expired", settings.frontend_url, settings.unsubscribe_hmac_secret
     )
 
-    body_lines = [
+    body_lines: list[str] = [
         f"Hi {db_user.first_name},",
         "",
         "Your Rubric Grading Engine trial has ended.",
@@ -542,16 +558,16 @@ def send_trial_expired(self: object, user_id: str) -> None:
         "Your existing grades and data are preserved.  Upgrade now to resume grading:",
         "",
         upgrade_url,
-        "",
-        "—",
-        f"To stop receiving these emails: {unsubscribe_url}",
     ]
+    if unsubscribe_url:
+        body_lines += ["", "—", f"To stop receiving these emails: {unsubscribe_url}"]
 
     msg = EmailMessage()
     msg["Subject"] = "Your Rubric Grading Engine trial has ended — upgrade to continue"
     msg["From"] = sender
     msg["To"] = db_user.email
-    msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+    if unsubscribe_url:
+        msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
     msg.set_content("\n".join(body_lines))
 
     try:
@@ -597,12 +613,25 @@ async def _do_scan_trial_expirations() -> None:
     today: date = now.date()
 
     for days in (7, 1, 0):
-        target_date = today + timedelta(days=days)
-        window_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=UTC)
+        if days == 0:
+            # Use the *previous* UTC calendar day as the window so that trials
+            # which expire later in today's UTC day (after the Beat run time)
+            # are still caught when Beat fires the following morning.
+            # The ``trial_ends_at <= now`` guard ensures we never enqueue before
+            # expiry — for yesterday's window it is always satisfied.
+            expired_date = today - timedelta(days=1)
+            window_start = datetime(
+                expired_date.year, expired_date.month, expired_date.day, tzinfo=UTC
+            )
+        else:
+            target_date = today + timedelta(days=days)
+            window_start = datetime(
+                target_date.year, target_date.month, target_date.day, tzinfo=UTC
+            )
         window_end = window_start + timedelta(days=1)
 
-        # For day 0 (expired), only select users whose trial has already ended
-        # at the current moment to avoid sending "expired" emails before expiry.
+        # For day 0 add an explicit ``trial_ends_at <= now`` guard as a safety net
+        # in case the task is accidentally run more than once on the same day.
         extra_conditions = [User.trial_ends_at <= now] if days == 0 else []
 
         async with AsyncSessionLocal() as db:

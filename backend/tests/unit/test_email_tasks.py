@@ -52,26 +52,16 @@ def _make_fake_user(user_id: str = _USER_ID) -> MagicMock:
 
 
 class TestGenerateUnsubscribeToken:
-    def test_returns_64_char_hex_string(self) -> None:
+    def test_returns_empty_string(self) -> None:
+        """The unsubscribe flow is not yet implemented; helper returns empty string."""
         token = _generate_unsubscribe_token(_USER_ID, "trial_warning", _SECRET)
-        assert isinstance(token, str)
-        assert len(token) == 64
+        assert token == "", f"Expected empty string stub, got: {repr(token)}"
 
-    def test_deterministic_for_same_inputs(self) -> None:
+    def test_always_returns_same_empty_string(self) -> None:
+        """Returns empty string regardless of inputs."""
         t1 = _generate_unsubscribe_token(_USER_ID, "trial_warning", _SECRET)
-        t2 = _generate_unsubscribe_token(_USER_ID, "trial_warning", _SECRET)
-        assert t1 == t2
-
-    def test_differs_by_email_type(self) -> None:
-        t_warning = _generate_unsubscribe_token(_USER_ID, "trial_warning", _SECRET)
-        t_expired = _generate_unsubscribe_token(_USER_ID, "trial_expired", _SECRET)
-        assert t_warning != t_expired
-
-    def test_differs_by_user_id(self) -> None:
-        other_id = str(uuid.uuid4())
-        t1 = _generate_unsubscribe_token(_USER_ID, "trial_warning", _SECRET)
-        t2 = _generate_unsubscribe_token(other_id, "trial_warning", _SECRET)
-        assert t1 != t2
+        t2 = _generate_unsubscribe_token(_USER_ID, "trial_expired", _SECRET)
+        assert t1 == t2 == ""
 
 
 # ---------------------------------------------------------------------------
@@ -80,22 +70,15 @@ class TestGenerateUnsubscribeToken:
 
 
 class TestBuildUnsubscribeUrl:
-    def test_contains_user_id(self) -> None:
+    def test_returns_empty_string(self) -> None:
+        """The unsubscribe flow is not yet implemented; helper returns empty string."""
         url = _build_unsubscribe_url(_USER_ID, "trial_warning", _FRONTEND_URL, _SECRET)
-        assert _USER_ID in url
+        assert url == "", f"Expected empty string stub, got: {repr(url)}"
 
-    def test_contains_email_type(self) -> None:
-        url = _build_unsubscribe_url(_USER_ID, "trial_warning", _FRONTEND_URL, _SECRET)
-        assert "type=trial_warning" in url
-
-    def test_contains_token(self) -> None:
-        token = _generate_unsubscribe_token(_USER_ID, "trial_warning", _SECRET)
-        url = _build_unsubscribe_url(_USER_ID, "trial_warning", _FRONTEND_URL, _SECRET)
-        assert f"token={token}" in url
-
-    def test_strips_trailing_slash_from_frontend_url(self) -> None:
-        url = _build_unsubscribe_url(_USER_ID, "trial_warning", "http://localhost:3000/", _SECRET)
-        assert url.startswith("http://localhost:3000/unsubscribe")
+    def test_always_returns_empty_string_regardless_of_type(self) -> None:
+        url_warning = _build_unsubscribe_url(_USER_ID, "trial_warning", _FRONTEND_URL, _SECRET)
+        url_expired = _build_unsubscribe_url(_USER_ID, "trial_expired", _FRONTEND_URL, _SECRET)
+        assert url_warning == url_expired == ""
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +235,10 @@ class TestSendTrialExpiryWarning:
         assert sent_msg["To"] == fake_user.email
         assert str(days_remaining) in sent_msg["Subject"]
 
-    def test_includes_unsubscribe_header(self, mocker: pytest.FixtureRequest) -> None:
+    def test_no_unsubscribe_header_until_flow_implemented(
+        self, mocker: pytest.FixtureRequest
+    ) -> None:
+        """No List-Unsubscribe header emitted while unsubscribe flow is not implemented."""
         fake_user = _make_fake_user()
         mocker.patch(
             "app.tasks.email._load_user",
@@ -279,8 +265,7 @@ class TestSendTrialExpiryWarning:
         send_trial_expiry_warning.apply(args=[_USER_ID, 7])
 
         sent_msg = mock_send.call_args[0][0]
-        assert sent_msg["List-Unsubscribe"] is not None
-        assert "trial_warning" in sent_msg["List-Unsubscribe"]
+        assert sent_msg["List-Unsubscribe"] is None
 
     def test_writes_audit_log_on_send(self, mocker: pytest.FixtureRequest) -> None:
         fake_user = _make_fake_user()
@@ -371,7 +356,10 @@ class TestSendTrialExpired:
         assert sent_msg["To"] == fake_user.email
         assert "/pricing" in sent_msg.get_content()
 
-    def test_includes_unsubscribe_header(self, mocker: pytest.FixtureRequest) -> None:
+    def test_no_unsubscribe_header_until_flow_implemented(
+        self, mocker: pytest.FixtureRequest
+    ) -> None:
+        """No List-Unsubscribe header emitted while unsubscribe flow is not implemented."""
         fake_user = _make_fake_user()
         mocker.patch(
             "app.tasks.email._load_user",
@@ -398,8 +386,7 @@ class TestSendTrialExpired:
         send_trial_expired.apply(args=[_USER_ID])
 
         sent_msg = mock_send.call_args[0][0]
-        assert sent_msg["List-Unsubscribe"] is not None
-        assert "trial_expired" in sent_msg["List-Unsubscribe"]
+        assert sent_msg["List-Unsubscribe"] is None
 
     def test_writes_audit_log_on_send(self, mocker: pytest.FixtureRequest) -> None:
         fake_user = _make_fake_user()
@@ -516,9 +503,9 @@ class TestDoScanTrialExpirations:
         result.all.return_value = rows
         return result
 
-    @freeze_time("2025-06-10 08:00:00")  # 08:00 UTC — trial_ends_at in the past = truly expired
+    @freeze_time("2025-06-10 08:00:00")  # 08:00 UTC — Beat runs morning of June 10, covers June 9 window
     def test_day_0_enqueues_send_trial_expired(self, mocker: pytest.FixtureRequest) -> None:
-        """Users whose trial ended before now get a trial_expired task enqueued."""
+        """Users whose trial ended during yesterday's UTC window get trial_expired enqueued."""
         uid = str(uuid.uuid4())
         expired_result = self._make_db_result([uid])
         empty_result = self._make_db_result([])
@@ -612,12 +599,11 @@ class TestDoScanTrialExpirations:
         mock_expired_delay.assert_not_called()
 
     @freeze_time("2025-06-10 06:00:00")
-    def test_day_0_future_trial_not_enqueued(self, mocker: pytest.FixtureRequest) -> None:
-        """Users whose trial_ends_at is later today (in the future) must NOT receive
-        a trial_expired email — the DB query should not return them because of the
-        ``trial_ends_at <= now`` guard.  This test verifies that when the DB returns
-        no results for the day-0 window (as it would for future-expiry rows), no
-        expired task is enqueued.
+    def test_day_0_returns_empty_when_no_expired_users(self, mocker: pytest.FixtureRequest) -> None:
+        """When no users fall in yesterday's window, no expired task is enqueued.
+
+        This covers the case where no trials expired during the previous UTC day
+        (the day-0 window now uses the previous calendar day, not today).
         """
         empty_result = self._make_db_result([])
 

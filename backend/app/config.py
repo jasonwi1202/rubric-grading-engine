@@ -159,6 +159,23 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
+    def smtp_credentials_both_or_neither(self) -> "Settings":
+        """Require both SMTP_USER and SMTP_PASSWORD to be set, or neither.
+
+        Setting only one would silently skip ``smtp.login()`` in
+        ``_send_smtp_message`` (since the check is ``smtp_user and
+        smtp_password``), leading to failed delivery on auth-required servers.
+        """
+        user_set = bool(self.smtp_user)
+        password_set = bool(self.smtp_password)
+        if user_set != password_set:
+            raise ValueError(
+                "SMTP_USER and SMTP_PASSWORD must both be set or both be unset; "
+                "setting only one will break delivery on auth-required SMTP servers."
+            )
+        return self
+
+    @model_validator(mode="after")
     def celery_defaults_from_redis(self) -> "Settings":
         """Default Celery broker/backend to REDIS_URL when not explicitly set."""
         if not self.celery_broker_url:
