@@ -5,30 +5,36 @@ purposes (e.g. new school inquiry alerts).  They do not send email to
 students or process student data.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
 from app.tasks.celery_app import celery
 
+if TYPE_CHECKING:
+    from app.models.contact import ContactInquiry
+
 logger = logging.getLogger(__name__)
 
 
-async def _load_inquiry(inquiry_id: str) -> object:
+async def _load_inquiry(inquiry_id: str) -> ContactInquiry | None:
     """Load a ContactInquiry record from the database by ID.
 
     Returns the ORM instance, or ``None`` if not found.  Imported lazily
     inside the task to avoid circular imports at module load time.
     """
-    from app.models.contact import ContactInquiry  # noqa: PLC0415
+    from app.models.contact import ContactInquiry as _ContactInquiry  # noqa: PLC0415
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(ContactInquiry).where(ContactInquiry.id == inquiry_id)  # type: ignore[arg-type]
+            select(_ContactInquiry).where(_ContactInquiry.id == inquiry_id)  # type: ignore[arg-type]
         )
         return result.scalar_one_or_none()
 
@@ -73,18 +79,18 @@ def send_inquiry_notification(self: object, inquiry_id: str) -> None:
     body_lines = [
         f"New school/district inquiry received (ID: {inquiry_id})",
         "",
-        f"Name:               {inquiry.name}",  # type: ignore[attr-defined]
-        f"Email:              {inquiry.email}",  # type: ignore[attr-defined]
-        f"School:             {inquiry.school_name}",  # type: ignore[attr-defined]
-        f"District:           {inquiry.district or '—'}",  # type: ignore[attr-defined]
-        f"Estimated teachers: {inquiry.estimated_teachers or '—'}",  # type: ignore[attr-defined]
+        f"Name:               {inquiry.name}",
+        f"Email:              {inquiry.email}",
+        f"School:             {inquiry.school_name}",
+        f"District:           {inquiry.district or '—'}",
+        f"Estimated teachers: {inquiry.estimated_teachers or '—'}",
         "",
         "Message:",
-        inquiry.message or "(none)",  # type: ignore[attr-defined]
+        inquiry.message or "(none)",
     ]
 
     msg = EmailMessage()
-    msg["Subject"] = f"New inquiry from {inquiry.school_name}"  # type: ignore[attr-defined]
+    msg["Subject"] = f"New inquiry from {inquiry.school_name}"
     msg["From"] = recipient
     msg["To"] = recipient
     msg.set_content("\n".join(body_lines))
