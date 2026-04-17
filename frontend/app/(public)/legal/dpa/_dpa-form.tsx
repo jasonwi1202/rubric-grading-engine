@@ -36,8 +36,10 @@ export default function DpaRequestForm() {
       await submitDpaRequest(values);
       setSubmitted(true);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setServerError(err.message ?? "Something went wrong. Please try again.");
+      if (err instanceof ApiError && err.code === "RATE_LIMITED") {
+        setServerError(
+          "Too many requests. Please wait before submitting again.",
+        );
       } else {
         setServerError("Something went wrong. Please try again.");
       }
