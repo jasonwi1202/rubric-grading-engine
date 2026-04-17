@@ -1,8 +1,8 @@
 """Email notification Celery tasks.
 
 Tasks in this module send notification emails for internal operational
-purposes (e.g. new school inquiry alerts, DPA request alerts).  They do
-not send email to students or process student data.
+purposes (e.g. new school inquiry alerts, DPA request alerts, email
+verification).  They do not send email to students or process student data.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from app.tasks.celery_app import celery
 if TYPE_CHECKING:
     from app.models.contact import ContactInquiry
     from app.models.dpa_request import DpaRequest
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,15 @@ async def _load_dpa_request(dpa_request_id: str) -> DpaRequest | None:
         result = await db.execute(
             select(_DpaRequest).where(_DpaRequest.id == uuid.UUID(dpa_request_id))
         )
+        return result.scalar_one_or_none()
+
+
+async def _load_user(user_id: str) -> User | None:
+    """Load a User record from the database by ID."""
+    from app.models.user import User as _User  # noqa: PLC0415
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(_User).where(_User.id == uuid.UUID(user_id)))
         return result.scalar_one_or_none()
 
 
@@ -193,6 +203,80 @@ def send_dpa_request_notification(self: object, dpa_request_id: str) -> None:
         logger.warning(
             "Failed to send DPA request notification email — will retry",
             extra={"dpa_request_id": dpa_request_id, "error_type": type(exc).__name__},
+        )
+        countdown = 60 * (2**self.request.retries)  # type: ignore[attr-defined]
+        raise self.retry(exc=exc, countdown=countdown) from exc  # type: ignore[attr-defined]
+
+
+@celery.task(  # type: ignore[untyped-decorator]
+    name="tasks.email.send_verification_email",
+    bind=True,
+    max_retries=3,
+)
+def send_verification_email(self: object, user_id: str, raw_token: str) -> None:
+    """Send an email-verification link to a newly registered teacher.
+
+    The verification URL is built from ``settings.frontend_url`` so the link
+    takes the teacher to the frontend's ``/auth/verify?token=<raw_token>`` page
+    which then calls the backend verify endpoint.
+
+    Args:
+        user_id: UUID of the User record (used to load the recipient email).
+        raw_token: The un-HMAC'd token to embed in the verification URL.
+    """
+    from app.config import settings  # imported here to avoid circular import at module load
+
+    db_user = asyncio.run(_load_user(user_id))
+    if db_user is None:
+        logger.warning(
+            "User record not found — skipping verification email",
+            extra={"user_id": user_id},
+        )
+        return
+
+    sender = settings.verification_email_from or settings.contact_email
+    if not sender:
+        logger.info(
+            "Neither VERIFICATION_EMAIL_FROM nor CONTACT_EMAIL configured — "
+            "skipping verification email",
+            extra={"user_id": user_id},
+        )
+        return
+
+    verify_url = f"{settings.frontend_url.rstrip('/')}/auth/verify?token={raw_token}"
+
+    body_lines = [
+        f"Hi {db_user.first_name},",
+        "",
+        "Thanks for signing up for the Rubric Grading Engine.",
+        "Please verify your email address by clicking the link below:",
+        "",
+        verify_url,
+        "",
+        "This link expires in 24 hours and can only be used once.",
+        "",
+        "If you did not create this account, you can safely ignore this email.",
+    ]
+
+    msg = EmailMessage()
+    msg["Subject"] = "Verify your Rubric Grading Engine account"
+    msg["From"] = sender
+    msg["To"] = db_user.email
+    msg.set_content("\n".join(body_lines))
+
+    try:
+        with smtplib.SMTP(
+            settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
+        ) as smtp:
+            smtp.send_message(msg)
+        logger.info(
+            "Verification email sent",
+            extra={"user_id": user_id},
+        )
+    except (smtplib.SMTPException, OSError) as exc:
+        logger.warning(
+            "Failed to send verification email — will retry",
+            extra={"user_id": user_id, "error_type": type(exc).__name__},
         )
         countdown = 60 * (2**self.request.retries)  # type: ignore[attr-defined]
         raise self.retry(exc=exc, countdown=countdown) from exc  # type: ignore[attr-defined]
