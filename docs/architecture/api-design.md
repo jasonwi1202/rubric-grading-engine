@@ -138,6 +138,30 @@ Returns `200` with `{"data": {"message": "Onboarding marked as complete."}}`.
 
 ---
 
+### Account
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/account/trial` | Return the authenticated teacher's trial status |
+
+**GET /account/trial** (requires JWT)
+```json
+{
+  "data": {
+    "trial_ends_at": "2026-05-17T00:00:00Z",
+    "is_active": true,
+    "days_remaining": 29
+  }
+}
+```
+- `trial_ends_at`: ISO-8601 timestamp when the trial ends, or `null` if not yet set (email not yet verified).
+- `is_active`: `true` while `trial_ends_at` is in the future or not set; `false` once the trial has expired.
+- `days_remaining`: number of full calendar days remaining (`Math.floor`); `null` if `trial_ends_at` is not set; `0` or negative when expired.
+
+This endpoint is consumed by the dashboard trial-expiry banner.
+
+---
+
 ### Classes
 
 | Method | Path | Description |

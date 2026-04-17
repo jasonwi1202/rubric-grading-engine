@@ -96,6 +96,22 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `MAX_BATCH_SIZE` | No | `100` | Max essays per grading batch |
 | `TRUST_PROXY_HEADERS` | No | `false` | When `true`, read the real client IP from `CF-Connecting-IP` / `X-Forwarded-For` (enable only in production behind a trusted proxy such as Cloudflare) |
 
+### Email / SMTP
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `EMAIL_VERIFICATION_HMAC_SECRET` | Yes | — | Secret for HMAC-signing single-use email verification tokens. Min 32 chars. Generate with: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `UNSUBSCRIBE_HMAC_SECRET` | Yes | — | Secret for HMAC-signing unsubscribe tokens on non-transactional emails (trial warnings, expiry). Min 32 chars. Must be different from `EMAIL_VERIFICATION_HMAC_SECRET`. |
+| `VERIFICATION_TOKEN_TTL_SECONDS` | No | `86400` | TTL (seconds) for email verification tokens stored in Redis — defaults to 24 hours |
+| `FRONTEND_URL` | No | `http://localhost:3000` | Base URL of the frontend — used to build links in emails (verification, unsubscribe, "Get Started") |
+| `VERIFICATION_EMAIL_FROM` | No | — | "From" address for outbound emails. Falls back to `CONTACT_EMAIL` if not set. If neither is configured, email tasks are skipped (no-op). |
+| `CONTACT_EMAIL` | No | — | Email address that receives school/district inquiry and DPA request notifications. Also used as fallback sender for teacher-facing emails. |
+| `SMTP_HOST` | No | `localhost` | SMTP server hostname |
+| `SMTP_PORT` | No | `25` | SMTP server port |
+| `SMTP_TIMEOUT` | No | `10` | Timeout (seconds) for SMTP connections — prevents hung Celery workers |
+| `SMTP_USER` | No | — | SMTP username for authenticated servers. Leave unset for unauthenticated relays. |
+| `SMTP_PASSWORD` | No | — | SMTP password for authenticated servers. Leave unset for unauthenticated relays. |
+
 ---
 
 ## Frontend Configuration
@@ -147,6 +163,12 @@ AWS_ACCESS_KEY_ID=minioadmin
 AWS_SECRET_ACCESS_KEY=minioadmin
 S3_ENDPOINT_URL=http://minio:9000
 
+# Email verification
+EMAIL_VERIFICATION_HMAC_SECRET=local-dev-hmac-secret-change-in-production-32c
+
+# Trial lifecycle emails (unsubscribe tokens)
+UNSUBSCRIBE_HMAC_SECRET=local-dev-unsub-secret-change-in-production-32ch
+
 # Frontend
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 
@@ -161,6 +183,8 @@ CORS_ORIGINS=http://localhost:3000
 The backend uses `pydantic-settings` to validate all config at startup:
 - Missing required variables raise `ValidationError` with a clear message listing what is missing
 - `JWT_SECRET_KEY` must be at least 32 characters — shorter keys are rejected
+- `EMAIL_VERIFICATION_HMAC_SECRET` must be at least 32 characters
+- `UNSUBSCRIBE_HMAC_SECRET` must be at least 32 characters
 - `ENVIRONMENT` must be one of the allowed values
 - `OPENAI_GRADING_MODEL` is validated against a list of known-supported models
 
