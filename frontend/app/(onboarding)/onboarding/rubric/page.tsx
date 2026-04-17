@@ -45,7 +45,7 @@ const TEMPLATES: RubricTemplate[] = [
     criteria: [
       { name: "Thesis Statement", weight: 25, min_score: 1, max_score: 5 },
       { name: "Supporting Evidence", weight: 25, min_score: 1, max_score: 5 },
-      { name: "Organisation", weight: 25, min_score: 1, max_score: 5 },
+      { name: "Organization", weight: 25, min_score: 1, max_score: 5 },
       { name: "Grammar & Mechanics", weight: 25, min_score: 1, max_score: 5 },
     ],
   },
@@ -171,7 +171,7 @@ export default function OnboardingRubricPage() {
             >
               <p className="font-semibold text-gray-900">Build from scratch</p>
               <p className="mt-1 text-sm text-gray-500">
-                Start with a blank rubric and customise every criterion.
+                Start with a blank rubric and customize every criterion.
               </p>
             </button>
 

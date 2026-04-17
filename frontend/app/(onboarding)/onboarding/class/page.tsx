@@ -106,7 +106,7 @@ export default function OnboardingClassPage() {
           Create your first class
         </h1>
         <p className="mb-6 text-sm text-gray-600">
-          Set up a class to organise your students and assignments.
+          Set up a class to organize your students and assignments.
         </p>
 
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
