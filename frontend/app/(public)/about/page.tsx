@@ -33,11 +33,13 @@ const PRINCIPLES = [
 
 const TEAM_MEMBERS = [
   {
+    id: "placeholder-1",
     name: "{TODO: insert name}",
     role: "{TODO: insert role}",
     bio: "{TODO: insert bio}",
   },
   {
+    id: "placeholder-2",
     name: "{TODO: insert name}",
     role: "{TODO: insert role}",
     bio: "{TODO: insert bio}",
@@ -112,9 +114,9 @@ export default function AboutPage() {
             expertise in machine learning, product design, and data privacy.
           </p>
           <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {TEAM_MEMBERS.map(({ name, role, bio }, index) => (
+            {TEAM_MEMBERS.map(({ id, name, role, bio }) => (
               <div
-                key={index}
+                key={id}
                 className="rounded-xl border border-gray-200 bg-gray-50 p-8"
               >
                 {/* {TODO: insert team member headshot} */}
@@ -144,7 +146,7 @@ export default function AboutPage() {
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
-              className="rounded-md bg-blue-600 px-8 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              className="rounded-md bg-blue-700 px-8 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
             >
               Email us
             </a>
