@@ -27,7 +27,7 @@ const PRINCIPLES = [
   {
     icon: ShieldCheck,
     heading: "FERPA is a hard requirement",
-    body: "Student education records are protected by law and by design. We maintain a signed Data Processing Agreement with every institution, and no student data is sent to third-party services without explicit authorization.",
+    body: "Student education records are protected by law and by design. We will sign Data Processing Agreements with institutions as required, and no student data is sent to third-party services without explicit authorization.",
   },
 ] as const;
 
