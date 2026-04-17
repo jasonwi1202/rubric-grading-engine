@@ -265,7 +265,7 @@ export default function AiPage() {
 
           <ul className="mt-8 space-y-4" role="list">
             {[
-              "Essays are sent to the OpenAI API for grading. OpenAI does not store or use them for training.",
+              "Essays are sent to the OpenAI API for grading and are not used to train models.",
               "Essays are stored securely in our system tied to your account, accessible only to you.",
               "We never use student essay content to train AI models — ours or anyone else's.",
               "You can delete a student's data at any time. We will delete it within 30 days of your request.",
@@ -282,7 +282,7 @@ export default function AiPage() {
           </ul>
 
           <p className="mt-8 text-sm text-gray-500">
-            For the full compliance details, see our{" "}
+            See our current{" "}
             <Link
               href="/legal/ferpa"
               className="text-blue-600 underline hover:text-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -296,7 +296,7 @@ export default function AiPage() {
             >
               Privacy Policy
             </Link>
-            .
+            {" "}for compliance details.
           </p>
         </div>
       </section>
