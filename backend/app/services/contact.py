@@ -29,7 +29,7 @@ def _rate_limit_key(ip: str) -> str:
 
 
 def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[type-arg]
-    """Raise ValidationError if the IP has exceeded the rate limit.
+    """Raise RateLimitError if the IP has exceeded the rate limit.
 
     Uses a simple Redis counter with a 1-hour TTL.  The counter is
     incremented atomically and the TTL is set only on first creation so
@@ -64,7 +64,7 @@ async def create_inquiry(
         The newly created ``ContactInquiry`` ORM instance.
 
     Raises:
-        ValidationError: If the submitter IP has exceeded the rate limit.
+        RateLimitError: If the submitter IP has exceeded the rate limit.
     """
     if submitter_ip:
         _check_rate_limit(redis_client, submitter_ip)
