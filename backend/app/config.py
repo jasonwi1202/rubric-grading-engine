@@ -113,6 +113,13 @@ class Settings(BaseSettings):
     smtp_port: int = 25
     # Timeout in seconds for SMTP connections; prevents hung Celery workers.
     smtp_timeout: int = 10
+    # Optional SMTP credentials for servers that require authentication.
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    # Secret used to HMAC-sign unsubscribe tokens for non-transactional emails.
+    # Must be at least 32 characters.
+    # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    unsubscribe_hmac_secret: str
     # When True, extract the real client IP from the CF-Connecting-IP or
     # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
     # enable in production behind a trusted proxy; leave False in development.
@@ -134,6 +141,13 @@ class Settings(BaseSettings):
     def email_verification_hmac_secret_min_length(cls, v: str) -> str:
         if len(v) < 32:
             raise ValueError("EMAIL_VERIFICATION_HMAC_SECRET must be at least 32 characters")
+        return v
+
+    @field_validator("unsubscribe_hmac_secret")
+    @classmethod
+    def unsubscribe_hmac_secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("UNSUBSCRIBE_HMAC_SECRET must be at least 32 characters")
         return v
 
     @field_validator("environment")
