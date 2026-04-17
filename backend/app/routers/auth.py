@@ -182,7 +182,19 @@ async def verify_email_endpoint(
     - Returns 200 on success.
     - Returns 422 for invalid, expired, or already-used tokens.
     """
-    await verify_email(db, redis_client, token)
+    from app.tasks.email import send_welcome_email
+
+    db_user = await verify_email(db, redis_client, token)
+
+    # Enqueue the welcome email now that the account is fully active.
+    try:
+        send_welcome_email.delay(user_id=str(db_user.id))
+    except Exception as exc:
+        logger.exception(
+            "Failed to enqueue welcome email task",
+            extra={"user_id": str(db_user.id), "error_type": type(exc).__name__},
+        )
+
     response = VerifyEmailResponse(message="Email verified successfully. You can now sign in.")
     return JSONResponse(
         status_code=200,

@@ -9,20 +9,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getOnboardingStatus } from "@/lib/api/onboarding";
+import { getTrialStatus } from "@/lib/api/account";
 
 // ---------------------------------------------------------------------------
 // Trial banner helpers
 // ---------------------------------------------------------------------------
 
-function daysUntil(isoDate: string): number {
-  const now = Date.now();
-  const end = new Date(isoDate).getTime();
-  return Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
-}
-
-function TrialBanner({ trialEndsAt }: { trialEndsAt: string }) {
-  const days = daysUntil(trialEndsAt);
+function TrialBanner({ daysRemaining }: { daysRemaining: number }) {
+  const days = daysRemaining;
 
   if (days <= 0) {
     return (
@@ -79,16 +73,16 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    // Best-effort: fetch onboarding status to get trial_ends_at.
+    // Best-effort: fetch trial status to get days_remaining.
     // If this fails (e.g. not yet logged in during SSR hydration), the banner
     // is simply hidden.
-    getOnboardingStatus()
-      .then(({ trial_ends_at }) => {
-        setTrialEndsAt(trial_ends_at);
+    getTrialStatus()
+      .then(({ days_remaining }) => {
+        setDaysRemaining(days_remaining);
       })
       .catch(() => {
         // Ignore — trial banner is optional.
@@ -98,7 +92,9 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {loaded && trialEndsAt && <TrialBanner trialEndsAt={trialEndsAt} />}
+      {loaded && daysRemaining !== null && (
+        <TrialBanner daysRemaining={daysRemaining} />
+      )}
       <main className="flex-1">{children}</main>
     </div>
   );

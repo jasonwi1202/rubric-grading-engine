@@ -287,6 +287,7 @@ Append-only record of every consequential action. Never updated or deleted.
 | Data lifecycle | `class_archived` | `class` | |
 | Admin | `teacher_account_created` | `user` | |
 | Admin | `teacher_account_deactivated` | `user` | |
+| Email | `email_sent` | `user` | `after_value`: `{"email_type": "<type>"}` — records transactional and lifecycle email deliveries |
 
 ---
 
