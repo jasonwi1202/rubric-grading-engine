@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     smtp_port: int = 25
     # Timeout in seconds for SMTP connections; prevents hung Celery workers.
     smtp_timeout: int = 10
+    # When True, extract the real client IP from the CF-Connecting-IP or
+    # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
+    # enable in production behind a trusted proxy; leave False in development.
+    trust_proxy_headers: bool = False
 
     # -------------------------------------------------------------------------
     # Validators

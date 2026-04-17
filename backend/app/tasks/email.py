@@ -217,7 +217,7 @@ def send_verification_email(self: object, user_id: str, raw_token: str) -> None:
     """Send an email-verification link to a newly registered teacher.
 
     The verification URL is built from ``settings.frontend_url`` so the link
-    takes the teacher to the frontend's ``/auth/verify?token=<raw_token>`` page
+    takes the teacher to the frontend's ``/verify?token=<raw_token>`` page
     which then calls the backend verify endpoint.
 
     Args:

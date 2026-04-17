@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 import bcrypt
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -229,7 +230,12 @@ async def create_user(
         email_verified=False,
     )
     db.add(new_user)
-    await db.flush()  # populate new_user.id without committing yet
+    try:
+        await db.flush()  # populate new_user.id without committing yet
+    except IntegrityError:
+        # A concurrent sign-up with the same email hit the DB unique constraint.
+        await db.rollback()
+        raise ConflictError("An account with this email already exists.") from None
 
     # 5. Audit log
     audit = AuditLog(

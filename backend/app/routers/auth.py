@@ -61,7 +61,25 @@ async def _get_redis() -> AsyncGenerator[Redis, None]:  # type: ignore[type-arg]
 
 
 def _get_client_ip(request: Request) -> str | None:
-    """Extract the client IP from the direct connection (not X-Forwarded-For)."""
+    """Extract the real client IP address.
+
+    When ``settings.trust_proxy_headers`` is ``True`` (i.e. the app is running
+    behind a trusted reverse proxy such as Cloudflare), the IP is read from the
+    ``CF-Connecting-IP`` header first, then ``X-Forwarded-For``.  In all other
+    cases the direct TCP connection address is used to prevent IP spoofing via
+    crafted headers.
+    """
+    from app.config import settings
+
+    if settings.trust_proxy_headers:
+        # Cloudflare sets CF-Connecting-IP to the original visitor IP.
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
+        # Generic reverse-proxy header — take the leftmost (originating) address.
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
     if request.client:
         return request.client.host
     return None
