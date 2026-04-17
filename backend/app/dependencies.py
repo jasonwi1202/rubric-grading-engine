@@ -97,7 +97,7 @@ async def get_current_teacher_optional(
     if not auth_header.lower().startswith("bearer "):
         return None
 
-    token = auth_header[len("Bearer ") :]
+    token = auth_header.split(" ", 1)[1] if " " in auth_header else ""
     try:
         payload = decode_access_token(token)
     except ValidationError:
