@@ -16,7 +16,7 @@ import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.dependencies import get_current_teacher, get_current_teacher_optional
-from app.exceptions import ForbiddenError, ValidationError
+from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import create_access_token
 
 # ---------------------------------------------------------------------------
@@ -61,9 +61,9 @@ class TestGetCurrentTeacher:
         assert result is user
 
     @pytest.mark.asyncio
-    async def test_no_credentials_raises_forbidden(self) -> None:
+    async def test_no_credentials_raises_unauthorized(self) -> None:
         db = _make_db()
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(UnauthorizedError):
             await get_current_teacher(credentials=None, db=db)
 
     @pytest.mark.asyncio
@@ -71,6 +71,23 @@ class TestGetCurrentTeacher:
         credentials = _make_credentials("not_a_valid_jwt_token")
         db = _make_db()
         with pytest.raises(ValidationError):
+            await get_current_teacher(credentials=credentials, db=db)
+
+    @pytest.mark.asyncio
+    async def test_wrong_token_type_raises_validation_error(self) -> None:
+        """A JWT with type != 'access' (e.g. a future refresh-JWT) must be rejected."""
+        import jwt as pyjwt
+
+        from app.config import settings
+
+        bad_token = pyjwt.encode(
+            {"sub": str(uuid.uuid4()), "type": "refresh"},
+            settings.jwt_secret_key,
+            algorithm="HS256",
+        )
+        credentials = _make_credentials(bad_token)
+        db = _make_db()
+        with pytest.raises(ValidationError, match="Invalid token type"):
             await get_current_teacher(credentials=credentials, db=db)
 
     @pytest.mark.asyncio

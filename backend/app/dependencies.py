@@ -13,7 +13,6 @@ Currently provides:
 
 from __future__ import annotations
 
-import logging
 import uuid
 from typing import TYPE_CHECKING
 
@@ -23,13 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.exceptions import ForbiddenError, ValidationError
+from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import decode_access_token
 
 if TYPE_CHECKING:
     from app.models.user import User
-
-logger = logging.getLogger(__name__)
 
 # HTTPBearer scheme — raises 403 automatically when the header is absent.
 # ``auto_error=False`` lets us return a more informative 401 ourselves.
@@ -44,16 +41,18 @@ async def get_current_teacher(
     authenticated teacher.
 
     Raises:
-        ForbiddenError: Bearer header is absent (401 via exception mapping in
-            main.py — we map 403 to FORBIDDEN; callers that need 401 should
-            use the StarletteHTTPException handler).
-        ValidationError: Token is malformed, expired, or references a deleted
-            / unverified account.
+        UnauthorizedError: Bearer header is absent — maps to HTTP 401.
+        ValidationError: Token is malformed, expired, wrong type, or references
+            a deleted / unverified account — maps to HTTP 422.
     """
     if credentials is None:
-        raise ForbiddenError("Authentication required.")
+        raise UnauthorizedError("Authentication required.")
 
     payload = decode_access_token(credentials.credentials)
+
+    # Reject tokens that are not access tokens (e.g. future refresh-JWT types).
+    if payload.get("type") != "access":
+        raise ValidationError("Invalid token type.", field="token")
 
     sub = payload.get("sub")
     if not isinstance(sub, str):

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createRubric } from "@/lib/api/rubrics";
@@ -104,6 +104,7 @@ export default function OnboardingRubricPage() {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<RubricFormValues>({
     resolver: zodResolver(rubricSchema),
@@ -112,6 +113,11 @@ export default function OnboardingRubricPage() {
       criteria: DEFAULT_CRITERIA,
     },
   });
+
+  // Watch the live criteria array so the UI reflects any length changes
+  // caused by template selection (templates may have more or fewer rows than
+  // DEFAULT_CRITERIA).
+  const liveCriteria = useWatch({ control, name: "criteria" });
 
   const handleBuildFromScratch = () => {
     reset({ name: "", criteria: DEFAULT_CRITERIA });
@@ -138,10 +144,12 @@ export default function OnboardingRubricPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login?next=/onboarding/rubric");
-      } else {
-        // M3 endpoints are not yet implemented — treat 404/405/500 as a
-        // soft failure and advance the wizard rather than blocking.
+      } else if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+        // M3 rubric endpoint not yet implemented — treat as a soft failure
+        // and advance the wizard rather than blocking the teacher.
         router.push("/onboarding/done");
+      } else {
+        setServerError("Failed to save rubric. Please try again.");
       }
     }
   };
@@ -251,7 +259,7 @@ export default function OnboardingRubricPage() {
               Criteria (weights must sum to 100)
             </p>
             <div className="space-y-2">
-              {DEFAULT_CRITERIA.map((_, idx) => (
+              {liveCriteria.map((_, idx) => (
                 <div key={idx} className="grid grid-cols-3 gap-2 items-start">
                   <div className="col-span-2">
                     <label

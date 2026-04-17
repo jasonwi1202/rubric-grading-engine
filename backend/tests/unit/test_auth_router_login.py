@@ -189,6 +189,18 @@ class TestLogoutEndpoint:
         """Refresh token present but no valid access token — still 204."""
         app = create_app()
 
+        # Mock db.add and db.commit so the orphan-refresh audit log can be written
+        # without a real PostgreSQL connection.
+        mock_db = MagicMock()
+        mock_db.commit = AsyncMock(return_value=None)
+
+        async def _get_mock_db() -> MagicMock:
+            yield mock_db
+
+        from app.db.session import get_db
+
+        app.dependency_overrides[get_db] = _get_mock_db
+
         with (
             patch(
                 "app.dependencies.get_current_teacher_optional",

@@ -9,8 +9,6 @@ POST /onboarding/complete — marks ``users.onboarding_complete = True``.
 
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
@@ -18,9 +16,7 @@ from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
 from app.models.user import User
 from app.schemas.onboarding import OnboardingCompleteResponse, OnboardingStatusResponse
-from app.services.onboarding import complete_onboarding, get_onboarding_status
-
-logger = logging.getLogger(__name__)
+from app.services.onboarding import complete_onboarding, get_onboarding_step
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -46,7 +42,8 @@ async def get_status(
 
     Requires a valid JWT Bearer token.
     """
-    step, completed = await get_onboarding_status(db, teacher.id)
+    # Use the already-loaded teacher object to avoid an extra DB round-trip.
+    step, completed = get_onboarding_step(teacher)
     response_data = OnboardingStatusResponse(
         step=step,
         completed=completed,

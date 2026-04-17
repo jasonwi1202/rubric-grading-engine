@@ -19,12 +19,15 @@ export default function OnboardingIndexPage() {
 
   useEffect(() => {
     getOnboardingStatus()
-      .then(({ completed }) => {
+      .then(({ completed, step }) => {
         if (completed) {
           router.replace("/dashboard");
-        } else {
-          router.replace("/onboarding/class");
+          return;
         }
+        // Route to the correct wizard step so that returning teachers who
+        // completed step 1 are not sent back to step 1 unnecessarily.
+        const nextRoute = step >= 2 ? "/onboarding/rubric" : "/onboarding/class";
+        router.replace(nextRoute);
       })
       .catch(() => {
         // If the status call fails (e.g. network error), default to step 1.

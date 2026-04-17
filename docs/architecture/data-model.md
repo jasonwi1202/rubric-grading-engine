@@ -46,7 +46,7 @@ Represents a teacher account.
 | created_at | TIMESTAMPTZ | |
 | last_login_at | TIMESTAMPTZ | Nullable |
 | onboarding_complete | BOOLEAN | `false` until wizard completed; set via `POST /onboarding/complete` |
-| trial_ends_at | TIMESTAMPTZ | Nullable; set to `created_at + 30 days` on email verification |
+| trial_ends_at | TIMESTAMPTZ | Nullable; set to `verification time + 30 days` on email verification |
 
 ---
 

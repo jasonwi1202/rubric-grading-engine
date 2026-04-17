@@ -2,8 +2,10 @@
 
 Business logic for the teacher onboarding wizard:
 
+* ``get_onboarding_step`` — derive the current wizard step from a loaded User
+  object (no extra DB query required).
 * ``get_onboarding_status`` — determine the teacher's current wizard step and
-  whether onboarding has been marked complete.
+  whether onboarding has been marked complete (queries the DB).
 * ``complete_onboarding``   — mark ``users.onboarding_complete = True``.
 
 No student PII is collected or processed here.
@@ -24,6 +26,22 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+def get_onboarding_step(teacher: User) -> tuple[int, bool]:
+    """Return (step, completed) from an already-loaded User object.
+
+    Avoids a redundant DB round-trip when the router already holds the User
+    instance (e.g. from ``get_current_teacher``).
+
+    The step is determined as follows:
+    - ``completed = True``:  ``onboarding_complete = True``.
+    - Step 1 (create class): ``onboarding_complete = False`` (default until M3
+      class/rubric tables allow finer-grained checks).
+    """
+    if teacher.onboarding_complete:
+        return 2, True
+    return 1, False
 
 
 async def get_onboarding_status(

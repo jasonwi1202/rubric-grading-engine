@@ -61,13 +61,8 @@ class TestGetOnboardingStatus:
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
-        with patch(
-            "app.routers.onboarding.get_onboarding_status",
-            new_callable=AsyncMock,
-            return_value=(1, False),
-        ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                resp = client.get("/api/v1/onboarding/status")
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get("/api/v1/onboarding/status")
 
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
@@ -80,13 +75,8 @@ class TestGetOnboardingStatus:
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
-        with patch(
-            "app.routers.onboarding.get_onboarding_status",
-            new_callable=AsyncMock,
-            return_value=(2, True),
-        ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                resp = client.get("/api/v1/onboarding/status")
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get("/api/v1/onboarding/status")
 
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
@@ -94,26 +84,21 @@ class TestGetOnboardingStatus:
         assert data["completed"] is True
         assert data["trial_ends_at"] is not None
 
-    def test_returns_403_without_auth(self) -> None:
+    def test_returns_401_without_auth(self) -> None:
         app = create_app()
         with TestClient(app, raise_server_exceptions=False) as client:
             resp = client.get("/api/v1/onboarding/status")
-        # Missing auth header triggers 403 (FORBIDDEN) from HTTPBearer(auto_error=False)
-        assert resp.status_code == 403
-        assert resp.json()["error"]["code"] == "FORBIDDEN"
+        # Missing auth header now raises UnauthorizedError → 401
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
     def test_trial_ends_at_null_when_not_set(self) -> None:
         teacher = _make_fake_teacher(onboarding_complete=False, trial_ends_at=None)
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
-        with patch(
-            "app.routers.onboarding.get_onboarding_status",
-            new_callable=AsyncMock,
-            return_value=(1, False),
-        ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                resp = client.get("/api/v1/onboarding/status")
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get("/api/v1/onboarding/status")
 
         assert resp.status_code == 200
         assert resp.json()["data"]["trial_ends_at"] is None
@@ -131,25 +116,28 @@ class TestMarkOnboardingComplete:
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
-        with patch(
-            "app.routers.onboarding.complete_onboarding",
-            new_callable=AsyncMock,
-            return_value=updated_teacher,
+        with (
+            patch(
+                "app.routers.onboarding.complete_onboarding",
+                new_callable=AsyncMock,
+                return_value=updated_teacher,
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
         ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                resp = client.post("/api/v1/onboarding/complete")
+            resp = client.post("/api/v1/onboarding/complete")
 
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
         assert "message" in data
         assert "complete" in data["message"].lower()
 
-    def test_returns_403_without_auth(self) -> None:
+    def test_returns_401_without_auth(self) -> None:
         app = create_app()
         with TestClient(app, raise_server_exceptions=False) as client:
             resp = client.post("/api/v1/onboarding/complete")
-        assert resp.status_code == 403
-        assert resp.json()["error"]["code"] == "FORBIDDEN"
+        # Missing auth now returns 401 (UNAUTHORIZED)
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
     def test_idempotent_when_already_complete(self) -> None:
         """Calling complete again when already complete should still return 200."""
@@ -157,39 +145,36 @@ class TestMarkOnboardingComplete:
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
-        with patch(
-            "app.routers.onboarding.complete_onboarding",
-            new_callable=AsyncMock,
-            return_value=teacher,
+        with (
+            patch(
+                "app.routers.onboarding.complete_onboarding",
+                new_callable=AsyncMock,
+                return_value=teacher,
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
         ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                resp = client.post("/api/v1/onboarding/complete")
+            resp = client.post("/api/v1/onboarding/complete")
 
         assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# Cross-tenant: wrong teacher cannot access another's data
+# Cross-tenant: correct teacher data is used
 # ---------------------------------------------------------------------------
 
 
 class TestOnboardingTenantIsolation:
-    def test_status_uses_authenticated_teacher_id(self) -> None:
+    def test_status_uses_authenticated_teacher_data(self) -> None:
         """The status endpoint uses the teacher from the JWT, not a query param."""
-        teacher_a = _make_fake_teacher()
+        teacher_a = _make_fake_teacher(onboarding_complete=False)
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher_a
 
-        with patch(
-            "app.routers.onboarding.get_onboarding_status",
-            new_callable=AsyncMock,
-            return_value=(1, False),
-        ) as mock_status:
-            with TestClient(app, raise_server_exceptions=False) as client:
-                resp = client.get("/api/v1/onboarding/status")
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get("/api/v1/onboarding/status")
 
         assert resp.status_code == 200
-        # Verify it was called with Teacher A's ID, not some other teacher
-        mock_status.assert_called_once()
-        call_teacher_id = mock_status.call_args[0][1]
-        assert call_teacher_id == teacher_a.id
+        # The response reflects teacher_a's data (step 1, not complete)
+        data = resp.json()["data"]
+        assert data["step"] == 1
+        assert data["completed"] is False

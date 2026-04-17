@@ -21,7 +21,7 @@ import logging
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
@@ -254,6 +254,18 @@ _REFRESH_TOKEN_COOKIE = "refresh_token"
 _REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 86400  # 7 days in seconds
 
 
+def _cookie_secure() -> bool:
+    """Return True when cookies should carry the Secure flag.
+
+    In local development (environment = "development") the backend typically
+    runs over plain HTTP, so Secure must be False or browsers will silently
+    drop the cookie.  In staging and production (HTTPS only) it must be True.
+    """
+    from app.config import settings
+
+    return settings.environment != "development"
+
+
 @router.post(
     "/login",
     summary="Authenticate a teacher and issue tokens",
@@ -289,7 +301,7 @@ async def login_endpoint(
         key=_REFRESH_TOKEN_COOKIE,
         value=refresh_token,
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="strict",
         max_age=_REFRESH_TOKEN_COOKIE_MAX_AGE,
         path="/",
@@ -316,7 +328,8 @@ async def refresh_token_endpoint(
     The refresh token is rotated on every use (old token is invalidated, new
     one is set in a fresh cookie).
 
-    Returns 422 if the cookie is absent or the token is invalid/expired.
+    Returns 401 if the refresh cookie is absent, and 422 if the token is
+    invalid or expired.
     """
     client_ip = _get_client_ip(request)
     incoming_refresh = request.cookies.get(_REFRESH_TOKEN_COOKIE)
@@ -348,7 +361,7 @@ async def refresh_token_endpoint(
         key=_REFRESH_TOKEN_COOKIE,
         value=new_refresh_token,
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="strict",
         max_age=_REFRESH_TOKEN_COOKIE_MAX_AGE,
         path="/",
@@ -370,7 +383,7 @@ async def logout_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
     redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
-) -> JSONResponse:
+) -> Response:
     """Invalidate the server-side refresh token and clear the session cookie.
 
     Returns 204 regardless of whether the cookie was present or valid, so
@@ -395,18 +408,32 @@ async def logout_endpoint(
             submitter_ip=client_ip,
         )
     elif incoming_refresh:
-        # No valid access token but we have a refresh token -- delete it
-        # from Redis so it can't be reused.
+        # No valid access token but a refresh token is present — delete it
+        # from Redis so it can't be reused, and still write an audit log so
+        # all explicit logout events are captured (teacher_id=None for
+        # unauthenticated/anonymous logout actions).
+        from app.models.audit_log import AuditLog
         from app.services.auth import delete_refresh_token
 
         await delete_refresh_token(redis_client, incoming_refresh)
+        audit = AuditLog(
+            teacher_id=None,
+            entity_type="user",
+            entity_id=None,
+            action="logout",
+            after_value={"reason": "no_access_token"},
+            ip_address=client_ip,
+        )
+        db.add(audit)
+        await db.commit()
 
-    response = JSONResponse(status_code=204, content=None)
+    # HTTP 204 must not include a response body — use bare Response, not JSONResponse.
+    response: Response = Response(status_code=204)
     response.delete_cookie(
         key=_REFRESH_TOKEN_COOKIE,
         path="/",
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="strict",
     )
     return response
