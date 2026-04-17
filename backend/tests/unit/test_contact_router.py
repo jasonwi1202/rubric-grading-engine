@@ -154,14 +154,14 @@ class TestSubmitInquiryValidation:
 
 
 class TestSubmitInquiryRateLimit:
-    def test_rate_limit_exceeded_returns_422(self, client: TestClient) -> None:
-        from app.exceptions import ValidationError
+    def test_rate_limit_exceeded_returns_429(self, client: TestClient) -> None:
+        from app.exceptions import RateLimitError
 
         with (
             patch(
                 "app.routers.contact.create_inquiry",
                 new_callable=AsyncMock,
-                side_effect=ValidationError("Too many inquiry submissions from this IP."),
+                side_effect=RateLimitError("Too many inquiry submissions from this IP."),
             ),
             patch("app.routers.contact._get_redis"),
         ):
@@ -170,6 +170,6 @@ class TestSubmitInquiryRateLimit:
                 json=_make_inquiry_payload(),
             )
 
-        assert resp.status_code == 422, f"Got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 429, f"Got {resp.status_code}: {resp.text}"
         body = resp.json()
-        assert body["error"]["code"] == "VALIDATION_ERROR"
+        assert body["error"]["code"] == "RATE_LIMITED"

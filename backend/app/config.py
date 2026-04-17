@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     # Email address that receives school/district inquiry notifications.
     # Optional — if not set, the notification email task is skipped.
     contact_email: str | None = None
+    # SMTP server used for sending notification emails.
+    smtp_host: str = "localhost"
+    smtp_port: int = 25
 
     # -------------------------------------------------------------------------
     # Validators

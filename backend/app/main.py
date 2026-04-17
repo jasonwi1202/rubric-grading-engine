@@ -20,6 +20,7 @@ from app.exceptions import (
     LLMError,
     LLMParseError,
     NotFoundError,
+    RateLimitError,
     RubricGradingError,
     ValidationError,
 )
@@ -37,6 +38,7 @@ _HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
     405: "VALIDATION_ERROR",
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
+    429: "RATE_LIMITED",
 }
 
 
@@ -85,6 +87,10 @@ def _register_exception_handlers(application: FastAPI) -> None:
     @application.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
         return _error_response(409, exc.code, str(exc))
+
+    @application.exception_handler(RateLimitError)
+    async def rate_limit_handler(request: Request, exc: RateLimitError) -> JSONResponse:
+        return _error_response(429, exc.code, str(exc))
 
     @application.exception_handler(ValidationError)
     async def domain_validation_handler(request: Request, exc: ValidationError) -> JSONResponse:

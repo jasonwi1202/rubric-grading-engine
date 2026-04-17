@@ -12,7 +12,7 @@ import logging
 from redis import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ValidationError
+from app.exceptions import RateLimitError
 from app.models.contact import ContactInquiry
 from app.schemas.contact import ContactInquiryRequest
 
@@ -41,9 +41,8 @@ def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[typ
         # First submission within this window — set the expiry.
         redis_client.expire(key, _RATE_LIMIT_WINDOW_SECONDS)
     if current > _RATE_LIMIT_MAX:
-        raise ValidationError(
+        raise RateLimitError(
             "Too many inquiry submissions from this IP. Please try again later.",
-            field=None,
         )
 
 

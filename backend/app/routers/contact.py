@@ -12,6 +12,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from redis import Redis
 
 from app.db.session import AsyncSession, get_db
@@ -21,6 +22,12 @@ from app.services.contact import create_inquiry
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/contact", tags=["contact"])
+
+
+class _InquiryResponseEnvelope(BaseModel):
+    """Standard data envelope wrapping a ContactInquiryResponse."""
+
+    data: ContactInquiryResponse
 
 
 def _get_redis() -> Redis:  # type: ignore[type-arg]
@@ -49,7 +56,7 @@ def _get_client_ip(request: Request) -> str | None:
 @router.post(
     "/inquiry",
     status_code=201,
-    response_model=None,
+    response_model=_InquiryResponseEnvelope,
     summary="Submit a school or district purchase inquiry",
 )
 async def submit_inquiry(
@@ -61,7 +68,7 @@ async def submit_inquiry(
     """Store an inbound school/district inquiry and enqueue a notification email.
 
     - Input is validated by the ``ContactInquiryRequest`` Pydantic model.
-    - Rate-limited to 5 requests per IP per hour.
+    - Rate-limited to 5 requests per IP per hour (raises 429 on excess).
     - No student PII is collected or stored.
     - On success, enqueues a Celery task to send a notification email to
       ``settings.contact_email``.

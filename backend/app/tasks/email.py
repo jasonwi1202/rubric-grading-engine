@@ -75,7 +75,7 @@ def send_inquiry_notification(
     msg.set_content("\n".join(body_lines))
 
     try:
-        with smtplib.SMTP("localhost") as smtp:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as smtp:
             smtp.send_message(msg)
         logger.info(
             "Inquiry notification email sent",
