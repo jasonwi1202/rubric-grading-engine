@@ -49,6 +49,7 @@ All endpoints require a valid JWT Bearer token in the `Authorization` header unl
 
 **Public endpoints (no JWT required):**
 - `POST /contact/inquiry` — unauthenticated school/district inquiry form submission
+- `POST /contact/dpa-request` — unauthenticated DPA request from a school/district administrator
 
 ---
 
@@ -224,6 +225,7 @@ All endpoints require a valid JWT Bearer token in the `Authorization` header unl
 | Method | Path | Description |
 |---|---|---|
 | POST | `/contact/inquiry` | Submit a school or district purchase inquiry |
+| POST | `/contact/dpa-request` | Submit a Data Processing Agreement (DPA) request |
 
 **POST /contact/inquiry body:**
 ```json
@@ -256,6 +258,39 @@ Fields `district`, `estimated_teachers`, and `message` are optional.
 | Code | HTTP Status | When raised |
 |---|---|---|
 | `RATE_LIMITED` | 429 | Submitter IP has exceeded 5 inquiries per hour |
+
+---
+
+**POST /contact/dpa-request body:**
+```json
+{
+  "name": "Jane Smith",
+  "email": "jane@district.edu",
+  "school_name": "Example Unified School District",
+  "district": "Example Unified",
+  "message": "We use the SDPC model DPA — please review and sign."
+}
+```
+
+Fields `district` and `message` are optional. No student PII is collected.
+
+**POST /contact/dpa-request response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "created_at": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+**Rate limiting:** Maximum 3 submissions per IP address per hour (stricter than inquiry — DPA requests are expected to be rare). Excess requests return `429 RATE_LIMITED`.
+
+**Error codes specific to this endpoint:**
+
+| Code | HTTP Status | When raised |
+|---|---|---|
+| `RATE_LIMITED` | 429 | Submitter IP has exceeded 3 DPA requests per hour |
 
 ---
 
