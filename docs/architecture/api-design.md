@@ -93,6 +93,49 @@ Consumes a single-use token (24 h TTL). The server computes an HMAC-SHA256 tag o
 Always returns `202` regardless of whether the email is registered (avoids account-existence oracle).  
 Returns `429` if more than 3 resend requests are made for the same email in one hour.
 
+**POST /auth/login body:**
+```json
+{ "email": "teacher@school.edu", "password": "SecurePass1" }
+```
+Returns `200` with `{"data": {"access_token": "<jwt>", "token_type": "bearer"}}`.  
+Sets an `httpOnly; Secure; SameSite=Strict` cookie named `refresh_token` (7-day TTL).  
+Returns `422` for invalid credentials or unverified email.
+
+**POST /auth/refresh** (no body; reads `refresh_token` cookie)  
+Returns `200` with a new `{"data": {"access_token": "<jwt>", "token_type": "bearer"}}`.  
+Rotates the refresh token (old token invalidated, new cookie set).  
+Returns `401` if the cookie is absent; `422` if the token is invalid or expired.
+
+**POST /auth/logout** (no body; reads `refresh_token` cookie)  
+Returns `204`. Invalidates the refresh token server-side and clears the cookie.  
+Idempotent — always returns `204` regardless of whether the cookie was present.
+
+---
+
+### Onboarding
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/onboarding/status` | Return the teacher's current wizard step and completion flag |
+| POST | `/onboarding/complete` | Mark the teacher's onboarding as complete |
+
+**GET /onboarding/status** (requires JWT)
+```json
+{
+  "data": {
+    "step": 1,
+    "completed": false,
+    "trial_ends_at": "2026-05-17T00:00:00Z"
+  }
+}
+```
+`step` is `1` when `onboarding_complete = false` (defaults until M3 class/rubric tables allow more granular checks). `step` is `2` when `onboarding_complete = true`.  
+`trial_ends_at` is `null` until email verification sets it to `now + 30 days`.
+
+**POST /onboarding/complete** (requires JWT)  
+Idempotent — safe to call multiple times.  
+Returns `200` with `{"data": {"message": "Onboarding marked as complete."}}`.
+
 ---
 
 ### Classes
