@@ -84,6 +84,17 @@ class RubricInUseError(ConflictError):
 
 
 # ---------------------------------------------------------------------------
+# RateLimitError
+# ---------------------------------------------------------------------------
+
+
+class RateLimitError(RubricGradingError):
+    """Caller has exceeded a rate limit (e.g. inquiry submissions per IP)."""
+
+    code = "RATE_LIMITED"
+
+
+# ---------------------------------------------------------------------------
 # ValidationError subclasses
 # ---------------------------------------------------------------------------
 

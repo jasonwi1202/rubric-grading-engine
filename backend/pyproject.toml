@@ -21,6 +21,7 @@ dependencies = [
 
     # Config
     "pydantic>=2.7.0",
+    "pydantic[email]>=2.7.0",
     "pydantic-settings>=2.3.0",
 
     # Auth

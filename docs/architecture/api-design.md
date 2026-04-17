@@ -45,7 +45,10 @@ Errors:
 All list endpoints accept `?page=1&page_size=25`. Default page size: 25. Max: 100.
 
 ### Authentication
-All endpoints require a valid JWT Bearer token in the `Authorization` header. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
+All endpoints require a valid JWT Bearer token in the `Authorization` header unless explicitly documented as public. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
+
+**Public endpoints (no JWT required):**
+- `POST /contact/inquiry` — unauthenticated school/district inquiry form submission
 
 ---
 
@@ -216,6 +219,46 @@ All endpoints require a valid JWT Bearer token in the `Authorization` header. Un
 
 ---
 
+### Contact (Public — no authentication required)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/contact/inquiry` | Submit a school or district purchase inquiry |
+
+**POST /contact/inquiry body:**
+```json
+{
+  "name": "Jane Smith",
+  "email": "jane@example-school.edu",
+  "school_name": "Example High School",
+  "district": "Example Unified",
+  "estimated_teachers": 40,
+  "message": "We are interested in the School tier."
+}
+```
+
+Fields `district`, `estimated_teachers`, and `message` are optional.
+
+**POST /contact/inquiry response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "created_at": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+**Rate limiting:** Maximum 5 submissions per IP address per hour. Excess requests return `429 RATE_LIMITED`.
+
+**Error codes specific to this endpoint:**
+
+| Code | HTTP Status | When raised |
+|---|---|---|
+| `RATE_LIMITED` | 429 | Submitter IP has exceeded 5 inquiries per hour |
+
+---
+
 ## Error Codes
 
 All errors use this envelope — the `field` key is only present on validation errors:
@@ -276,6 +319,12 @@ Error `code` values are `SCREAMING_SNAKE_CASE` strings. The frontend should bran
 | `ASSIGNMENT_NOT_GRADEABLE` | 409 | Assignment is in a state that does not permit grading (e.g., archived, no essays) |
 | `RUBRIC_IN_USE` | 409 | Cannot delete a rubric that is attached to an open assignment |
 | `ESSAY_ALREADY_GRADED` | 409 | Essay already has a locked grade — submit a resubmission instead |
+
+### Rate Limit Errors (429)
+
+| Code | HTTP Status | When raised |
+|---|---|---|
+| `RATE_LIMITED` | 429 | Request rate limit exceeded for the caller's IP (e.g. contact inquiry endpoint) |
 
 ### Server & Upstream Errors (5xx)
 

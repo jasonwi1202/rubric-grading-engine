@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     cors_origins: str
     max_essay_file_size_mb: int = 10
     max_batch_size: int = 100
+    # Email address that receives school/district inquiry notifications.
+    # Optional — if not set, the notification email task is skipped.
+    contact_email: str | None = None
+    # SMTP server used for sending notification emails.
+    smtp_host: str = "localhost"
+    smtp_port: int = 25
+    # Timeout in seconds for SMTP connections; prevents hung Celery workers.
+    smtp_timeout: int = 10
 
     # -------------------------------------------------------------------------
     # Validators
