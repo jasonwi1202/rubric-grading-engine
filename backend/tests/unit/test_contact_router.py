@@ -173,3 +173,75 @@ class TestSubmitInquiryRateLimit:
         assert resp.status_code == 429, f"Got {resp.status_code}: {resp.text}"
         body = resp.json()
         assert body["error"]["code"] == "RATE_LIMITED"
+
+
+# ---------------------------------------------------------------------------
+# Service-level rate limit enforcement (regression guard for missing await)
+# ---------------------------------------------------------------------------
+
+
+class TestContactServiceRateLimit:
+    """Verify that _check_rate_limit is actually awaited inside create_inquiry.
+
+    A previous bug had ``_check_rate_limit(...)`` called without ``await``,
+    meaning the coroutine was created but never executed and rate limiting was
+    silently skipped.  These tests use the service directly to catch that
+    regression without going through the router.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_is_enforced_when_ip_provided(self) -> None:
+        """create_inquiry must raise RateLimitError once the counter exceeds max."""
+        from unittest.mock import AsyncMock
+
+        from app.exceptions import RateLimitError
+        from app.schemas.contact import ContactInquiryRequest
+        from app.services.contact import create_inquiry
+
+        payload = ContactInquiryRequest(
+            name="Test School",
+            email="test@school.edu",
+            school_name="Test School",
+        )
+
+        mock_db = AsyncMock()
+        mock_redis = AsyncMock()
+        # Simulate counter already at limit+1 (6th request)
+        mock_redis.incr = AsyncMock(return_value=6)
+        mock_redis.expire = AsyncMock()
+
+        with pytest.raises(RateLimitError):
+            await create_inquiry(mock_db, mock_redis, payload, submitter_ip="1.2.3.4")
+
+        # Verify Redis was actually called — proves the await was executed
+        mock_redis.incr.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_skipped_when_no_ip(self) -> None:
+        """create_inquiry must not call Redis when submitter_ip is None."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.schemas.contact import ContactInquiryRequest
+        from app.services.contact import create_inquiry
+
+        payload = ContactInquiryRequest(
+            name="Test School",
+            email="test@school.edu",
+            school_name="Test School",
+        )
+
+        mock_db = AsyncMock()
+        # Fake the DB commit / refresh chain
+        fake_inquiry = MagicMock()
+        fake_inquiry.id = uuid.uuid4()
+        mock_db.commit = AsyncMock()
+        mock_db.refresh = AsyncMock(return_value=fake_inquiry)
+        # Attach add so it captures the inquiry
+        added: list = []
+        mock_db.add = lambda obj: added.append(obj)
+
+        mock_redis = AsyncMock()
+
+        await create_inquiry(mock_db, mock_redis, payload, submitter_ip=None)
+
+        mock_redis.incr.assert_not_called()
