@@ -6,7 +6,7 @@ No real student PII is used in fixtures.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -287,8 +287,6 @@ class TestVerifyEmailService:
         assert result is fake_user
         assert fake_user.trial_ends_at is not None
         # trial_ends_at should be approximately 30 days from now.
-        from datetime import timedelta
-
         expected = datetime.now(UTC) + timedelta(days=30)
         delta = abs((fake_user.trial_ends_at - expected).total_seconds())
         assert delta < 5, f"trial_ends_at is not ~30 days from now (delta={delta}s)"
