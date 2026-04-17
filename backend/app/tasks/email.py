@@ -243,7 +243,7 @@ def send_verification_email(self: object, user_id: str, raw_token: str) -> None:
         )
         return
 
-    verify_url = f"{settings.frontend_url.rstrip('/')}/auth/verify?token={raw_token}"
+    verify_url = f"{settings.frontend_url.rstrip('/')}/verify?token={raw_token}"
 
     body_lines = [
         f"Hi {db_user.first_name},",

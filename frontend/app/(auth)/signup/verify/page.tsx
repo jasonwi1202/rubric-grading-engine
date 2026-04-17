@@ -11,16 +11,18 @@ import { resendVerification } from "@/lib/api/auth";
  */
 function VerifyContent() {
   const searchParams = useSearchParams();
-  const email = searchParams.get("email") ?? "";
+  const emailParam = searchParams.get("email") ?? "";
+  // Allow the user to type their email when it isn't pre-filled via URL.
+  const [emailInput, setEmailInput] = useState(emailParam);
   const [resendStatus, setResendStatus] = useState<
     "idle" | "pending" | "sent" | "error"
   >("idle");
 
   const handleResend = async () => {
-    if (resendStatus === "pending") return;
+    if (resendStatus === "pending" || !emailInput.trim()) return;
     setResendStatus("pending");
     try {
-      await resendVerification(email);
+      await resendVerification(emailInput.trim());
       setResendStatus("sent");
     } catch {
       setResendStatus("error");
@@ -40,21 +42,23 @@ function VerifyContent() {
       <h1 className="text-2xl font-bold text-gray-900">Check your email</h1>
 
       <p className="text-sm text-gray-600">
-        We sent a verification link to{" "}
-        {email ? (
-          <strong className="font-medium text-gray-800">{email}</strong>
+        {emailParam ? (
+          <>
+            We sent a verification link to{" "}
+            <strong className="font-medium text-gray-800">{emailParam}</strong>.
+            Click the link in that email to verify your account.
+          </>
         ) : (
-          "your email address"
+          "Enter your email address below to resend the verification link."
         )}
-        . Click the link in that email to verify your account.
       </p>
 
       <p className="text-sm text-gray-500">
         The link expires in 24 hours.
       </p>
 
-      {/* Resend link */}
-      <div className="pt-2">
+      {/* Resend section */}
+      <div className="pt-2 space-y-3">
         {resendStatus === "sent" ? (
           <p className="text-sm font-medium text-green-700" role="status">
             Verification email resent — please check your inbox.
@@ -64,18 +68,39 @@ function VerifyContent() {
             Could not resend at this time. Please try again later.
           </p>
         ) : (
-          <p className="text-sm text-gray-600">
-            Didn&apos;t receive the email?{" "}
-            <button
-              type="button"
-              onClick={handleResend}
-              disabled={resendStatus === "pending" || !email}
-              className="font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:underline disabled:opacity-50"
-              aria-label="Resend verification email"
-            >
-              {resendStatus === "pending" ? "Sending…" : "Resend it"}
-            </button>
-          </p>
+          <>
+            {!emailParam && (
+              <div className="text-left">
+                <label
+                  htmlFor="resend-email"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Email address
+                </label>
+                <input
+                  id="resend-email"
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="teacher@school.edu"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoComplete="email"
+                />
+              </div>
+            )}
+            <p className="text-sm text-gray-600">
+              Didn&apos;t receive the email?{" "}
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendStatus === "pending" || !emailInput.trim()}
+                className="font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:underline disabled:opacity-50"
+                aria-label="Resend verification email"
+              >
+                {resendStatus === "pending" ? "Sending…" : "Resend it"}
+              </button>
+            </p>
+          </>
         )}
       </div>
 
@@ -95,9 +120,12 @@ function VerifyContent() {
 /**
  * /signup/verify — "Check your email" holding page.
  *
- * Shown immediately after a successful sign-up. The user should click the
- * link sent to their email to complete verification. A resend button is
- * provided (rate-limited server-side to 3/hour per email).
+ * Shown immediately after a successful sign-up (with `?email=` set), or
+ * reached directly from an expired-token error page (without `?email=`).
+ * When no email param is present, an email input is rendered so the user can
+ * request a fresh verification link without starting over.
+ *
+ * A resend button is provided (rate-limited server-side to 3/hour per email).
  */
 export default function SignupVerifyPage() {
   return (

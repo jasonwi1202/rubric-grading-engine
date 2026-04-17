@@ -6,7 +6,8 @@ Business logic for the teacher sign-up flow:
                              persist account, and write audit log. The caller
                              is responsible for generating the verification
                              token and enqueueing the verification email.
-* ``generate_verification_token`` / ``verify_email_token`` — HMAC-backed,
+* ``generate_verification_token`` / ``verify_email`` /
+                             ``consume_verification_token`` — HMAC-backed,
                              single-use, 24 h TTL tokens stored in Redis.
 * ``resend_verification``  — rate-limited (max 3/h per email) re-send.
 

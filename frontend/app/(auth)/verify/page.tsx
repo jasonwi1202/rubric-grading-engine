@@ -130,11 +130,16 @@ function VerifyContent() {
 }
 
 /**
- * /auth/verify — email verification landing page.
+ * /verify — email verification landing page.
  *
  * Reads the `?token=` query parameter set by the verification email link,
  * calls the backend verify endpoint, and shows success or an error with a
  * resend option. On success the user is redirected to /login.
+ *
+ * Note: this file lives at `app/(auth)/verify/page.tsx`. The `(auth)` route
+ * group is not included in the URL, so the public route is `/verify`, not
+ * `/auth/verify`. Backend-generated verification links must therefore target
+ * `/verify`.
  *
  * Security notes:
  * - The token is consumed server-side (single-use, 24 h TTL).

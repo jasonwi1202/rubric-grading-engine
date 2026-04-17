@@ -83,8 +83,8 @@ Returns `201` with `{"data": {"id": "<uuid>", "email": "...", "created_at": "...
 Returns `409` if the email is already registered.  
 Returns `429` if more than 5 sign-up attempts are made from the same IP in one hour.
 
-**GET /auth/verify-email query params:** `?token=<hmac_signed_token>`  
-Consumes a single-use HMAC-SHA256 token (24 h TTL). Returns `200` on success, `422` for invalid/expired token.
+**GET /auth/verify-email query params:** `?token=<raw_token>`  
+Consumes a single-use token (24 h TTL). The server computes an HMAC-SHA256 tag over the raw token to look up the Redis entry — the token itself is a random URL-safe string, not an encoded signature. Returns `200` on success, `422` for invalid/expired/already-used token.
 
 **POST /auth/resend-verification body:**
 ```json
