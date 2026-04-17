@@ -24,6 +24,17 @@ class NotFoundError(RubricGradingError):
     code = "NOT_FOUND"
 
 
+class UnauthorizedError(RubricGradingError):
+    """Request is missing valid authentication credentials.
+
+    Use this when no credentials are supplied or the supplied token is
+    invalid/expired.  Reserve ``ForbiddenError`` for authenticated requests
+    that are denied due to insufficient privileges or cross-tenant access.
+    """
+
+    code = "UNAUTHORIZED"
+
+
 class ForbiddenError(RubricGradingError):
     """Authenticated teacher does not have access to this resource.
 

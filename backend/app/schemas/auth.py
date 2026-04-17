@@ -58,3 +58,28 @@ class ResendVerificationRequest(BaseModel):
     """Payload for POST /api/v1/auth/resend-verification."""
 
     email: EmailStr
+
+
+class LoginRequest(BaseModel):
+    """Payload for POST /api/v1/auth/login."""
+
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class LoginResponse(BaseModel):
+    """Response body returned after a successful login."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+    model_config = {"from_attributes": True}
+
+
+class RefreshResponse(BaseModel):
+    """Response body returned after a successful token refresh."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+    model_config = {"from_attributes": True}

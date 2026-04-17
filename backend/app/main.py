@@ -22,6 +22,7 @@ from app.exceptions import (
     NotFoundError,
     RateLimitError,
     RubricGradingError,
+    UnauthorizedError,
     ValidationError,
 )
 
@@ -79,6 +80,10 @@ def _register_exception_handlers(application: FastAPI) -> None:
     @application.exception_handler(NotFoundError)
     async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
         return _error_response(404, exc.code, str(exc))
+
+    @application.exception_handler(UnauthorizedError)
+    async def unauthorized_handler(request: Request, exc: UnauthorizedError) -> JSONResponse:
+        return _error_response(401, exc.code, str(exc))
 
     @application.exception_handler(ForbiddenError)
     async def forbidden_handler(request: Request, exc: ForbiddenError) -> JSONResponse:
@@ -189,10 +194,12 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.auth import router as auth_router
     from app.routers.contact import router as contact_router
     from app.routers.health import router as health_router
+    from app.routers.onboarding import router as onboarding_router
 
     application.include_router(health_router, prefix="/api/v1")
     application.include_router(contact_router, prefix="/api/v1")
     application.include_router(auth_router, prefix="/api/v1")
+    application.include_router(onboarding_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

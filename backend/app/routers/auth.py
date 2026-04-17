@@ -21,11 +21,14 @@ import logging
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
 from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    RefreshResponse,
     ResendVerificationRequest,
     SignupRequest,
     SignupResponse,
@@ -34,6 +37,9 @@ from app.schemas.auth import (
 from app.services.auth import (
     create_user,
     generate_verification_token,
+    login_user,
+    logout_user,
+    refresh_access_token,
     resend_verification,
     store_verification_token,
     verify_email,
@@ -238,3 +244,196 @@ async def resend_verification_endpoint(
             }
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/login
+# ---------------------------------------------------------------------------
+
+_REFRESH_TOKEN_COOKIE = "refresh_token"
+_REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 86400  # 7 days in seconds
+
+
+def _cookie_secure() -> bool:
+    """Return True when cookies should carry the Secure flag.
+
+    In local development (environment = "development") the backend typically
+    runs over plain HTTP, so Secure must be False or browsers will silently
+    drop the cookie.  In staging and production (HTTPS only) it must be True.
+    """
+    from app.config import settings
+
+    return settings.environment != "development"
+
+
+@router.post(
+    "/login",
+    summary="Authenticate a teacher and issue tokens",
+)
+async def login_endpoint(
+    request: Request,
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+) -> JSONResponse:
+    """Validate teacher credentials and issue a JWT access token + refresh token.
+
+    - The JWT access token is returned in the response body (15 min TTL).
+    - The refresh token is set as an httpOnly, Secure, SameSite=Strict cookie
+      (7 day TTL). It is never exposed in the response body.
+    - Returns 422 for invalid credentials or unverified email.
+    """
+    client_ip = _get_client_ip(request)
+    _user, access_token, refresh_token = await login_user(
+        db,
+        redis_client,
+        email=payload.email,
+        password=payload.password,
+        submitter_ip=client_ip,
+    )
+
+    response_data = LoginResponse(access_token=access_token)
+    response = JSONResponse(
+        status_code=200,
+        content={"data": response_data.model_dump(mode="json")},
+    )
+    response.set_cookie(
+        key=_REFRESH_TOKEN_COOKIE,
+        value=refresh_token,
+        httponly=True,
+        secure=_cookie_secure(),
+        samesite="strict",
+        max_age=_REFRESH_TOKEN_COOKIE_MAX_AGE,
+        path="/",
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/refresh
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/refresh",
+    summary="Exchange a refresh token for a new access token",
+)
+async def refresh_token_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+) -> JSONResponse:
+    """Consume the httpOnly refresh-token cookie and issue a new access token.
+
+    The refresh token is rotated on every use (old token is invalidated, new
+    one is set in a fresh cookie).
+
+    Returns 401 if the refresh cookie is absent, and 422 if the token is
+    invalid or expired.
+    """
+    client_ip = _get_client_ip(request)
+    incoming_refresh = request.cookies.get(_REFRESH_TOKEN_COOKIE)
+    if not incoming_refresh:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": {
+                    "code": "REFRESH_TOKEN_INVALID",
+                    "message": "Refresh token is missing or invalid.",
+                    "field": None,
+                }
+            },
+        )
+
+    _user, new_access_token, new_refresh_token = await refresh_access_token(
+        db,
+        redis_client,
+        refresh_token=incoming_refresh,
+        submitter_ip=client_ip,
+    )
+
+    response_data = RefreshResponse(access_token=new_access_token)
+    response = JSONResponse(
+        status_code=200,
+        content={"data": response_data.model_dump(mode="json")},
+    )
+    response.set_cookie(
+        key=_REFRESH_TOKEN_COOKIE,
+        value=new_refresh_token,
+        httponly=True,
+        secure=_cookie_secure(),
+        samesite="strict",
+        max_age=_REFRESH_TOKEN_COOKIE_MAX_AGE,
+        path="/",
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/logout
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/logout",
+    status_code=204,
+    summary="Invalidate the refresh token and clear the session cookie",
+)
+async def logout_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+) -> Response:
+    """Invalidate the server-side refresh token and clear the session cookie.
+
+    Returns 204 regardless of whether the cookie was present or valid, so
+    that clients can safely call this endpoint multiple times (idempotent
+    from the client's perspective).
+    """
+    from app.dependencies import get_current_teacher_optional
+
+    client_ip = _get_client_ip(request)
+    incoming_refresh = request.cookies.get(_REFRESH_TOKEN_COOKIE)
+
+    # Attempt to identify the authenticated teacher for the audit log.
+    # If the access token is absent or invalid, teacher_id will be None.
+    teacher_id = await get_current_teacher_optional(request, db)
+
+    if incoming_refresh and teacher_id is not None:
+        await logout_user(
+            db,
+            redis_client,
+            refresh_token=incoming_refresh,
+            teacher_id=teacher_id,
+            submitter_ip=client_ip,
+        )
+    elif incoming_refresh:
+        # No valid access token but a refresh token is present — delete it
+        # from Redis so it can't be reused, and still write an audit log so
+        # all explicit logout events are captured (teacher_id=None for
+        # unauthenticated/anonymous logout actions).
+        from app.models.audit_log import AuditLog
+        from app.services.auth import delete_refresh_token
+
+        await delete_refresh_token(redis_client, incoming_refresh)
+        audit = AuditLog(
+            teacher_id=None,
+            entity_type="user",
+            entity_id=None,
+            action="logout",
+            after_value={"reason": "no_access_token"},
+            ip_address=client_ip,
+        )
+        db.add(audit)
+        await db.commit()
+
+    # HTTP 204 must not include a response body — use bare Response, not JSONResponse.
+    response: Response = Response(status_code=204)
+    response.delete_cookie(
+        key=_REFRESH_TOKEN_COOKIE,
+        path="/",
+        httponly=True,
+        secure=_cookie_secure(),
+        samesite="strict",
+    )
+    return response
