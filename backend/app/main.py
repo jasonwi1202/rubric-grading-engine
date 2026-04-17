@@ -189,10 +189,12 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.auth import router as auth_router
     from app.routers.contact import router as contact_router
     from app.routers.health import router as health_router
+    from app.routers.onboarding import router as onboarding_router
 
     application.include_router(health_router, prefix="/api/v1")
     application.include_router(contact_router, prefix="/api/v1")
     application.include_router(auth_router, prefix="/api/v1")
+    application.include_router(onboarding_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

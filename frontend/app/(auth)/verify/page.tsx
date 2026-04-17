@@ -34,8 +34,10 @@ function VerifyContent() {
         if (!cancelled) {
           setState("success");
           // Redirect to login after a short delay so the user can see the message.
+          // Pass next=/onboarding so that after login the teacher goes straight
+          // to the wizard rather than the landing page.
           redirectTimer = setTimeout(() => {
-            router.replace("/login?verified=1");
+            router.replace("/login?next=/onboarding&verified=1");
           }, 2500);
         }
       })
@@ -86,7 +88,7 @@ function VerifyContent() {
         <p className="text-sm text-gray-500">
           Not redirecting?{" "}
           <Link
-            href="/login"
+            href="/login?next=/onboarding"
             className="font-medium text-blue-600 hover:text-blue-700"
           >
             Click here to sign in

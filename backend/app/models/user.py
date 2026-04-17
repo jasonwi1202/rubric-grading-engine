@@ -46,6 +46,11 @@ class User(Base):
         default=UserRole.teacher,
     )
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    onboarding_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
