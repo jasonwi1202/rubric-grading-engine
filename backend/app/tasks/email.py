@@ -1,8 +1,8 @@
 """Email notification Celery tasks.
 
 Tasks in this module send notification emails for internal operational
-purposes (e.g. new school inquiry alerts).  They do not send email to
-students or process student data.
+purposes (e.g. new school inquiry alerts, DPA request alerts).  They do
+not send email to students or process student data.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from app.tasks.celery_app import celery
 
 if TYPE_CHECKING:
     from app.models.contact import ContactInquiry
+    from app.models.dpa_request import DpaRequest
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,17 @@ async def _load_inquiry(inquiry_id: str) -> ContactInquiry | None:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(_ContactInquiry).where(_ContactInquiry.id == uuid.UUID(inquiry_id))
+        )
+        return result.scalar_one_or_none()
+
+
+async def _load_dpa_request(dpa_request_id: str) -> DpaRequest | None:
+    """Load a DpaRequest record from the database by ID."""
+    from app.models.dpa_request import DpaRequest as _DpaRequest  # noqa: PLC0415
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(_DpaRequest).where(_DpaRequest.id == uuid.UUID(dpa_request_id))
         )
         return result.scalar_one_or_none()
 
@@ -111,5 +123,76 @@ def send_inquiry_notification(self: object, inquiry_id: str) -> None:
             extra={"inquiry_id": inquiry_id, "error_type": type(exc).__name__},
         )
         # Exponential backoff: 60s, 120s, 240s for retries 0, 1, 2.
+        countdown = 60 * (2**self.request.retries)  # type: ignore[attr-defined]
+        raise self.retry(exc=exc, countdown=countdown) from exc  # type: ignore[attr-defined]
+
+
+@celery.task(  # type: ignore[untyped-decorator]
+    name="tasks.email.send_dpa_request_notification",
+    bind=True,
+    max_retries=3,
+)
+def send_dpa_request_notification(self: object, dpa_request_id: str) -> None:
+    """Send an internal notification email when a new DPA request arrives.
+
+    Loads the persisted ``DpaRequest`` record by ``dpa_request_id`` so that
+    retries always work from the canonical source of truth.
+
+    The email is sent to ``settings.contact_email``.  If that setting is not
+    configured, the task exits early (no-op).
+
+    Args:
+        dpa_request_id: UUID of the persisted DpaRequest record.
+    """
+    from app.config import settings  # imported here to avoid circular import at module load
+
+    recipient = settings.contact_email
+    if not recipient:
+        logger.info(
+            "CONTACT_EMAIL not configured — skipping DPA request notification email",
+            extra={"dpa_request_id": dpa_request_id},
+        )
+        return
+
+    dpa_req = asyncio.run(_load_dpa_request(dpa_request_id))
+    if dpa_req is None:
+        logger.warning(
+            "DPA request record not found — skipping notification email",
+            extra={"dpa_request_id": dpa_request_id},
+        )
+        return
+
+    body_lines = [
+        f"New DPA request received (ID: {dpa_request_id})",
+        "",
+        f"Name:     {dpa_req.name}",
+        f"Email:    {dpa_req.email}",
+        f"School:   {dpa_req.school_name}",
+        f"District: {dpa_req.district or '—'}",
+        "",
+        "Message:",
+        dpa_req.message or "(none)",
+    ]
+
+    msg = EmailMessage()
+    msg["Subject"] = f"New DPA request from {dpa_req.school_name}"
+    msg["From"] = recipient
+    msg["To"] = recipient
+    msg.set_content("\n".join(body_lines))
+
+    try:
+        with smtplib.SMTP(
+            settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
+        ) as smtp:
+            smtp.send_message(msg)
+        logger.info(
+            "DPA request notification email sent",
+            extra={"dpa_request_id": dpa_request_id, "recipient": recipient},
+        )
+    except (smtplib.SMTPException, OSError) as exc:
+        logger.warning(
+            "Failed to send DPA request notification email — will retry",
+            extra={"dpa_request_id": dpa_request_id, "error_type": type(exc).__name__},
+        )
         countdown = 60 * (2**self.request.retries)  # type: ignore[attr-defined]
         raise self.retry(exc=exc, countdown=countdown) from exc  # type: ignore[attr-defined]

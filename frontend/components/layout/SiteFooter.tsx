@@ -14,6 +14,7 @@ const LEGAL_LINKS = [
   { label: "Privacy Policy", href: "/legal/privacy" },
   { label: "FERPA Notice", href: "/legal/ferpa" },
   { label: "Data Processing Agreement", href: "/legal/dpa" },
+  { label: "AI Use Policy", href: "/legal/ai-policy" },
 ] as const;
 
 /**
