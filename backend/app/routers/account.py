@@ -37,7 +37,9 @@ async def get_trial_status(
 
     - ``trial_ends_at``: ISO-8601 timestamp or null.
     - ``is_active``: True while the trial has not yet expired.
-    - ``days_remaining``: Full calendar days remaining; null if no expiry set.
+    - ``days_remaining``: Full 24-hour periods remaining (floor); null if no
+      expiry set.  May be ``0`` while ``is_active`` is still ``True`` when
+      fewer than 24 hours remain; negative values indicate expiry.
 
     Requires a valid JWT Bearer token.
     """

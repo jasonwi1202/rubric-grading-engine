@@ -15,8 +15,7 @@ Coverage targets:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from freezegun import freeze_time
@@ -496,3 +495,171 @@ class TestScanTrialExpirations:
         assert "scan-trial-expirations-daily" in schedule
         entry = schedule["scan-trial-expirations-daily"]
         assert entry["task"] == "tasks.email.scan_trial_expirations"
+
+
+# ---------------------------------------------------------------------------
+# _do_scan_trial_expirations — DB query and enqueue logic
+# ---------------------------------------------------------------------------
+
+
+class TestDoScanTrialExpirations:
+    """Unit tests for the async scan implementation.
+
+    The DB session and Celery .delay() calls are mocked; no real database or
+    broker is required.
+    """
+
+    def _make_db_result(self, user_ids: list[str]) -> MagicMock:
+        """Return a mock SQLAlchemy result that yields UUID rows."""
+        rows = [(uuid.UUID(uid),) for uid in user_ids]
+        result = MagicMock()
+        result.all.return_value = rows
+        return result
+
+    @freeze_time("2025-06-10 08:00:00")  # 08:00 UTC — trial_ends_at in the past = truly expired
+    def test_day_0_enqueues_send_trial_expired(self, mocker: pytest.FixtureRequest) -> None:
+        """Users whose trial ended before now get a trial_expired task enqueued."""
+        uid = str(uuid.uuid4())
+        expired_result = self._make_db_result([uid])
+        empty_result = self._make_db_result([])
+
+        # DB returns one user for days=0 window; empty for days=7 and days=1
+        execute_results = [empty_result, empty_result, expired_result]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=execute_results)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mocker.patch("app.tasks.email.AsyncSessionLocal", return_value=mock_cm)
+        mock_expired_delay = mocker.patch(
+            "app.tasks.email.send_trial_expired.delay",
+        )
+        mock_warning_delay = mocker.patch(
+            "app.tasks.email.send_trial_expiry_warning.delay",
+        )
+
+        import asyncio as _asyncio
+
+        from app.tasks.email import _do_scan_trial_expirations
+
+        _asyncio.run(_do_scan_trial_expirations())
+
+        mock_expired_delay.assert_called_once_with(user_id=uid)
+        mock_warning_delay.assert_not_called()
+
+    @freeze_time("2025-06-03 06:00:00")
+    def test_day_7_enqueues_send_trial_expiry_warning(self, mocker: pytest.FixtureRequest) -> None:
+        """Users whose trial ends in exactly 7 days get a warning task enqueued."""
+        uid = str(uuid.uuid4())
+        warning_result = self._make_db_result([uid])
+        empty_result = self._make_db_result([])
+
+        # DB returns one user for days=7 window; empty for days=1 and days=0
+        execute_results = [warning_result, empty_result, empty_result]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=execute_results)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mocker.patch("app.tasks.email.AsyncSessionLocal", return_value=mock_cm)
+        mock_expired_delay = mocker.patch("app.tasks.email.send_trial_expired.delay")
+        mock_warning_delay = mocker.patch(
+            "app.tasks.email.send_trial_expiry_warning.delay",
+        )
+
+        import asyncio as _asyncio
+
+        from app.tasks.email import _do_scan_trial_expirations
+
+        _asyncio.run(_do_scan_trial_expirations())
+
+        mock_warning_delay.assert_called_once_with(user_id=uid, days_remaining=7)
+        mock_expired_delay.assert_not_called()
+
+    @freeze_time("2025-06-09 06:00:00")
+    def test_day_1_enqueues_send_trial_expiry_warning(self, mocker: pytest.FixtureRequest) -> None:
+        """Users whose trial ends in exactly 1 day get a 1-day warning task enqueued."""
+        uid = str(uuid.uuid4())
+        one_day_result = self._make_db_result([uid])
+        empty_result = self._make_db_result([])
+
+        # DB returns empty for days=7, one user for days=1, empty for days=0
+        execute_results = [empty_result, one_day_result, empty_result]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=execute_results)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mocker.patch("app.tasks.email.AsyncSessionLocal", return_value=mock_cm)
+        mock_expired_delay = mocker.patch("app.tasks.email.send_trial_expired.delay")
+        mock_warning_delay = mocker.patch(
+            "app.tasks.email.send_trial_expiry_warning.delay",
+        )
+
+        import asyncio as _asyncio
+
+        from app.tasks.email import _do_scan_trial_expirations
+
+        _asyncio.run(_do_scan_trial_expirations())
+
+        mock_warning_delay.assert_called_once_with(user_id=uid, days_remaining=1)
+        mock_expired_delay.assert_not_called()
+
+    @freeze_time("2025-06-10 06:00:00")
+    def test_day_0_future_trial_not_enqueued(self, mocker: pytest.FixtureRequest) -> None:
+        """Users whose trial_ends_at is later today (in the future) must NOT receive
+        a trial_expired email — the DB query should not return them because of the
+        ``trial_ends_at <= now`` guard.  This test verifies that when the DB returns
+        no results for the day-0 window (as it would for future-expiry rows), no
+        expired task is enqueued.
+        """
+        empty_result = self._make_db_result([])
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=empty_result)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mocker.patch("app.tasks.email.AsyncSessionLocal", return_value=mock_cm)
+        mock_expired_delay = mocker.patch("app.tasks.email.send_trial_expired.delay")
+
+        import asyncio as _asyncio
+
+        from app.tasks.email import _do_scan_trial_expirations
+
+        _asyncio.run(_do_scan_trial_expirations())
+
+        mock_expired_delay.assert_not_called()
+
+    @freeze_time("2025-06-10 08:00:00")
+    def test_no_users_no_tasks_enqueued(self, mocker: pytest.FixtureRequest) -> None:
+        """When no users fall into any window, no tasks are enqueued."""
+        empty_result = self._make_db_result([])
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=empty_result)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mocker.patch("app.tasks.email.AsyncSessionLocal", return_value=mock_cm)
+        mock_expired_delay = mocker.patch("app.tasks.email.send_trial_expired.delay")
+        mock_warning_delay = mocker.patch(
+            "app.tasks.email.send_trial_expiry_warning.delay",
+        )
+
+        import asyncio as _asyncio
+
+        from app.tasks.email import _do_scan_trial_expirations
+
+        _asyncio.run(_do_scan_trial_expirations())
+
+        mock_expired_delay.assert_not_called()
+        mock_warning_delay.assert_not_called()

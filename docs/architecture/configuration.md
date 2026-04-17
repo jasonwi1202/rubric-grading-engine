@@ -101,7 +101,7 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `EMAIL_VERIFICATION_HMAC_SECRET` | Yes | — | Secret for HMAC-signing single-use email verification tokens. Min 32 chars. Generate with: `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `UNSUBSCRIBE_HMAC_SECRET` | Yes | — | Secret for HMAC-signing unsubscribe tokens on non-transactional emails (trial warnings, expiry). Min 32 chars. Must be different from `EMAIL_VERIFICATION_HMAC_SECRET`. |
+| `UNSUBSCRIBE_HMAC_SECRET` | Yes | — | Secret for HMAC-signing unsubscribe tokens on non-transactional emails (trial warnings, expiry). Min 32 chars. Should be different from `EMAIL_VERIFICATION_HMAC_SECRET`. |
 | `VERIFICATION_TOKEN_TTL_SECONDS` | No | `86400` | TTL (seconds) for email verification tokens stored in Redis — defaults to 24 hours |
 | `FRONTEND_URL` | No | `http://localhost:3000` | Base URL of the frontend — used to build links in emails (verification, unsubscribe, "Get Started") |
 | `VERIFICATION_EMAIL_FROM` | No | — | "From" address for outbound emails. Falls back to `CONTACT_EMAIL` if not set. If neither is configured, email tasks are skipped (no-op). |

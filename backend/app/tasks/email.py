@@ -188,10 +188,7 @@ def send_inquiry_notification(self: object, inquiry_id: str) -> None:
     msg.set_content("\n".join(body_lines))
 
     try:
-        with smtplib.SMTP(
-            settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
-        ) as smtp:
-            smtp.send_message(msg)
+        _send_smtp_message(msg)
         logger.info(
             "Inquiry notification email sent",
             extra={"inquiry_id": inquiry_id, "recipient": recipient},
@@ -260,10 +257,7 @@ def send_dpa_request_notification(self: object, dpa_request_id: str) -> None:
     msg.set_content("\n".join(body_lines))
 
     try:
-        with smtplib.SMTP(
-            settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
-        ) as smtp:
-            smtp.send_message(msg)
+        _send_smtp_message(msg)
         logger.info(
             "DPA request notification email sent",
             extra={"dpa_request_id": dpa_request_id, "recipient": recipient},
@@ -334,10 +328,7 @@ def send_verification_email(self: object, user_id: str, raw_token: str) -> None:
     msg.set_content("\n".join(body_lines))
 
     try:
-        with smtplib.SMTP(
-            settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout
-        ) as smtp:
-            smtp.send_message(msg)
+        _send_smtp_message(msg)
         logger.info(
             "Verification email sent",
             extra={"user_id": user_id},
@@ -585,11 +576,13 @@ def scan_trial_expirations() -> None:
     For each ``days`` value in ``[7, 1, 0]``:
     - 7 or 1: enqueues ``send_trial_expiry_warning`` for teachers whose trial
       ends exactly that many calendar days from today (UTC).
-    - 0: enqueues ``send_trial_expired`` for teachers whose trial ended today.
+    - 0: enqueues ``send_trial_expired`` for teachers whose trial ended
+      at or before the current UTC moment (i.e. the trial has actually expired).
 
     Only teachers with verified email addresses are included.  This task is
-    idempotent — running it twice on the same day sends duplicate emails, so
-    the Celery Beat schedule must not fire more than once per UTC day.
+    **not idempotent** — running it more than once on the same UTC day enqueues
+    duplicate emails, so the Celery Beat schedule must not fire more than once
+    per UTC day.
 
     No student PII is read or logged.
     """
@@ -600,12 +593,17 @@ async def _do_scan_trial_expirations() -> None:
     """Async implementation of the trial expiration scan."""
     from app.models.user import User  # noqa: PLC0415
 
-    today: date = datetime.now(UTC).date()
+    now = datetime.now(UTC)
+    today: date = now.date()
 
     for days in (7, 1, 0):
         target_date = today + timedelta(days=days)
         window_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=UTC)
         window_end = window_start + timedelta(days=1)
+
+        # For day 0 (expired), only select users whose trial has already ended
+        # at the current moment to avoid sending "expired" emails before expiry.
+        extra_conditions = [User.trial_ends_at <= now] if days == 0 else []
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -613,6 +611,7 @@ async def _do_scan_trial_expirations() -> None:
                     User.trial_ends_at >= window_start,
                     User.trial_ends_at < window_end,
                     User.email_verified.is_(True),
+                    *extra_conditions,
                 )
             )
             user_ids = [str(row[0]) for row in result.all()]

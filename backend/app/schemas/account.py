@@ -21,8 +21,10 @@ class TrialStatusResponse(BaseModel):
     future or not set)."""
 
     days_remaining: int | None
-    """Number of full calendar days remaining in the trial.  ``None`` if
-    ``trial_ends_at`` is not set.  Zero or negative means the trial has
-    expired."""
+    """Number of full 24-hour periods remaining in the trial (``floor``).
+    ``None`` if ``trial_ends_at`` is not set.  A value of ``0`` means fewer
+    than one full day remains and the trial may still be active; check
+    ``is_active`` to determine whether the trial has expired.  Negative
+    values mean the trial has already expired."""
 
     model_config = {"from_attributes": True}

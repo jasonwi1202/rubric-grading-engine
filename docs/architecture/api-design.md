@@ -156,7 +156,7 @@ Returns `200` with `{"data": {"message": "Onboarding marked as complete."}}`.
 ```
 - `trial_ends_at`: ISO-8601 timestamp when the trial ends, or `null` if not yet set (email not yet verified).
 - `is_active`: `true` while `trial_ends_at` is in the future or not set; `false` once the trial has expired.
-- `days_remaining`: number of full calendar days remaining (`Math.floor`); `null` if `trial_ends_at` is not set; `0` or negative when expired.
+- `days_remaining`: number of full 24-hour periods remaining (`Math.floor`); `null` if `trial_ends_at` is not set. This value may be `0` while `is_active` is still `true` when fewer than 24 hours remain before `trial_ends_at`; negative values indicate the trial has already expired.
 
 This endpoint is consumed by the dashboard trial-expiry banner.
 
