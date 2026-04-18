@@ -503,7 +503,9 @@ class TestDoScanTrialExpirations:
         result.all.return_value = rows
         return result
 
-    @freeze_time("2025-06-10 08:00:00")  # 08:00 UTC — Beat runs morning of June 10, covers June 9 window
+    @freeze_time(
+        "2025-06-10 08:00:00"
+    )  # 08:00 UTC — Beat runs morning of June 10, covers June 9 window
     def test_day_0_enqueues_send_trial_expired(self, mocker: pytest.FixtureRequest) -> None:
         """Users whose trial ended during yesterday's UTC window get trial_expired enqueued."""
         uid = str(uuid.uuid4())

@@ -35,9 +35,7 @@ def _make_fake_teacher(trial_ends_at: datetime | None = None) -> MagicMock:
 
 class TestGetTrialStatusHappyPath:
     def test_returns_200(self) -> None:
-        teacher = _make_fake_teacher(
-            trial_ends_at=datetime.now(UTC) + timedelta(days=10)
-        )
+        teacher = _make_fake_teacher(trial_ends_at=datetime.now(UTC) + timedelta(days=10))
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
@@ -47,9 +45,7 @@ class TestGetTrialStatusHappyPath:
         assert resp.status_code == 200, resp.text
 
     def test_response_contains_data_envelope(self) -> None:
-        teacher = _make_fake_teacher(
-            trial_ends_at=datetime.now(UTC) + timedelta(days=10)
-        )
+        teacher = _make_fake_teacher(trial_ends_at=datetime.now(UTC) + timedelta(days=10))
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
@@ -64,9 +60,7 @@ class TestGetTrialStatusHappyPath:
         assert "days_remaining" in data
 
     def test_active_trial_returns_is_active_true(self) -> None:
-        teacher = _make_fake_teacher(
-            trial_ends_at=datetime.now(UTC) + timedelta(days=5)
-        )
+        teacher = _make_fake_teacher(trial_ends_at=datetime.now(UTC) + timedelta(days=5))
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
@@ -79,9 +73,7 @@ class TestGetTrialStatusHappyPath:
         assert data["days_remaining"] >= 0
 
     def test_expired_trial_returns_is_active_false(self) -> None:
-        teacher = _make_fake_teacher(
-            trial_ends_at=datetime.now(UTC) - timedelta(days=1)
-        )
+        teacher = _make_fake_teacher(trial_ends_at=datetime.now(UTC) - timedelta(days=1))
         app = create_app()
         app.dependency_overrides[get_current_teacher] = lambda: teacher
 
