@@ -198,7 +198,7 @@ def upgrade() -> None:
     op.create_index("ix_class_enrollments_student_id", "class_enrollments", ["student_id"])
     # Partial unique index: a student may only have one active enrollment per class.
     op.create_index(
-        "uix_class_enrollments_active",
+        "ix_class_enrollments_active",
         "class_enrollments",
         ["class_id", "student_id"],
         unique=True,
@@ -360,6 +360,15 @@ def upgrade() -> None:
     )
     op.create_index("ix_essays_assignment_id", "essays", ["assignment_id"])
     op.create_index("ix_essays_student_id", "essays", ["student_id"])
+    # Partial unique index: one essay per student per assignment (unassigned
+    # uploads are excluded so that multiple unassigned uploads can coexist).
+    op.create_index(
+        "ix_essays_assignment_id_student_id",
+        "essays",
+        ["assignment_id", "student_id"],
+        unique=True,
+        postgresql_where=sa.text("student_id IS NOT NULL"),
+    )
 
     # ------------------------------------------------------------------
     # 10. essay_versions
@@ -493,14 +502,27 @@ def upgrade() -> None:
     # 13. Foreign key: audit_logs.teacher_id → users.id
     #     (deferred from 004_audit_logs to ensure the FK is added after
     #     the users table existed and this migration has run all tables)
+    #
+    #     Added as NOT VALID because audit_logs may already contain rows
+    #     written before referential integrity was enforced. NOT VALID
+    #     protects new writes immediately while allowing a separate
+    #     VALIDATE CONSTRAINT step once stale rows are cleaned up,
+    #     with no long scan / lock on the existing table.
+    #
+    #     ON DELETE RESTRICT prevents user deletion from silently
+    #     NULLing audit log rows; combined with the INSERT-only trigger
+    #     below, any SET NULL cascade would attempt an UPDATE and be
+    #     rejected — so RESTRICT is the only safe option here.
     # ------------------------------------------------------------------
-    op.create_foreign_key(
-        "fk_audit_logs_users",
-        "audit_logs",
-        "users",
-        ["teacher_id"],
-        ["id"],
-        ondelete="SET NULL",
+    op.execute(
+        sa.text("""
+        ALTER TABLE audit_logs
+        ADD CONSTRAINT fk_audit_logs_users
+        FOREIGN KEY (teacher_id)
+        REFERENCES users (id)
+        ON DELETE RESTRICT
+        NOT VALID
+    """)
     )
 
     # ------------------------------------------------------------------
@@ -519,6 +541,7 @@ def upgrade() -> None:
             RAISE EXCEPTION
                 'audit_logs is INSERT-only: UPDATE and DELETE are not permitted '
                 '(action: %, id: %)', TG_OP, COALESCE(OLD.id::text, 'unknown');
+            RETURN OLD;
         END;
         $$;
     """)
@@ -559,6 +582,7 @@ def downgrade() -> None:
     op.drop_index("ix_essay_versions_essay_id", table_name="essay_versions")
     op.drop_table("essay_versions")
 
+    op.drop_index("ix_essays_assignment_id_student_id", table_name="essays")
     op.drop_index("ix_essays_student_id", table_name="essays")
     op.drop_index("ix_essays_assignment_id", table_name="essays")
     op.drop_table("essays")
@@ -573,7 +597,7 @@ def downgrade() -> None:
     op.drop_index("ix_rubrics_teacher_id", table_name="rubrics")
     op.drop_table("rubrics")
 
-    op.drop_index("uix_class_enrollments_active", table_name="class_enrollments")
+    op.drop_index("ix_class_enrollments_active", table_name="class_enrollments")
     op.drop_index("ix_class_enrollments_student_id", table_name="class_enrollments")
     op.drop_index("ix_class_enrollments_class_id", table_name="class_enrollments")
     op.drop_table("class_enrollments")
@@ -587,6 +611,6 @@ def downgrade() -> None:
     # Drop ENUM types.
     _drop_enums(bind)
 
-    # Drop the pgvector extension last (other schemas may still need it;
-    # use IF EXISTS to be safe).
-    op.execute(sa.text("DROP EXTENSION IF EXISTS vector"))
+    # Intentionally leave the pgvector extension installed on downgrade.
+    # Extensions are database-wide objects and may have existed before this
+    # app was installed or still be required by other schemas.

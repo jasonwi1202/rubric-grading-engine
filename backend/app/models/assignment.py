@@ -48,6 +48,7 @@ class Assignment(Base):
         UUID(as_uuid=True),
         ForeignKey("rubrics.id", ondelete="RESTRICT"),
         nullable=False,
+        index=True,
     )
     # Immutable snapshot of the rubric at assignment-creation time.
     # Grading always uses this snapshot, never the live rubric.
