@@ -74,6 +74,23 @@ services:
       "
 
   # ---------------------------------------------------------------------------
+  # Mailpit — local SMTP sink + web UI for inspecting outbound emails
+  # Web UI:  http://localhost:8025
+  # SMTP:    localhost:1025 (no auth)
+  # ---------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
   # FastAPI Backend
   # ---------------------------------------------------------------------------
   backend:
@@ -92,6 +109,8 @@ services:
       redis:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     volumes:
       - ./backend:/app   # hot reload in development
