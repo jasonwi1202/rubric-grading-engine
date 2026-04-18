@@ -509,6 +509,11 @@ def upgrade() -> None:
     #     VALIDATE CONSTRAINT step once stale rows are cleaned up,
     #     with no long scan / lock on the existing table.
     #
+    #     Alembic does not natively support NOT VALID + VALIDATE CONSTRAINT
+    #     in one call, so we use raw SQL here. The constraint should be
+    #     validated in a follow-up migration (007+) once orphaned rows have
+    #     been back-filled or confirmed absent in all environments.
+    #
     #     ON DELETE RESTRICT prevents user deletion from silently
     #     NULLing audit log rows; combined with the INSERT-only trigger
     #     below, any SET NULL cascade would attempt an UPDATE and be
@@ -541,6 +546,9 @@ def upgrade() -> None:
             RAISE EXCEPTION
                 'audit_logs is INSERT-only: UPDATE and DELETE are not permitted '
                 '(action: %, id: %)', TG_OP, COALESCE(OLD.id::text, 'unknown');
+            -- RETURN OLD is unreachable after RAISE EXCEPTION but is required
+            -- by PL/pgSQL syntax: all code paths in a trigger function must end
+            -- with a RETURN statement.
             RETURN OLD;
         END;
         $$;
