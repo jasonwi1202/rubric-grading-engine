@@ -19,7 +19,7 @@ import { test, expect } from "@playwright/test";
 import { assertBasicA11y } from "./helpers";
 
 const PUBLIC_ROUTES = [
-  { path: "/", titleContains: "Rubric" },
+  { path: "/", titleContains: "GradeWise" },
   { path: "/product", titleContains: "Product" },
   { path: "/how-it-works", titleContains: "How" },
   { path: "/about", titleContains: "About" },
@@ -28,7 +28,7 @@ const PUBLIC_ROUTES = [
   { path: "/legal/terms", titleContains: "Terms" },
   { path: "/legal/privacy", titleContains: "Privacy" },
   { path: "/legal/ferpa", titleContains: "FERPA" },
-  { path: "/legal/dpa", titleContains: "DPA" },
+  { path: "/legal/dpa", titleContains: "Data Processing" },
   { path: "/legal/ai-policy", titleContains: "AI" },
 ];
 
