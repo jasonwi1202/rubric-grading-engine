@@ -26,7 +26,7 @@ import {
   WeightSumIndicator,
   RubricBuilderForm,
   rubricFormSchema,
-  emptyc,
+  createEmptyCriterion,
 } from "@/components/rubric/RubricBuilderForm";
 
 // ---------------------------------------------------------------------------
@@ -175,12 +175,12 @@ describe("rubricFormSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unit — emptyc helper
+// Unit — createEmptyCriterion helper
 // ---------------------------------------------------------------------------
 
-describe("emptyc", () => {
+describe("createEmptyCriterion", () => {
   it("returns a criterion with the given order in its name", () => {
-    const c = emptyc(3);
+    const c = createEmptyCriterion(3);
     expect(c.name).toBe("Criterion 3");
     expect(c.weight).toBe(0);
     expect(c.min_score).toBe(1);

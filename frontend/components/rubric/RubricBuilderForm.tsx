@@ -87,7 +87,7 @@ export type RubricFormValues = z.infer<typeof rubricFormSchema>;
 // Helper — build empty criterion
 // ---------------------------------------------------------------------------
 
-export function emptyc(order: number): RubricFormValues["criteria"][number] {
+export function createEmptyCriterion(order: number): RubricFormValues["criteria"][number] {
   return {
     name: `Criterion ${order}`,
     description: "",
@@ -221,12 +221,15 @@ function CriterionRow({
     >
       {/* Criterion header row */}
       <div className="flex items-center gap-2 px-3 py-2">
-        {/* Drag handle */}
+        {/* Drag handle — aria-hidden because keyboard reordering is provided
+            by the up/down buttons below */}
         <span
           className="cursor-grab text-gray-400 hover:text-gray-600 select-none"
           aria-hidden="true"
           title="Drag to reorder"
+          role="img"
         >
+          <span className="sr-only">Drag handle</span>
           ⠿
         </span>
 
@@ -511,7 +514,7 @@ export function RubricBuilderForm({
     resolver: zodResolver(rubricFormSchema),
     defaultValues: {
       name: "",
-      criteria: [emptyc(1), emptyc(2), emptyc(3)],
+      criteria: [createEmptyCriterion(1), createEmptyCriterion(2), createEmptyCriterion(3)],
       ...defaultValues,
     },
   });
@@ -689,7 +692,7 @@ export function RubricBuilderForm({
           <p className="text-sm font-medium text-gray-700">
             Criteria{" "}
             <span className="text-xs font-normal text-gray-400">
-              (1–8, drag to reorder)
+              (1-8, drag to reorder)
             </span>
           </p>
           <WeightSumIndicator sum={weightSum} />
@@ -734,7 +737,7 @@ export function RubricBuilderForm({
         {canAddMore && (
           <button
             type="button"
-            onClick={() => append(emptyc(fields.length + 1))}
+            onClick={() => append(createEmptyCriterion(fields.length + 1))}
             disabled={isSubmitting}
             className="mt-3 flex items-center gap-1 rounded-md border border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 hover:border-blue-400 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 w-full justify-center"
           >
