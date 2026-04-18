@@ -262,7 +262,7 @@ class TestGetRubric:
             await get_rubric(db, uuid.uuid4(), uuid.uuid4())
 
     @pytest.mark.asyncio
-    async def test_raises_not_found_on_toctou_window(self) -> None:
+    async def test_raises_not_found_when_deleted_between_queries(self) -> None:
         """Rubric deleted between ownership check and full-row fetch → NotFoundError."""
         teacher_id = uuid.uuid4()
         rubric_id = uuid.uuid4()
