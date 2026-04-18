@@ -191,6 +191,7 @@ The grading result for a specific essay version. One grade per essay version.
 | summary_feedback_edited | TEXT | Nullable — teacher-edited version |
 | strictness | ENUM | `lenient`, `balanced`, `strict` |
 | ai_model | VARCHAR(100) | Model used to generate this grade |
+| prompt_version | VARCHAR(100) | Prompt version string that produced this grade (e.g. `grading-v1`) |
 | is_locked | BOOLEAN | Default false |
 | locked_at | TIMESTAMPTZ | Nullable |
 | created_at | TIMESTAMPTZ | |
