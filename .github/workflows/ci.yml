@@ -296,6 +296,25 @@ jobs:
       - name: Create .env from .env.ci
         run: cp .env.ci .env
 
+      - name: Start infrastructure services
+        run: docker compose up -d postgres redis minio minio-init mailpit
+        timeout-minutes: 2
+
+      - name: Wait for infrastructure to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1 && \
+               docker compose exec -T redis redis-cli ping > /dev/null 2>&1; then
+              echo "Infrastructure ready"
+              break
+            fi
+            echo "Waiting for infrastructure... ($i/30)"
+            sleep 3
+          done
+
+      - name: Run database migrations
+        run: docker compose run --rm backend alembic upgrade head
+
       - name: Start Docker Compose stack
         run: docker compose up -d --wait
         timeout-minutes: 5
