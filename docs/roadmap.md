@@ -20,7 +20,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | Milestone | Name | Description | Issues | Status |
 |---|---|---|---|---|
 | **M1** | Project Scaffold | Monorepo, CI, Docker Compose, authentication, and local dev environment. No product features — everything else depends on this. | 10 | ✅ Complete |
-| **M2** | Public Website & Onboarding | Marketing site, legal pages, pricing, AI transparency page, sign-up, and trial onboarding wizard. Can be built in parallel with M3 once M1.2 and M1.3 are done. | 10 | 🔲 Planned |
+| **M2** | Public Website & Onboarding | Marketing site, legal pages, pricing, AI transparency page, sign-up, and trial onboarding wizard. Can be built in parallel with M3 once M1.2 and M1.3 are done. | 10 | ✅ Complete |
 | **M3** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 | 🔲 Planned |
 | **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | 🔲 Planned |
 | **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | 🔲 Planned |
@@ -50,7 +50,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M2 — Public Website & Onboarding
+## M2 — Public Website & Onboarding ✅ Complete
 
 > Public marketing site, legal pages, pricing, AI transparency, and trial sign-up flow. Must be complete before any real teacher data is collected. Can be built in parallel with M3 once M1.2 and M1.3 are done.
 

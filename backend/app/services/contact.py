@@ -7,6 +7,8 @@ so that the router stays thin and the logic is unit-testable.
 No student PII is collected, processed, or stored by this service.
 """
 
+from __future__ import annotations
+
 import logging
 
 from redis.asyncio import Redis
@@ -28,7 +30,7 @@ def _rate_limit_key(ip: str) -> str:
     return f"contact:inquiry:ratelimit:{ip}"
 
 
-async def _check_rate_limit(redis_client: Redis, ip: str) -> None:
+async def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[type-arg]
     """Raise RateLimitError if the IP has exceeded the rate limit.
 
     Uses a simple Redis counter with a 1-hour TTL.  The counter is
@@ -48,7 +50,7 @@ async def _check_rate_limit(redis_client: Redis, ip: str) -> None:
 
 async def create_inquiry(
     db: AsyncSession,
-    redis_client: Redis,
+    redis_client: Redis,  # type: ignore[type-arg]
     payload: ContactInquiryRequest,
     submitter_ip: str | None,
 ) -> ContactInquiry:

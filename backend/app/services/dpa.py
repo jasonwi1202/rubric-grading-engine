@@ -7,6 +7,8 @@ enforced using Redis counters.
 No student PII is collected, processed, or stored by this service.
 """
 
+from __future__ import annotations
+
 import logging
 
 from redis.asyncio import Redis
@@ -29,7 +31,7 @@ def _rate_limit_key(ip: str) -> str:
     return f"contact:dpa_request:ratelimit:{ip}"
 
 
-async def _check_rate_limit(redis_client: Redis, ip: str) -> None:
+async def _check_rate_limit(redis_client: Redis, ip: str) -> None:  # type: ignore[type-arg]
     """Raise RateLimitError if the IP has exceeded the rate limit.
 
     Uses a simple Redis counter with a 1-hour TTL.
@@ -46,7 +48,7 @@ async def _check_rate_limit(redis_client: Redis, ip: str) -> None:
 
 async def create_dpa_request(
     db: AsyncSession,
-    redis_client: Redis,
+    redis_client: Redis,  # type: ignore[type-arg]
     payload: DpaRequestCreate,
     submitter_ip: str | None,
 ) -> DpaRequest:

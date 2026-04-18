@@ -12,6 +12,39 @@ Changes on active feature branches not yet merged to a release branch.
 
 ---
 
+## [v0.3.0] — M2 Public Website & Onboarding — Unreleased (pending merge to main)
+
+### Added
+- **Public site layout** — `/(public)/` route group with shared header (Product, How It Works, Pricing, AI, About, Sign In, Start Trial CTA) and footer; `PRODUCT_NAME` constant; middleware redirects authenticated users from `/login` and `/signup` to `/dashboard`
+- **Landing page (`/`)** — hero, problem/solution, feature highlight cards, how-it-works steps, and CTA section; fully static
+- **Product & How It Works pages** — `/product` feature deep-dive with screenshot placeholders and trust callout; `/how-it-works` numbered workflow timeline
+- **About page (`/about`)** — mission statement, core principles, team placeholder, contact callout
+- **Pricing page (`/pricing`)** — tier cards (Trial/Teacher/School/District), annual/monthly toggle, feature comparison table, FAQ accordion; school inquiry form posts to `POST /api/v1/contact/inquiry`
+- **AI transparency page (`/ai`)** — 5-step grading explanation, HITL guarantee callout, data use disclosure, confidence score explainer
+- **Legal pages (`/legal/*`)** — Terms of Service, Privacy Policy, FERPA/COPPA Notice, DPA info page (with DPA request form → `POST /api/v1/contact/dpa-request`), AI Use Policy; `[ATTORNEY DRAFT REQUIRED]` banner on all pages
+- **Sign-up flow** — `POST /api/v1/auth/signup` (bcrypt, email verification Celery task, 201); `GET /api/v1/auth/verify-email` (HMAC-signed token, Redis TTL); `POST /api/v1/auth/resend-verification`; `/signup`, `/signup/verify`, `/auth/verify` pages; rate-limited to 5 attempts/IP/hour
+- **Onboarding wizard** — `/(onboarding)/` route group; 2-step wizard (create class → build rubric or skip); `GET /api/v1/onboarding/status`; `POST /api/v1/onboarding/complete`; `/onboarding/done` completion page; trial status banner in dashboard layout
+- **Trial lifecycle emails** — Celery tasks for welcome, 7-day warning, 1-day warning, and day-0 expiry emails; Celery Beat schedule for daily scan; plain HTML via SMTP; unsubscribe link on non-transactional emails; `GET /api/v1/account/trial` endpoint
+- **Contact & DPA backend** — `POST /api/v1/contact/inquiry` and `POST /api/v1/contact/dpa-request` with Redis rate limiting, Pydantic validation, audit log entries, and Celery notification email tasks
+- **`email-validator` dependency** — added to `pyproject.toml` for `EmailStr` Pydantic field validation
+
+### Security
+- All public form endpoints (`/contact/inquiry`, `/contact/dpa-request`, `/auth/signup`) rate-limited per IP via Redis counters
+- Email verification token is HMAC-signed, single-use, 24-hour TTL stored in Redis
+- Password hashed with bcrypt; minimum 8 characters enforced by Pydantic and Zod
+- No student PII collected or stored in any M2 endpoint — all data is teacher/admin only
+- `INTEGRITY_SIMILARITY_THRESHOLD` false positive added to gitleaks allowlist
+
+### Fixed
+- Removed conflicting `(public)/signup/page.tsx` stub — real sign-up page lives in `(auth)/signup`
+- Added `from __future__ import annotations` to `routers/contact.py`, `services/contact.py`, `services/dpa.py` to resolve `Redis[Any]` FastAPI annotation evaluation error; function signatures use plain `Redis` with `# type: ignore[type-arg]`
+
+### Tests added
+- `backend/tests/unit/` — `test_auth_router.py`, `test_auth_router_login.py`, `test_account_router.py`, `test_contact_router.py`, `test_dpa_router.py`, `test_onboarding_router.py` (245 unit tests total)
+- `frontend/tests/` — signup form, onboarding wizard, legal DPA form, pricing inquiry form, middleware redirect tests (198 Vitest tests total)
+
+---
+
 ## [v0.2.0] — M1 Project Scaffold — Unreleased (pending merge to main)
 
 ### Added

@@ -7,6 +7,8 @@ endpoints.
 Rate limiting is enforced in the service layer using Redis.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import AsyncGenerator
 
@@ -38,15 +40,15 @@ class _DpaResponseEnvelope(BaseModel):
     data: DpaRequestResponse
 
 
-async def _get_redis() -> AsyncGenerator[Redis, None]:
+async def _get_redis() -> AsyncGenerator[Redis, None]:  # type: ignore[type-arg]
     """FastAPI dependency that yields an async Redis client and closes it on teardown."""
     from app.config import settings
 
-    client: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    client: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
     try:
         yield client
     finally:
-        await client.aclose()
+        await client.aclose()  # type: ignore[attr-defined]
 
 
 def _get_client_ip(request: Request) -> str | None:
@@ -71,7 +73,7 @@ async def submit_inquiry(
     request: Request,
     payload: ContactInquiryRequest,
     db: AsyncSession = Depends(get_db),
-    redis_client: Redis = Depends(_get_redis),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
 ) -> JSONResponse:
     """Store an inbound school/district inquiry and enqueue a notification email.
 
@@ -113,7 +115,7 @@ async def submit_dpa_request(
     request: Request,
     payload: DpaRequestCreate,
     db: AsyncSession = Depends(get_db),
-    redis_client: Redis = Depends(_get_redis),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
 ) -> JSONResponse:
     """Store an inbound DPA request and enqueue a notification email.
 
