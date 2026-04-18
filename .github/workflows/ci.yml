@@ -293,6 +293,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Create .env from .env.ci
+        run: cp .env.ci .env
+
       - name: Start Docker Compose stack
         run: docker compose up -d --wait
         timeout-minutes: 5

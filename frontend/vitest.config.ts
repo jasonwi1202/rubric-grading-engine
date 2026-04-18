@@ -9,6 +9,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.{test,spec}.{ts,tsx}"],
+    exclude: ["tests/e2e/**"],
     env: {
       NEXT_PUBLIC_API_URL: "http://localhost:8000/api/v1",
     },
