@@ -313,7 +313,11 @@ jobs:
           done
 
       - name: Run database migrations
-        run: docker compose run --rm backend alembic upgrade head
+        run: |
+          docker compose run --rm \
+            --no-deps \
+            -e PYTHONPATH=/app \
+            backend sh -c "cd /app && alembic upgrade head"
 
       - name: Start Docker Compose stack
         run: docker compose up -d --wait
