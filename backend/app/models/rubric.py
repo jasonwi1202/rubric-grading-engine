@@ -75,5 +75,6 @@ class RubricCriterion(Base):
     min_score: Mapped[int] = mapped_column(Integer, nullable=False)
     max_score: Mapped[int] = mapped_column(Integer, nullable=False)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Nullable — score-level exemplars, e.g. {1: "...", 5: "..."}.
-    anchor_descriptions: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # Nullable — score-level exemplars, e.g. {"1": "...", "5": "..."}.
+    # JSON object keys are always strings; values are the description text.
+    anchor_descriptions: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)

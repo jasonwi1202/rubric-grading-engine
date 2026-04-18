@@ -7,7 +7,7 @@ can be soft-removed via ``removed_at`` without losing data.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -20,12 +20,10 @@ class ClassEnrollment(Base):
 
     __tablename__ = "class_enrollments"
 
-    __table_args__ = (
-        # Partial unique constraint: a student can only be actively enrolled
-        # in a class once (removed_at IS NULL).  Postgres enforces this as a
-        # partial index.  See data-model.md for details.
-        UniqueConstraint("class_id", "student_id", name="uq_class_enrollments_active"),
-    )
+    # The active-enrollment uniqueness constraint (class_id, student_id WHERE
+    # removed_at IS NULL) is enforced by a partial unique index created in the
+    # migration.  A full ORM UniqueConstraint cannot express the WHERE clause,
+    # so it is intentionally omitted here.
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

@@ -518,7 +518,7 @@ def upgrade() -> None:
         BEGIN
             RAISE EXCEPTION
                 'audit_logs is INSERT-only: UPDATE and DELETE are not permitted '
-                '(action: %, id: %)', TG_OP, OLD.id;
+                '(action: %, id: %)', TG_OP, COALESCE(OLD.id::text, 'unknown');
         END;
         $$;
     """)
