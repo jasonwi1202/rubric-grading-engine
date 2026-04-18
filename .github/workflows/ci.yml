@@ -320,7 +320,7 @@ jobs:
             backend sh -c "cd /app && alembic upgrade head"
 
       - name: Start Docker Compose stack
-        run: docker compose up -d --wait
+        run: docker compose up -d backend worker frontend
         timeout-minutes: 5
 
       - name: Wait for all services to be healthy
