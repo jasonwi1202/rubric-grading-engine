@@ -89,7 +89,11 @@ async def _get_rubric_owned_by(
         raise ForbiddenError("You do not have access to this rubric.")
 
     rubric_result = await db.execute(
-        select(Rubric).where(Rubric.id == rubric_id, Rubric.deleted_at.is_(None))
+        select(Rubric).where(
+            Rubric.id == rubric_id,
+            Rubric.teacher_id == teacher_id,
+            Rubric.deleted_at.is_(None),
+        )
     )
     rubric = rubric_result.scalar_one_or_none()
     if rubric is None:
@@ -260,12 +264,15 @@ async def update_rubric(
         # Delete all existing criteria and replace with the new set.
         existing = await _get_criteria_for_rubric(db, rubric.id)
         for c in existing:
-            await db.delete(c)
+            db.delete(c)
         await db.flush()
 
         new_criteria = _build_criteria_orm(rubric.id, criteria_requests)
         for criterion in new_criteria:
             db.add(criterion)
+        # Bump updated_at explicitly: criteria replacement doesn't modify the
+        # Rubric row itself, so the onupdate hook would not fire otherwise.
+        rubric.updated_at = datetime.now(UTC)
         criteria: list[RubricCriterion] = new_criteria
     else:
         criteria = await _get_criteria_for_rubric(db, rubric.id)

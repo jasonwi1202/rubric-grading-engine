@@ -110,7 +110,7 @@ def _make_not_found_ownership_result() -> MagicMock:
 def _make_db() -> AsyncMock:
     db = AsyncMock()
     db.add = MagicMock()
-    db.delete = AsyncMock()
+    db.delete = MagicMock()
     db.commit = AsyncMock()
     db.flush = AsyncMock()
     db.refresh = AsyncMock()
