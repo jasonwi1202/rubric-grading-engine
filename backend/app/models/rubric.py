@@ -50,6 +50,12 @@ class Rubric(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    # Soft-delete timestamp.  NULL means the rubric is active.
+    # Set to the deletion timestamp when the teacher deletes the rubric.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class RubricCriterion(Base):
