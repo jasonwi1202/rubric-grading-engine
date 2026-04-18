@@ -21,7 +21,7 @@ export interface RubricCriterionRequest {
   weight: number;
   min_score: number;
   max_score: number;
-  anchor_descriptions?: AnchorDescriptions;
+  anchor_descriptions?: AnchorDescriptions | null;
 }
 
 export interface CreateRubricRequest {

@@ -32,9 +32,11 @@ export default function EditRubricPage() {
   useEffect(() => {
     if (!rubricId) return;
 
-    getRubric(rubricId)
-      .then((data) => setRubric(data))
-      .catch((err) => {
+    const loadRubric = async () => {
+      try {
+        const data = await getRubric(rubricId);
+        setRubric(data);
+      } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           router.replace(`/login?next=/dashboard/rubrics/${rubricId}/edit`);
         } else if (err instanceof ApiError && err.status === 403) {
@@ -42,8 +44,12 @@ export default function EditRubricPage() {
         } else {
           setLoadError("Could not load rubric. Please try again.");
         }
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadRubric();
   }, [rubricId, router]);
 
   const handleSave = async (values: RubricFormValues) => {

@@ -83,6 +83,9 @@ export const rubricFormSchema = z
 
 export type RubricFormValues = z.infer<typeof rubricFormSchema>;
 
+/** Default number of criteria rows shown in a new rubric. */
+const DEFAULT_CRITERION_COUNT = 3;
+
 // ---------------------------------------------------------------------------
 // Helper — build empty criterion
 // ---------------------------------------------------------------------------
@@ -514,7 +517,9 @@ export function RubricBuilderForm({
     resolver: zodResolver(rubricFormSchema),
     defaultValues: {
       name: "",
-      criteria: [createEmptyCriterion(1), createEmptyCriterion(2), createEmptyCriterion(3)],
+      criteria: Array.from({ length: DEFAULT_CRITERION_COUNT }, (_, i) =>
+        createEmptyCriterion(i + 1),
+      ),
       ...defaultValues,
     },
   });
@@ -571,7 +576,9 @@ export function RubricBuilderForm({
     setServerError(null);
     try {
       await onSave(values);
-    } catch {
+    } catch (err) {
+      // Log to aid debugging; no student PII is present in this component.
+      console.error("[RubricBuilderForm] save failed:", err);
       setServerError("Failed to save rubric. Please try again.");
     }
   };
