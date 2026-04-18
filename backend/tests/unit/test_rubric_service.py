@@ -28,6 +28,8 @@ from app.services.rubric import (
     delete_rubric,
     duplicate_rubric,
     get_rubric,
+    list_rubrics,
+    update_rubric,
 )
 
 # ---------------------------------------------------------------------------
@@ -416,3 +418,239 @@ class TestBuildRubricSnapshot:
         rubric.description = None
         snapshot = build_rubric_snapshot(rubric, [])
         assert snapshot["description"] is None
+
+
+# ---------------------------------------------------------------------------
+# list_rubrics
+# ---------------------------------------------------------------------------
+
+
+class TestListRubrics:
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_rubrics(self) -> None:
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(return_value=rubric_result)
+
+        result = await list_rubrics(db, uuid.uuid4())
+
+        assert result == []
+        # Only one query (rubrics); criteria query is skipped when empty.
+        db.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_rubrics_with_criteria(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_a = _make_rubric_orm(teacher_id=teacher_id)
+        rubric_b = _make_rubric_orm(teacher_id=teacher_id)
+        criterion_a1 = _make_criterion_orm(rubric_id=rubric_a.id)
+        criterion_a2 = _make_criterion_orm(rubric_id=rubric_a.id, display_order=1)
+        criterion_b1 = _make_criterion_orm(rubric_id=rubric_b.id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalars.return_value.all.return_value = [rubric_a, rubric_b]
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = [
+            criterion_a1,
+            criterion_a2,
+            criterion_b1,
+        ]
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        result = await list_rubrics(db, teacher_id)
+
+        assert len(result) == 2
+        # rubric_a should have 2 criteria, rubric_b should have 1
+        a_criteria = next(c for r, c in result if r.id == rubric_a.id)
+        b_criteria = next(c for r, c in result if r.id == rubric_b.id)
+        assert len(a_criteria) == 2
+        assert len(b_criteria) == 1
+
+    @pytest.mark.asyncio
+    async def test_rubric_with_no_criteria_gets_empty_list(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric = _make_rubric_orm(teacher_id=teacher_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalars.return_value.all.return_value = [rubric]
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        result = await list_rubrics(db, teacher_id)
+
+        assert len(result) == 1
+        _, criteria = result[0]
+        assert criteria == []
+
+
+# ---------------------------------------------------------------------------
+# update_rubric
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateRubric:
+    @pytest.mark.asyncio
+    async def test_updates_name(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_id = uuid.uuid4()
+        rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
+        criterion_orm = _make_criterion_orm(rubric_id=rubric_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = rubric_orm
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = [criterion_orm]
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        result_rubric, result_criteria = await update_rubric(
+            db,
+            teacher_id=teacher_id,
+            rubric_id=rubric_id,
+            name="New Name",
+            description=None,
+            update_description=False,
+            criteria_requests=None,
+        )
+
+        assert rubric_orm.name == "New Name"
+        db.commit.assert_called_once()
+        assert result_rubric is rubric_orm
+        assert result_criteria == [criterion_orm]
+
+    @pytest.mark.asyncio
+    async def test_updates_description_when_flag_true(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_id = uuid.uuid4()
+        rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = rubric_orm
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        await update_rubric(
+            db,
+            teacher_id=teacher_id,
+            rubric_id=rubric_id,
+            name=None,
+            description="New description",
+            update_description=True,
+            criteria_requests=None,
+        )
+
+        assert rubric_orm.description == "New description"
+
+    @pytest.mark.asyncio
+    async def test_does_not_update_description_when_flag_false(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_id = uuid.uuid4()
+        rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
+        rubric_orm.description = "Original"
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = rubric_orm
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        await update_rubric(
+            db,
+            teacher_id=teacher_id,
+            rubric_id=rubric_id,
+            name=None,
+            description=None,
+            update_description=False,
+            criteria_requests=None,
+        )
+
+        assert rubric_orm.description == "Original"
+
+    @pytest.mark.asyncio
+    async def test_replaces_criteria_when_provided(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_id = uuid.uuid4()
+        rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
+        old_criterion = _make_criterion_orm(rubric_id=rubric_id)
+
+        new_criteria_requests = _make_criteria_100()
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = rubric_orm
+        # First criteria query (to fetch existing for deletion)
+        existing_criteria_result = MagicMock()
+        existing_criteria_result.scalars.return_value.all.return_value = [old_criterion]
+        db.execute = AsyncMock(side_effect=[rubric_result, existing_criteria_result])
+
+        result_rubric, result_criteria = await update_rubric(
+            db,
+            teacher_id=teacher_id,
+            rubric_id=rubric_id,
+            name=None,
+            description=None,
+            update_description=False,
+            criteria_requests=new_criteria_requests,
+        )
+
+        # Old criterion should have been deleted.
+        db.delete.assert_called_once_with(old_criterion)
+        db.flush.assert_called_once()
+        db.add.assert_called()
+        db.commit.assert_called_once()
+        # New criteria returned (2 criteria from _make_criteria_100).
+        assert len(result_criteria) == 2
+
+    @pytest.mark.asyncio
+    async def test_raises_weight_invalid_when_new_criteria_bad(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_id = uuid.uuid4()
+        rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = rubric_orm
+        db.execute = AsyncMock(return_value=rubric_result)
+
+        bad_criteria = [_make_criterion_request("A", Decimal("50"))]
+
+        with pytest.raises(RubricWeightInvalidError):
+            await update_rubric(
+                db,
+                teacher_id=teacher_id,
+                rubric_id=rubric_id,
+                name=None,
+                description=None,
+                update_description=False,
+                criteria_requests=bad_criteria,
+            )
+
+        db.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_raises_forbidden_for_cross_teacher(self) -> None:
+        teacher_id = uuid.uuid4()
+        rubric_orm = _make_rubric_orm(teacher_id=uuid.uuid4())  # different teacher
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = rubric_orm
+        db.execute = AsyncMock(return_value=rubric_result)
+
+        with pytest.raises(ForbiddenError):
+            await update_rubric(
+                db,
+                teacher_id=teacher_id,
+                rubric_id=rubric_orm.id,
+                name="Hacked",
+                description=None,
+                update_description=False,
+                criteria_requests=None,
+            )
