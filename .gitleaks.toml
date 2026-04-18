@@ -20,4 +20,6 @@ paths = [
 regexes = [
     # Commented-out optional API key placeholder in .env.example — not a real secret
     '''#\s*INTEGRITY_API_KEY=''',
+    # Similarity threshold config value — not a secret
+    '''INTEGRITY_SIMILARITY_THRESHOLD=''',
 ]

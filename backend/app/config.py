@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # -------------------------------------------------------------------------
+    # Email verification
+    # -------------------------------------------------------------------------
+    # Secret used to HMAC-sign verification tokens.  Must be at least 32 chars.
+    # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    email_verification_hmac_secret: str
+    # TTL in seconds for verification tokens stored in Redis (default: 24 h).
+    verification_token_ttl_seconds: int = 86400
+    # Base URL of the frontend — used to build verification links in emails.
+    frontend_url: str = "http://localhost:3000"
+    # "From" address for verification emails.  Optional — if not set the task
+    # will use the same address as contact_email, or skip sending if both are
+    # absent.
+    verification_email_from: str | None = None
+
+    # -------------------------------------------------------------------------
     # LLM / OpenAI
     # -------------------------------------------------------------------------
     openai_api_key: str
@@ -90,6 +105,25 @@ class Settings(BaseSettings):
     cors_origins: str
     max_essay_file_size_mb: int = 10
     max_batch_size: int = 100
+    # Email address that receives school/district inquiry notifications.
+    # Optional — if not set, the notification email task is skipped.
+    contact_email: str | None = None
+    # SMTP server used for sending notification emails.
+    smtp_host: str = "localhost"
+    smtp_port: int = 25
+    # Timeout in seconds for SMTP connections; prevents hung Celery workers.
+    smtp_timeout: int = 10
+    # Optional SMTP credentials for servers that require authentication.
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    # Secret used to HMAC-sign unsubscribe tokens for non-transactional emails.
+    # Must be at least 32 characters.
+    # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    unsubscribe_hmac_secret: str
+    # When True, extract the real client IP from the CF-Connecting-IP or
+    # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
+    # enable in production behind a trusted proxy; leave False in development.
+    trust_proxy_headers: bool = False
 
     # -------------------------------------------------------------------------
     # Validators
@@ -102,6 +136,20 @@ class Settings(BaseSettings):
             raise ValueError("JWT_SECRET_KEY must be at least 32 characters")
         return v
 
+    @field_validator("email_verification_hmac_secret")
+    @classmethod
+    def email_verification_hmac_secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("EMAIL_VERIFICATION_HMAC_SECRET must be at least 32 characters")
+        return v
+
+    @field_validator("unsubscribe_hmac_secret")
+    @classmethod
+    def unsubscribe_hmac_secret_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("UNSUBSCRIBE_HMAC_SECRET must be at least 32 characters")
+        return v
+
     @field_validator("environment")
     @classmethod
     def environment_allowed_values(cls, v: str) -> str:
@@ -109,6 +157,23 @@ class Settings(BaseSettings):
         if v not in allowed:
             raise ValueError(f"ENVIRONMENT must be one of {sorted(allowed)}")
         return v
+
+    @model_validator(mode="after")
+    def smtp_credentials_both_or_neither(self) -> "Settings":
+        """Require both SMTP_USER and SMTP_PASSWORD to be set, or neither.
+
+        Setting only one would silently skip ``smtp.login()`` in
+        ``_send_smtp_message`` (since the check is ``smtp_user and
+        smtp_password``), leading to failed delivery on auth-required servers.
+        """
+        user_set = bool(self.smtp_user)
+        password_set = bool(self.smtp_password)
+        if user_set != password_set:
+            raise ValueError(
+                "SMTP_USER and SMTP_PASSWORD must both be set or both be unset; "
+                "setting only one will break delivery on auth-required SMTP servers."
+            )
+        return self
 
     @model_validator(mode="after")
     def celery_defaults_from_redis(self) -> "Settings":

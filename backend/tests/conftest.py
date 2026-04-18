@@ -17,6 +17,8 @@ _DEFAULTS: dict[str, str] = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/testdb",
     "REDIS_URL": "redis://localhost:6379/0",
     "JWT_SECRET_KEY": "a" * 32,
+    "EMAIL_VERIFICATION_HMAC_SECRET": "b" * 32,
+    "UNSUBSCRIBE_HMAC_SECRET": "c" * 32,
     "OPENAI_API_KEY": "test_openai_api_key",
     "S3_BUCKET_NAME": "test-bucket",
     "S3_REGION": "us-east-1",

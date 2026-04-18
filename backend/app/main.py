@@ -20,7 +20,9 @@ from app.exceptions import (
     LLMError,
     LLMParseError,
     NotFoundError,
+    RateLimitError,
     RubricGradingError,
+    UnauthorizedError,
     ValidationError,
 )
 
@@ -37,6 +39,7 @@ _HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
     405: "VALIDATION_ERROR",
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
+    429: "RATE_LIMITED",
 }
 
 
@@ -78,6 +81,10 @@ def _register_exception_handlers(application: FastAPI) -> None:
     async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
         return _error_response(404, exc.code, str(exc))
 
+    @application.exception_handler(UnauthorizedError)
+    async def unauthorized_handler(request: Request, exc: UnauthorizedError) -> JSONResponse:
+        return _error_response(401, exc.code, str(exc))
+
     @application.exception_handler(ForbiddenError)
     async def forbidden_handler(request: Request, exc: ForbiddenError) -> JSONResponse:
         return _error_response(403, exc.code, str(exc))
@@ -85,6 +92,10 @@ def _register_exception_handlers(application: FastAPI) -> None:
     @application.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
         return _error_response(409, exc.code, str(exc))
+
+    @application.exception_handler(RateLimitError)
+    async def rate_limit_handler(request: Request, exc: RateLimitError) -> JSONResponse:
+        return _error_response(429, exc.code, str(exc))
 
     @application.exception_handler(ValidationError)
     async def domain_validation_handler(request: Request, exc: ValidationError) -> JSONResponse:
@@ -180,9 +191,17 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
 
 def _register_routers(application: FastAPI) -> None:
+    from app.routers.account import router as account_router
+    from app.routers.auth import router as auth_router
+    from app.routers.contact import router as contact_router
     from app.routers.health import router as health_router
+    from app.routers.onboarding import router as onboarding_router
 
     application.include_router(health_router, prefix="/api/v1")
+    application.include_router(contact_router, prefix="/api/v1")
+    application.include_router(auth_router, prefix="/api/v1")
+    application.include_router(onboarding_router, prefix="/api/v1")
+    application.include_router(account_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

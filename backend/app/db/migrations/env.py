@@ -65,13 +65,13 @@ if config.config_file_name is not None:
 # module is loaded — the canonical way is to import them in app/models/base.py
 # and then import that module below.
 # ---------------------------------------------------------------------------
+# Import all model modules so that their mapped classes are registered
+# with Base.metadata before autogenerate runs.
+import app.models  # noqa: F401, E402
 from app.config import settings  # noqa: E402
+from app.models.base import Base  # noqa: E402
 
-# ``target_metadata`` will be set to Base.metadata once models exist.
-# For now it is ``None`` so that Alembic can still run (no tables to diff).
-# Replace with ``from app.models.base import Base; target_metadata = Base.metadata``
-# once the initial model layer is added.
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def _get_url() -> str:

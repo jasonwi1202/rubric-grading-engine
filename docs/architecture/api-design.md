@@ -45,7 +45,14 @@ Errors:
 All list endpoints accept `?page=1&page_size=25`. Default page size: 25. Max: 100.
 
 ### Authentication
-All endpoints require a valid JWT Bearer token in the `Authorization` header. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
+All endpoints require a valid JWT Bearer token in the `Authorization` header unless explicitly documented as public. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
+
+**Public endpoints (no JWT required):**
+- `POST /auth/signup` — create a new teacher account
+- `GET /auth/verify-email` — verify email address via HMAC token
+- `POST /auth/resend-verification` — resend the verification email
+- `POST /contact/inquiry` — unauthenticated school/district inquiry form submission
+- `POST /contact/dpa-request` — unauthenticated DPA request from a school/district administrator
 
 ---
 
@@ -55,9 +62,103 @@ All endpoints require a valid JWT Bearer token in the `Authorization` header. Un
 
 | Method | Path | Description |
 |---|---|---|
+| POST | `/auth/signup` | Create a new teacher account (public) |
+| GET | `/auth/verify-email` | Verify email via HMAC token (public) |
+| POST | `/auth/resend-verification` | Resend verification email (public) |
 | POST | `/auth/login` | Issue access + refresh tokens |
 | POST | `/auth/refresh` | Exchange refresh token for new access token |
 | POST | `/auth/logout` | Invalidate refresh token |
+
+**POST /auth/signup body:**
+```json
+{
+  "email": "teacher@school.edu",
+  "password": "SecurePass1",
+  "first_name": "Alex",
+  "last_name": "Smith",
+  "school_name": "Lincoln High School"
+}
+```
+Returns `201` with `{"data": {"id": "<uuid>", "email": "...", "created_at": "...", "message": "..."}}`.  
+Returns `409` if the email is already registered.  
+Returns `429` if more than 5 sign-up attempts are made from the same IP in one hour.
+
+**GET /auth/verify-email query params:** `?token=<raw_token>`  
+Consumes a single-use token (24 h TTL). The server computes an HMAC-SHA256 tag over the raw token to look up the Redis entry — the token itself is a random URL-safe string, not an encoded signature. Returns `200` on success, `422` for invalid/expired/already-used token.
+
+**POST /auth/resend-verification body:**
+```json
+{ "email": "teacher@school.edu" }
+```
+Always returns `202` regardless of whether the email is registered (avoids account-existence oracle).  
+Returns `429` if more than 3 resend requests are made for the same email in one hour.
+
+**POST /auth/login body:**
+```json
+{ "email": "teacher@school.edu", "password": "SecurePass1" }
+```
+Returns `200` with `{"data": {"access_token": "<jwt>", "token_type": "bearer"}}`.  
+Sets an `httpOnly; SameSite=Strict` cookie named `refresh_token` (7-day TTL). The cookie includes `Secure` in staging/production over HTTPS; `Secure` is disabled in local development for `http://localhost`.  
+Returns `422` for invalid credentials or unverified email.
+
+**POST /auth/refresh** (no body; reads `refresh_token` cookie)  
+Returns `200` with a new `{"data": {"access_token": "<jwt>", "token_type": "bearer"}}`.  
+Rotates the refresh token (old token invalidated, new cookie set with the same environment-dependent attributes: `Secure` in staging/production, disabled for local development).  
+Returns `401` if the cookie is absent; `422` if the token is invalid or expired.
+
+**POST /auth/logout** (no body; reads `refresh_token` cookie)  
+Returns `204`. Invalidates the refresh token server-side and clears the cookie using the same environment-appropriate cookie attributes.  
+Idempotent — always returns `204` regardless of whether the cookie was present.
+
+---
+
+### Onboarding
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/onboarding/status` | Return the teacher's current wizard step and completion flag |
+| POST | `/onboarding/complete` | Mark the teacher's onboarding as complete |
+
+**GET /onboarding/status** (requires JWT)
+```json
+{
+  "data": {
+    "step": 1,
+    "completed": false,
+    "trial_ends_at": "2026-05-17T00:00:00Z"
+  }
+}
+```
+`step` is `1` when `onboarding_complete = false` (defaults until M3 class/rubric tables allow more granular checks). `step` is `2` when `onboarding_complete = true`.  
+`trial_ends_at` is `null` until email verification sets it to `now + 30 days`.
+
+**POST /onboarding/complete** (requires JWT)  
+Idempotent — safe to call multiple times.  
+Returns `200` with `{"data": {"message": "Onboarding marked as complete."}}`.
+
+---
+
+### Account
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/account/trial` | Return the authenticated teacher's trial status |
+
+**GET /account/trial** (requires JWT)
+```json
+{
+  "data": {
+    "trial_ends_at": "2026-05-17T00:00:00Z",
+    "is_active": true,
+    "days_remaining": 29
+  }
+}
+```
+- `trial_ends_at`: ISO-8601 timestamp when the trial ends, or `null` if not yet set (email not yet verified).
+- `is_active`: `true` while `trial_ends_at` is in the future or not set; `false` once the trial has expired.
+- `days_remaining`: number of full 24-hour periods remaining (`Math.floor`); `null` if `trial_ends_at` is not set. This value may be `0` while `is_active` is still `true` when fewer than 24 hours remain before `trial_ends_at`; negative values indicate the trial has already expired.
+
+This endpoint is consumed by the dashboard trial-expiry banner.
 
 ---
 
@@ -216,6 +317,80 @@ All endpoints require a valid JWT Bearer token in the `Authorization` header. Un
 
 ---
 
+### Contact (Public — no authentication required)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/contact/inquiry` | Submit a school or district purchase inquiry |
+| POST | `/contact/dpa-request` | Submit a Data Processing Agreement (DPA) request |
+
+**POST /contact/inquiry body:**
+```json
+{
+  "name": "Jane Smith",
+  "email": "jane@example-school.edu",
+  "school_name": "Example High School",
+  "district": "Example Unified",
+  "estimated_teachers": 40,
+  "message": "We are interested in the School tier."
+}
+```
+
+Fields `district`, `estimated_teachers`, and `message` are optional.
+
+**POST /contact/inquiry response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "created_at": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+**Rate limiting:** Maximum 5 submissions per IP address per hour. Excess requests return `429 RATE_LIMITED`.
+
+**Error codes specific to this endpoint:**
+
+| Code | HTTP Status | When raised |
+|---|---|---|
+| `RATE_LIMITED` | 429 | Submitter IP has exceeded 5 inquiries per hour |
+
+---
+
+**POST /contact/dpa-request body:**
+```json
+{
+  "name": "Jane Smith",
+  "email": "jane@district.edu",
+  "school_name": "Example Unified School District",
+  "district": "Example Unified",
+  "message": "We use the SDPC model DPA — please review and sign."
+}
+```
+
+Fields `district` and `message` are optional. No student PII is collected.
+
+**POST /contact/dpa-request response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "created_at": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+**Rate limiting:** Maximum 3 submissions per IP address per hour (stricter than inquiry — DPA requests are expected to be rare). Excess requests return `429 RATE_LIMITED`.
+
+**Error codes specific to this endpoint:**
+
+| Code | HTTP Status | When raised |
+|---|---|---|
+| `RATE_LIMITED` | 429 | Submitter IP has exceeded 3 DPA requests per hour |
+
+---
+
 ## Error Codes
 
 All errors use this envelope — the `field` key is only present on validation errors:
@@ -276,6 +451,12 @@ Error `code` values are `SCREAMING_SNAKE_CASE` strings. The frontend should bran
 | `ASSIGNMENT_NOT_GRADEABLE` | 409 | Assignment is in a state that does not permit grading (e.g., archived, no essays) |
 | `RUBRIC_IN_USE` | 409 | Cannot delete a rubric that is attached to an open assignment |
 | `ESSAY_ALREADY_GRADED` | 409 | Essay already has a locked grade — submit a resubmission instead |
+
+### Rate Limit Errors (429)
+
+| Code | HTTP Status | When raised |
+|---|---|---|
+| `RATE_LIMITED` | 429 | Request rate limit exceeded for the caller's IP (e.g. contact inquiry endpoint) |
 
 ### Server & Upstream Errors (5xx)
 

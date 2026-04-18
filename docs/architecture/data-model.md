@@ -45,6 +45,8 @@ Represents a teacher account.
 | role | ENUM | `teacher`, `admin` |
 | created_at | TIMESTAMPTZ | |
 | last_login_at | TIMESTAMPTZ | Nullable |
+| onboarding_complete | BOOLEAN | `false` until wizard completed; set via `POST /onboarding/complete` |
+| trial_ends_at | TIMESTAMPTZ | Nullable; set to `verification time + 30 days` on email verification |
 
 ---
 
@@ -258,6 +260,7 @@ Append-only record of every consequential action. Never updated or deleted.
 | before_value | JSONB | Nullable — state before the change |
 | after_value | JSONB | Nullable — state after the change |
 | ip_address | INET | Nullable — client IP for auth and access events |
+| metadata | TEXT | Nullable — free-form extra context that doesn't fit `before_value`/`after_value` (e.g. user-agent string) |
 | created_at | TIMESTAMPTZ | |
 
 **Index:** `(entity_type, entity_id)`, `(teacher_id, created_at DESC)`, `(action, created_at DESC)`
@@ -284,6 +287,7 @@ Append-only record of every consequential action. Never updated or deleted.
 | Data lifecycle | `class_archived` | `class` | |
 | Admin | `teacher_account_created` | `user` | |
 | Admin | `teacher_account_deactivated` | `user` | |
+| Email | `email_sent` | `user` | `after_value`: `{"email_type": "<type>"}` — records transactional and lifecycle email deliveries |
 
 ---
 

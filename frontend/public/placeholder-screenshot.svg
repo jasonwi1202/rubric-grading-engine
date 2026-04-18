@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" role="img" aria-label="Screenshot placeholder">
+  <rect width="800" height="500" fill="#f1f5f9"/>
+  <rect x="16" y="16" width="768" height="468" rx="8" fill="#e2e8f0" stroke="#cbd5e1" stroke-width="1.5"/>
+  <!-- Fake browser chrome -->
+  <rect x="16" y="16" width="768" height="36" rx="8" fill="#cbd5e1"/>
+  <circle cx="40" cy="34" r="6" fill="#f87171"/>
+  <circle cx="60" cy="34" r="6" fill="#fbbf24"/>
+  <circle cx="80" cy="34" r="6" fill="#34d399"/>
+  <rect x="140" y="24" width="480" height="20" rx="4" fill="#e2e8f0"/>
+  <!-- Content area placeholder lines -->
+  <rect x="60" y="76" width="300" height="20" rx="4" fill="#cbd5e1"/>
+  <rect x="60" y="108" width="500" height="12" rx="3" fill="#e2e8f0"/>
+  <rect x="60" y="128" width="460" height="12" rx="3" fill="#e2e8f0"/>
+  <rect x="60" y="148" width="480" height="12" rx="3" fill="#e2e8f0"/>
+  <rect x="60" y="188" width="680" height="160" rx="8" fill="#dde4ef"/>
+  <rect x="60" y="368" width="200" height="36" rx="6" fill="#93c5fd"/>
+  <rect x="280" y="368" width="200" height="36" rx="6" fill="#e2e8f0"/>
+  <!-- Placeholder label -->
+  <text x="400" y="282" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#94a3b8">{TODO: insert screenshot}</text>
+  <text x="400" y="306" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#cbd5e1">800 × 500</text>
+</svg>
