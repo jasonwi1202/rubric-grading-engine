@@ -11,11 +11,37 @@ and so application code can import individual models cleanly::
     from app.models.dpa_request import DpaRequest
     from app.models.user import User
     from app.models.audit_log import AuditLog
+    from app.models.class_ import Class
+    from app.models.student import Student
+    from app.models.class_enrollment import ClassEnrollment
+    from app.models.rubric import Rubric, RubricCriterion
+    from app.models.assignment import Assignment
+    from app.models.essay import Essay, EssayVersion
+    from app.models.grade import Grade, CriterionScore
 """
 
+from app.models import assignment as assignment  # noqa: F401 — registers mapped class
 from app.models import audit_log as audit_log  # noqa: F401 — registers mapped class
+from app.models import class_ as class_  # noqa: F401 — registers mapped class
+from app.models import class_enrollment as class_enrollment  # noqa: F401 — registers mapped class
 from app.models import contact as contact  # noqa: F401 — registers mapped class
 from app.models import dpa_request as dpa_request  # noqa: F401 — registers mapped class
+from app.models import essay as essay  # noqa: F401 — registers mapped class
+from app.models import grade as grade  # noqa: F401 — registers mapped class
+from app.models import rubric as rubric  # noqa: F401 — registers mapped class
+from app.models import student as student  # noqa: F401 — registers mapped class
 from app.models import user as user  # noqa: F401 — registers mapped class
 
-__all__ = ["audit_log", "contact", "dpa_request", "user"]
+__all__ = [
+    "assignment",
+    "audit_log",
+    "class_",
+    "class_enrollment",
+    "contact",
+    "dpa_request",
+    "essay",
+    "grade",
+    "rubric",
+    "student",
+    "user",
+]
