@@ -91,6 +91,22 @@ def _make_criterion_orm(
     return c
 
 
+def _make_ownership_result(teacher_id: uuid.UUID) -> MagicMock:
+    """Mock for the first query in _get_rubric_owned_by (id + teacher_id columns)."""
+    row = MagicMock()
+    row.teacher_id = teacher_id
+    result = MagicMock()
+    result.one_or_none.return_value = row
+    return result
+
+
+def _make_not_found_ownership_result() -> MagicMock:
+    """Mock for the first query returning no row (rubric not found)."""
+    result = MagicMock()
+    result.one_or_none.return_value = None
+    return result
+
+
 def _make_db() -> AsyncMock:
     db = AsyncMock()
     db.add = MagicMock()
@@ -222,11 +238,15 @@ class TestGetRubric:
         criterion_orm = _make_criterion_orm(rubric_id=rubric_id)
 
         db = _make_db()
+        # Query 1: ownership check (id + teacher_id)
+        ownership_result = _make_ownership_result(teacher_id)
+        # Query 2: full rubric row
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
+        # Query 3: criteria
         criteria_result = MagicMock()
         criteria_result.scalars.return_value.all.return_value = [criterion_orm]
-        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result, criteria_result])
 
         result_rubric, result_criteria = await get_rubric(db, teacher_id, rubric_id)
 
@@ -236,12 +256,27 @@ class TestGetRubric:
     @pytest.mark.asyncio
     async def test_raises_not_found_when_missing(self) -> None:
         db = _make_db()
-        rubric_result = MagicMock()
-        rubric_result.scalar_one_or_none.return_value = None
-        db.execute = AsyncMock(return_value=rubric_result)
+        db.execute = AsyncMock(return_value=_make_not_found_ownership_result())
 
         with pytest.raises(NotFoundError):
             await get_rubric(db, uuid.uuid4(), uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_on_toctou_window(self) -> None:
+        """Rubric deleted between ownership check and full-row fetch → NotFoundError."""
+        teacher_id = uuid.uuid4()
+        rubric_id = uuid.uuid4()
+
+        db = _make_db()
+        # First query succeeds (ownership check passes).
+        ownership_result = _make_ownership_result(teacher_id)
+        # Second query returns None (rubric was deleted between queries).
+        toctou_result = MagicMock()
+        toctou_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(side_effect=[ownership_result, toctou_result])
+
+        with pytest.raises(NotFoundError):
+            await get_rubric(db, teacher_id, rubric_id)
 
     @pytest.mark.asyncio
     async def test_raises_forbidden_for_cross_teacher(self) -> None:
@@ -250,9 +285,8 @@ class TestGetRubric:
         rubric_orm = _make_rubric_orm(teacher_id=other_teacher_id)
 
         db = _make_db()
-        rubric_result = MagicMock()
-        rubric_result.scalar_one_or_none.return_value = rubric_orm
-        db.execute = AsyncMock(return_value=rubric_result)
+        # Ownership row has a different teacher_id — triggers ForbiddenError.
+        db.execute = AsyncMock(return_value=_make_ownership_result(other_teacher_id))
 
         with pytest.raises(ForbiddenError):
             await get_rubric(db, teacher_id, rubric_orm.id)
@@ -271,11 +305,12 @@ class TestDeleteRubric:
         rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
         in_use_result = MagicMock()
         in_use_result.scalar_one.return_value = 0  # not in use
-        db.execute = AsyncMock(side_effect=[rubric_result, in_use_result])
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result, in_use_result])
 
         await delete_rubric(db, teacher_id, rubric_id)
 
@@ -289,11 +324,12 @@ class TestDeleteRubric:
         rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
         in_use_result = MagicMock()
         in_use_result.scalar_one.return_value = 1  # one open assignment
-        db.execute = AsyncMock(side_effect=[rubric_result, in_use_result])
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result, in_use_result])
 
         with pytest.raises(RubricInUseError):
             await delete_rubric(db, teacher_id, rubric_id)
@@ -303,15 +339,13 @@ class TestDeleteRubric:
     @pytest.mark.asyncio
     async def test_raises_forbidden_for_cross_teacher(self) -> None:
         teacher_id = uuid.uuid4()
-        rubric_orm = _make_rubric_orm(teacher_id=uuid.uuid4())  # different teacher
+        other_teacher_id = uuid.uuid4()
 
         db = _make_db()
-        rubric_result = MagicMock()
-        rubric_result.scalar_one_or_none.return_value = rubric_orm
-        db.execute = AsyncMock(return_value=rubric_result)
+        db.execute = AsyncMock(return_value=_make_ownership_result(other_teacher_id))
 
         with pytest.raises(ForbiddenError):
-            await delete_rubric(db, teacher_id, rubric_orm.id)
+            await delete_rubric(db, teacher_id, uuid.uuid4())
 
 
 # ---------------------------------------------------------------------------
@@ -501,11 +535,12 @@ class TestUpdateRubric:
         criterion_orm = _make_criterion_orm(rubric_id=rubric_id)
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
         criteria_result = MagicMock()
         criteria_result.scalars.return_value.all.return_value = [criterion_orm]
-        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result, criteria_result])
 
         result_rubric, result_criteria = await update_rubric(
             db,
@@ -529,11 +564,12 @@ class TestUpdateRubric:
         rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
         criteria_result = MagicMock()
         criteria_result.scalars.return_value.all.return_value = []
-        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result, criteria_result])
 
         await update_rubric(
             db,
@@ -555,11 +591,12 @@ class TestUpdateRubric:
         rubric_orm.description = "Original"
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
         criteria_result = MagicMock()
         criteria_result.scalars.return_value.all.return_value = []
-        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result, criteria_result])
 
         await update_rubric(
             db,
@@ -583,12 +620,15 @@ class TestUpdateRubric:
         new_criteria_requests = _make_criteria_100()
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
-        # First criteria query (to fetch existing for deletion)
+        # Criteria query (to fetch existing for deletion)
         existing_criteria_result = MagicMock()
         existing_criteria_result.scalars.return_value.all.return_value = [old_criterion]
-        db.execute = AsyncMock(side_effect=[rubric_result, existing_criteria_result])
+        db.execute = AsyncMock(
+            side_effect=[ownership_result, rubric_result, existing_criteria_result]
+        )
 
         result_rubric, result_criteria = await update_rubric(
             db,
@@ -615,9 +655,10 @@ class TestUpdateRubric:
         rubric_orm = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id)
 
         db = _make_db()
+        ownership_result = _make_ownership_result(teacher_id)
         rubric_result = MagicMock()
         rubric_result.scalar_one_or_none.return_value = rubric_orm
-        db.execute = AsyncMock(return_value=rubric_result)
+        db.execute = AsyncMock(side_effect=[ownership_result, rubric_result])
 
         bad_criteria = [_make_criterion_request("A", Decimal("50"))]
 
@@ -637,18 +678,16 @@ class TestUpdateRubric:
     @pytest.mark.asyncio
     async def test_raises_forbidden_for_cross_teacher(self) -> None:
         teacher_id = uuid.uuid4()
-        rubric_orm = _make_rubric_orm(teacher_id=uuid.uuid4())  # different teacher
+        other_teacher_id = uuid.uuid4()
 
         db = _make_db()
-        rubric_result = MagicMock()
-        rubric_result.scalar_one_or_none.return_value = rubric_orm
-        db.execute = AsyncMock(return_value=rubric_result)
+        db.execute = AsyncMock(return_value=_make_ownership_result(other_teacher_id))
 
         with pytest.raises(ForbiddenError):
             await update_rubric(
                 db,
                 teacher_id=teacher_id,
-                rubric_id=rubric_orm.id,
+                rubric_id=uuid.uuid4(),
                 name="Hacked",
                 description=None,
                 update_description=False,

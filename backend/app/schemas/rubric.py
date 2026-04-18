@@ -16,7 +16,7 @@ class RubricCriterionRequest(BaseModel):
     """A single criterion in a rubric creation or update request."""
 
     name: str = Field(min_length=1, max_length=255)
-    description: str | None = None
+    description: str = ""
     weight: Decimal = Field(gt=Decimal("0"), le=Decimal("100"))
     min_score: int = Field(ge=1)
     max_score: int = Field(ge=1)
@@ -54,7 +54,7 @@ class RubricCriterionResponse(BaseModel):
 
     id: uuid.UUID
     name: str
-    description: str | None
+    description: str
     weight: float
     min_score: int
     max_score: int

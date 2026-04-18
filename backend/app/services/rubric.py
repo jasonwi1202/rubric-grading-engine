@@ -25,12 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ForbiddenError, NotFoundError, RubricInUseError, RubricWeightInvalidError
 from app.models.assignment import Assignment, AssignmentStatus
+from app.models.class_ import Class
 from app.models.rubric import Rubric, RubricCriterion
 from app.schemas.rubric import RubricCriterionRequest
 
 logger = logging.getLogger(__name__)
 
-_WEIGHT_SUM_TOLERANCE = Decimal("0.01")
+_WEIGHT_SUM_EXACT = Decimal("100.00")
 
 # Assignment statuses that block rubric deletion.
 _BLOCKING_STATUSES = frozenset(
@@ -48,9 +49,15 @@ _BLOCKING_STATUSES = frozenset(
 
 
 def _validate_weight_sum(criteria: list[RubricCriterionRequest]) -> None:
-    """Raise RubricWeightInvalidError if criterion weights do not sum to 100."""
-    total = sum(c.weight for c in criteria)
-    if abs(total - Decimal("100")) > _WEIGHT_SUM_TOLERANCE:
+    """Raise RubricWeightInvalidError if criterion weights do not sum to exactly 100.
+
+    Each weight is quantized to two decimal places (matching the Numeric(5,2)
+    column) before summing so that floating-point artefacts cannot cause a
+    valid rubric to be rejected.
+    """
+    two_dp = Decimal("0.01")
+    total = sum(c.weight.quantize(two_dp) for c in criteria)
+    if total != _WEIGHT_SUM_EXACT:
         raise RubricWeightInvalidError(
             f"Criterion weights must sum to 100. Got {total}.",
             field="criteria",
@@ -62,15 +69,32 @@ async def _get_rubric_owned_by(
     rubric_id: uuid.UUID,
     teacher_id: uuid.UUID,
 ) -> Rubric:
-    """Fetch a non-deleted rubric, raising NotFoundError or ForbiddenError."""
-    result = await db.execute(
+    """Fetch a non-deleted rubric, raising NotFoundError or ForbiddenError.
+
+    Uses a two-step query: first verify existence and ownership (selecting only
+    the columns needed to decide 404 vs 403) so that cross-tenant requests do
+    not load full rubric metadata.  Only when the caller is the owner is the
+    full row fetched.
+    """
+    ownership_result = await db.execute(
+        select(Rubric.id, Rubric.teacher_id).where(
+            Rubric.id == rubric_id,
+            Rubric.deleted_at.is_(None),
+        )
+    )
+    ownership_row = ownership_result.one_or_none()
+    if ownership_row is None:
+        raise NotFoundError("Rubric not found.")
+    if ownership_row.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this rubric.")
+
+    rubric_result = await db.execute(
         select(Rubric).where(Rubric.id == rubric_id, Rubric.deleted_at.is_(None))
     )
-    rubric = result.scalar_one_or_none()
+    rubric = rubric_result.scalar_one_or_none()
     if rubric is None:
+        # Extremely unlikely TOCTOU window — treat as not found.
         raise NotFoundError("Rubric not found.")
-    if rubric.teacher_id != teacher_id:
-        raise ForbiddenError("You do not have access to this rubric.")
     return rubric
 
 
@@ -96,7 +120,7 @@ def _build_criteria_orm(
         RubricCriterion(
             rubric_id=rubric_id,
             name=c.name,
-            description=c.description or "",
+            description=c.description,
             weight=c.weight,
             min_score=c.min_score,
             max_score=c.max_score,
@@ -270,11 +294,16 @@ async def delete_rubric(
     """
     rubric = await _get_rubric_owned_by(db, rubric_id, teacher_id)
 
-    # Block deletion if any assignment uses this rubric and is still "open".
+    # Block deletion if any assignment owned by this teacher uses this rubric
+    # and is still in an "open" state.  The join through Class enforces that
+    # only assignments belonging to the authenticated teacher are counted.
     in_use_result = await db.execute(
-        select(func.count(Assignment.id)).where(
+        select(func.count(Assignment.id))
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
             Assignment.rubric_id == rubric_id,
             Assignment.status.in_(list(_BLOCKING_STATUSES)),
+            Class.teacher_id == teacher_id,
         )
     )
     in_use_count: int = in_use_result.scalar_one()

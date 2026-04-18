@@ -17,10 +17,11 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
+from app.models.rubric import Rubric, RubricCriterion
 from app.models.user import User
 from app.schemas.rubric import (
     CreateRubricRequest,
@@ -46,7 +47,7 @@ router = APIRouter(prefix="/rubrics", tags=["rubrics"])
 # ---------------------------------------------------------------------------
 
 
-def _rubric_response(rubric_tuple: tuple) -> RubricResponse:  # type: ignore[type-arg]
+def _rubric_response(rubric_tuple: tuple[Rubric, list[RubricCriterion]]) -> RubricResponse:
     """Build a RubricResponse from a (Rubric, list[RubricCriterion]) tuple."""
     rubric, criteria = rubric_tuple
     return RubricResponse(
@@ -225,7 +226,7 @@ async def delete_rubric_endpoint(
     rubric_id: uuid.UUID,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-) -> JSONResponse:
+) -> Response:
     """Soft-delete a rubric by setting its ``deleted_at`` timestamp.
 
     Blocked (returns 409) if the rubric is in use by an open assignment.
@@ -233,7 +234,7 @@ async def delete_rubric_endpoint(
     Returns 404 if the rubric does not exist or is already deleted.
     """
     await delete_rubric(db, teacher.id, rubric_id)
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------
