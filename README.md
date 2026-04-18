@@ -53,6 +53,9 @@ Currently in active development. See [`docs/roadmap.md`](docs/roadmap.md) for mi
 
 > Prerequisites: Docker Desktop, Node.js 20+, Python 3.12+
 
+**Want to try the app without setting up a development environment?**  
+See **[DEMO.md](DEMO.md)** — spin up the full stack in one command, no `.env` file needed.
+
 ```bash
 # 1. Clone the repo
 git clone https://github.com/<org>/rubric-grading-engine.git
@@ -130,6 +133,7 @@ Full documentation lives in [`docs/`](docs/README.md).
 
 | What | Where |
 |---|---|
+| **Demo setup** | [**DEMO.md**](DEMO.md) |
 | Architecture overview | [`docs/architecture/`](docs/architecture/) |
 | Feature specifications | [`docs/features/`](docs/features/) |
 | Product vision & principles | [`docs/prd/product-vision.md`](docs/prd/product-vision.md) |
