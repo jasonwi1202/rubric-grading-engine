@@ -198,7 +198,7 @@ def upgrade() -> None:
     op.create_index("ix_class_enrollments_student_id", "class_enrollments", ["student_id"])
     # Partial unique index: a student may only have one active enrollment per class.
     op.create_index(
-        "ix_class_enrollments_active",
+        "ix_class_enrollments_class_id_student_id",
         "class_enrollments",
         ["class_id", "student_id"],
         unique=True,
@@ -443,7 +443,9 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_index("ix_grades_essay_version_id", "grades", ["essay_version_id"])
+    # essay_version_id has a UNIQUE constraint (enforced by unique=True on the
+    # column definition above). No separate index is created — the unique
+    # constraint already provides an index for FK lookups.
 
     # ------------------------------------------------------------------
     # 12. criterion_scores
@@ -584,7 +586,6 @@ def downgrade() -> None:
     op.drop_index("ix_criterion_scores_grade_id", table_name="criterion_scores")
     op.drop_table("criterion_scores")
 
-    op.drop_index("ix_grades_essay_version_id", table_name="grades")
     op.drop_table("grades")
 
     op.drop_index("ix_essay_versions_essay_id", table_name="essay_versions")
@@ -605,7 +606,7 @@ def downgrade() -> None:
     op.drop_index("ix_rubrics_teacher_id", table_name="rubrics")
     op.drop_table("rubrics")
 
-    op.drop_index("ix_class_enrollments_active", table_name="class_enrollments")
+    op.drop_index("ix_class_enrollments_class_id_student_id", table_name="class_enrollments")
     op.drop_index("ix_class_enrollments_student_id", table_name="class_enrollments")
     op.drop_index("ix_class_enrollments_class_id", table_name="class_enrollments")
     op.drop_table("class_enrollments")

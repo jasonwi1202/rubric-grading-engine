@@ -52,7 +52,6 @@ class Grade(Base):
         ForeignKey("essay_versions.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
-        index=True,
     )
     total_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     max_possible_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
