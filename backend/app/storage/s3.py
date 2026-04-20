@@ -99,6 +99,26 @@ def upload_file(key: str, data: bytes, content_type: str) -> None:
         raise StorageError("S3 upload failed") from exc
 
 
+def delete_file(key: str) -> None:
+    """Delete the object at *key* from the configured S3 bucket.
+
+    Args:
+        key: Object key (path) within the bucket, e.g. ``"essays/abc123.pdf"``.
+
+    Raises:
+        StorageError: If the deletion fails for any reason.
+    """
+    client = _make_client()
+    try:
+        client.delete_object(Bucket=settings.s3_bucket_name, Key=key)
+    except (BotoCoreError, ClientError) as exc:
+        logger.exception(
+            "S3 delete failed",
+            extra={"key": key, "error_type": type(exc).__name__},
+        )
+        raise StorageError("S3 delete failed") from exc
+
+
 def generate_presigned_url(key: str, expires_in: int | None = None) -> str:
     """Return a pre-signed GET URL for the object at *key*.
 
