@@ -136,7 +136,7 @@ async def _get_assignment_owned_by(
     return assignment
 
 
-def _build_snapshot(rubric: Rubric, criteria: list[RubricCriterion]) -> dict:
+def _build_snapshot(rubric: Rubric, criteria: list[RubricCriterion]) -> dict[str, object]:
     """Build the immutable JSONB rubric snapshot for an assignment.
 
     Called once at assignment-creation time.  Grading always reads this
