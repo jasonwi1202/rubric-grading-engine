@@ -121,7 +121,7 @@ _CRITERIA = [
     {
         "id": str(uuid.UUID("00000000-0000-0000-0002-000000000003")),
         "rubric_id": _FIVE_PARA_ID,
-        "name": "Organisation",
+        "name": "Organization",
         "description": (
             "Does the essay follow a logical five-paragraph structure with "
             "clear transitions between paragraphs?"
@@ -249,7 +249,7 @@ _CRITERIA = [
     {
         "id": str(uuid.UUID("00000000-0000-0000-0002-000000000012")),
         "rubric_id": _RESEARCH_PAPER_ID,
-        "name": "Organisation",
+        "name": "Organization",
         "description": (
             "Is the paper logically structured with a clear introduction, "
             "body sections, and conclusion?"

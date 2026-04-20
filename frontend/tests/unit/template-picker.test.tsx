@@ -213,7 +213,7 @@ describe("TemplatePicker", () => {
   it("shows criteria preview after selecting a template", async () => {
     const user = userEvent.setup();
     mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
-    mockGetRubric.mockResolvedValue(FULL_RUBRIC as Parameters<typeof mockGetRubric>[0] extends string ? ReturnType<typeof mockGetRubric> extends Promise<infer R> ? R : never : never);
+    mockGetRubric.mockResolvedValue(FULL_RUBRIC as Awaited<ReturnType<typeof getRubric>>);
     renderPicker();
     await waitFor(() =>
       expect(screen.getByText("5-Paragraph Essay")).toBeInTheDocument(),
@@ -228,7 +228,7 @@ describe("TemplatePicker", () => {
   it("calls onApply with template values and onClose after applying", async () => {
     const user = userEvent.setup();
     mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
-    mockGetRubric.mockResolvedValue(FULL_RUBRIC as Parameters<typeof mockGetRubric>[0] extends string ? ReturnType<typeof mockGetRubric> extends Promise<infer R> ? R : never : never);
+    mockGetRubric.mockResolvedValue(FULL_RUBRIC as Awaited<ReturnType<typeof getRubric>>);
     const { onApply, onClose } = renderPicker();
 
     await waitFor(() =>
