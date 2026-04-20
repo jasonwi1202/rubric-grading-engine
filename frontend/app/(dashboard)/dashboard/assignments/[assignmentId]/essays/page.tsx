@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { listEssays } from "@/lib/api/essays";
 import { listStudents } from "@/lib/api/classes";
@@ -26,6 +26,7 @@ import { AutoAssignmentReview } from "@/components/essays/AutoAssignmentReview";
 export default function AssignmentEssaysPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [uploadOpen, setUploadOpen] = useState(false);
   // After an upload, we merge server results into the review list via a refetch
@@ -48,10 +49,7 @@ export default function AssignmentEssaysPage() {
   // mechanism so the roster can be loaded.
   // In practice the teacher arrives here via the class→assignment navigation
   // flow, and classId is available in the query string.
-  const classId =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("classId") ?? ""
-      : "";
+  const classId = searchParams.get("classId") ?? "";
 
   const {
     data: students,

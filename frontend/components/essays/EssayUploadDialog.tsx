@@ -29,6 +29,8 @@ import { useFocusTrap } from "@/lib/utils/focus-trap";
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
+const MAX_TEXT_LENGTH = 500_000;
+
 const ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -42,9 +44,11 @@ export const fileSchema = z
   .instanceof(File)
   .refine(
     (f) => {
-      const ext = "." + f.name.split(".").pop()?.toLowerCase();
+      // Files without a dot (no extension) can only be validated by MIME type.
+      const dotIndex = f.name.lastIndexOf(".");
+      const ext = dotIndex >= 0 ? f.name.slice(dotIndex).toLowerCase() : "";
       return (
-        ALLOWED_MIME_TYPES.has(f.type) || ALLOWED_EXTENSIONS.has(ext)
+        ALLOWED_MIME_TYPES.has(f.type) || (ext !== "" && ALLOWED_EXTENSIONS.has(ext))
       );
     },
     { message: "Only PDF, DOCX, and TXT files are allowed." },
@@ -59,7 +63,7 @@ export const pasteTextSchema = z.object({
     .string()
     .trim()
     .min(1, "Essay text is required.")
-    .max(500_000, "Essay text is too long (max 500 000 characters)."),
+    .max(MAX_TEXT_LENGTH, `Essay text is too long (max ${MAX_TEXT_LENGTH.toLocaleString()} characters).`),
 });
 
 // ---------------------------------------------------------------------------
@@ -448,7 +452,7 @@ export function EssayUploadDialog({
               className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
             />
             <p className="text-right text-xs text-gray-400">
-              {pasteText.length.toLocaleString()} / 500,000
+              {pasteText.length.toLocaleString()} / {MAX_TEXT_LENGTH.toLocaleString()}
             </p>
           </div>
         </div>

@@ -47,6 +47,13 @@ import type { EnrolledStudentResponse } from "@/lib/api/classes";
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Deterministic counter-based IDs to satisfy the testing guide's requirement
+// to avoid random data in fixtures while still being unique per test.
+let _idCounter = 0;
+function nextId(prefix: string): string {
+  return `${prefix}-${String(++_idCounter).padStart(3, "0")}`;
+}
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -60,7 +67,7 @@ function makeEssay(
   overrides: Partial<EssayListItem> = {},
 ): EssayListItem {
   return {
-    essay_id: "essay-" + Math.random().toString(36).slice(2, 8),
+    essay_id: nextId("essay"),
     assignment_id: ASSIGNMENT_ID,
     student_id: null,
     student_name: null,
@@ -73,14 +80,14 @@ function makeEssay(
 }
 
 function makeStudent(overrides: Partial<EnrolledStudentResponse["student"]> = {}): EnrolledStudentResponse {
-  const studentId = overrides.id ?? "stu-" + Math.random().toString(36).slice(2, 8);
+  const studentId = overrides.id ?? nextId("stu");
   return {
-    enrollment_id: "enr-" + Math.random().toString(36).slice(2, 8),
+    enrollment_id: nextId("enr"),
     enrolled_at: "2026-01-01T00:00:00Z",
     student: {
       id: studentId,
       teacher_id: "tch-001",
-      full_name: "Learner " + Math.random().toString(36).slice(2, 6),
+      full_name: `Learner ${studentId.toUpperCase()}`,
       external_id: null,
       created_at: "2026-01-01T00:00:00Z",
       ...overrides,
