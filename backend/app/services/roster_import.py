@@ -230,14 +230,27 @@ async def build_import_diff(
     )
     enrolled_students = enrolled_result.all()
 
-    # Load all student records owned by this teacher (for external_id look-up
-    # across classes — to find students that exist but are not yet enrolled).
-    all_result = await db.execute(
-        select(Student.id, Student.full_name, Student.external_id).where(
-            Student.teacher_id == teacher_id
+    # Collect only the external_ids present in this CSV so the cross-class
+    # lookup query does not load every student owned by the teacher.
+    csv_external_ids = {
+        row.external_id
+        for row in rows
+        if row.external_id
+    }
+
+    # Load only matching student records owned by this teacher (for
+    # external_id look-up across classes — to find students that exist but
+    # are not yet enrolled).
+    if csv_external_ids:
+        all_result = await db.execute(
+            select(Student.id, Student.full_name, Student.external_id).where(
+                Student.teacher_id == teacher_id,
+                Student.external_id.in_(csv_external_ids),
+            )
         )
-    )
-    all_teacher_students = all_result.all()
+        all_teacher_students = all_result.all()
+    else:
+        all_teacher_students = []
 
     # Build look-up structures.
     enrolled_by_ext_id: dict[str, uuid.UUID] = {
@@ -404,7 +417,10 @@ async def commit_roster_import(
                 continue
 
             student_result = await db.execute(
-                select(Student).where(Student.id == diff_row.existing_student_id)
+                select(Student).where(
+                    Student.id == diff_row.existing_student_id,
+                    Student.teacher_id == teacher_id,
+                )
             )
             student_obj = student_result.scalar_one_or_none()
             if student_obj is None:

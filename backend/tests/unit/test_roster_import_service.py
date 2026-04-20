@@ -274,8 +274,7 @@ class TestBuildImportDiff:
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([]),  # enrolled students
-                _query_result([]),  # all teacher students
+                _query_result([]),  # enrolled students (no external_id → no 3rd query)
             ]
         )
 
@@ -338,8 +337,7 @@ class TestBuildImportDiff:
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([enrolled_student]),
-                _query_result([enrolled_student]),
+                _query_result([enrolled_student]),  # no external_id → no 3rd query
             ]
         )
 
@@ -401,8 +399,7 @@ class TestBuildImportDiff:
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([]),
-                _query_result([]),
+                _query_result([]),  # enrolled students (no rows → no external_ids → no 3rd query)
             ]
         )
 
@@ -419,8 +416,7 @@ class TestBuildImportDiff:
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([]),
-                _query_result([]),
+                _query_result([]),  # no external_id → no 3rd query
             ]
         )
 
@@ -442,11 +438,10 @@ class TestCommitRosterImport:
         class_id = uuid.uuid4()
 
         db = _make_db()
-        # Sequence: ownership check, enrolled query, all-teacher query
+        # Sequence: ownership check, enrolled query (no external_id → no 3rd query)
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([]),
                 _query_result([]),
             ]
         )
@@ -531,8 +526,7 @@ class TestCommitRosterImport:
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([]),
-                _query_result([]),
+                _query_result([]),  # no rows → no external_ids → no 3rd query
             ]
         )
 
@@ -569,8 +563,7 @@ class TestCommitRosterImport:
         db.execute = AsyncMock(
             side_effect=[
                 _ownership_result(teacher_id),
-                _query_result([]),
-                _query_result([]),
+                _query_result([]),  # no external_id → no 3rd query
             ]
         )
         db.commit = AsyncMock(

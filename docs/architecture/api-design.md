@@ -202,7 +202,7 @@ Two-phase import prevents accidental bulk writes:
 2. **`POST /classes/{classId}/students/import/confirm`** — JSON body `{ "rows": [...] }`.
    - Teacher sends back only the rows they approve (may omit skipped/error rows).
    - Server re-validates each row against the current roster before writing.
-   - Returns `{ "created": N, "updated": N, "skipped": N }`.
+   - Returns `{ "data": { "created": N, "updated": N, "skipped": N } }`.
 
 **Per-row statuses:**
 
