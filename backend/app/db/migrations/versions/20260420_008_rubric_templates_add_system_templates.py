@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 # revision identifiers, used by Alembic.
 revision: str = "008_rubric_templates"
@@ -39,7 +40,8 @@ depends_on: str | Sequence[str] | None = None
 _NOW = datetime(2026, 4, 20, 0, 0, 0, tzinfo=UTC)
 
 # Pre-generated stable UUIDs for the system templates and their criteria so
-# that repeated upgrades/downgrades are idempotent.
+# that the inserts use ON CONFLICT DO NOTHING and can be safely re-applied
+# after a partial/interrupted upgrade.
 
 _FIVE_PARA_ID = uuid.UUID("00000000-0000-0000-0001-000000000001")
 _ARGUMENTATIVE_ID = uuid.UUID("00000000-0000-0000-0001-000000000002")
@@ -292,7 +294,9 @@ def upgrade() -> None:
         sa.column("updated_at", sa.DateTime(timezone=True)),
         sa.column("deleted_at", sa.DateTime(timezone=True)),
     )
-    op.bulk_insert(rubrics_table, _RUBRICS)
+    # Use ON CONFLICT DO NOTHING so the migration is safe to re-run after a
+    # partial/failed upgrade (duplicate IDs silently skip instead of failing).
+    op.execute(pg_insert(rubrics_table).values(_RUBRICS).on_conflict_do_nothing(index_elements=["id"]))
 
     criteria_table = sa.table(
         "rubric_criteria",
@@ -306,7 +310,7 @@ def upgrade() -> None:
         sa.column("display_order", sa.Integer),
         sa.column("anchor_descriptions", postgresql.JSONB()),
     )
-    op.bulk_insert(criteria_table, _CRITERIA)
+    op.execute(pg_insert(criteria_table).values(_CRITERIA).on_conflict_do_nothing(index_elements=["id"]))
 
 
 def downgrade() -> None:

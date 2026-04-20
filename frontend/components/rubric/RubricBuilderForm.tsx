@@ -32,6 +32,7 @@ import type {
 } from "@/lib/api/rubrics";
 import { TemplatePicker } from "@/components/rubric/TemplatePicker";
 import type { TemplateApplyValues } from "@/components/rubric/TemplatePicker";
+import { convertApiCriteriaToForm } from "@/components/rubric/rubricFormUtils";
 
 // ---------------------------------------------------------------------------
 // Zod schema
@@ -603,11 +604,9 @@ export function RubricBuilderForm({
 
   const handleApplyTemplate = (values: TemplateApplyValues) => {
     reset({
-      name: values.name ?? normalizedDefaults.name,
+      name: values.name,
       criteria:
-        values.criteria && values.criteria.length > 0
-          ? values.criteria
-          : normalizedDefaults.criteria,
+        values.criteria.length > 0 ? values.criteria : normalizedDefaults.criteria,
     });
     setHasAttemptedSubmit(false);
   };
@@ -854,6 +853,9 @@ export function RubricBuilderForm({
 /**
  * Convert the API's criterion response array (ordered by display_order)
  * into the form's criteria array.
+ *
+ * @deprecated Import `convertApiCriteriaToForm` from `rubricFormUtils` directly.
+ *   This re-export exists for backward compatibility.
  */
 export function apiCriteriaToFormCriteria(
   apiCriteria: Array<{
@@ -865,12 +867,5 @@ export function apiCriteriaToFormCriteria(
     anchor_descriptions?: AnchorDescriptions | null;
   }>,
 ): RubricFormValues["criteria"] {
-  return apiCriteria.map((c) => ({
-    name: c.name,
-    description: c.description ?? "",
-    weight: c.weight,
-    min_score: c.min_score,
-    max_score: c.max_score,
-    anchor_descriptions: c.anchor_descriptions ?? {},
-  }));
+  return convertApiCriteriaToForm(apiCriteria);
 }

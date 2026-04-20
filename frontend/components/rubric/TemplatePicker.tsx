@@ -18,35 +18,8 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listRubricTemplates, getRubricTemplate } from "@/lib/api/rubric-templates";
 import type { RubricTemplateListItem } from "@/lib/api/rubric-templates";
-
-// ---------------------------------------------------------------------------
-// Local types — avoids circular import with RubricBuilderForm
-// ---------------------------------------------------------------------------
-
-/** Criteria shape that TemplatePicker emits to its consumer. */
-type AppliedCriterion = {
-  name: string;
-  description: string;
-  weight: number;
-  min_score: number;
-  max_score: number;
-  anchor_descriptions: Record<string, string>;
-};
-
-type TemplateCriteriaItem = Awaited<
-  ReturnType<typeof getRubricTemplate>
->["criteria"][number];
-
-function convertCriteria(criteria: TemplateCriteriaItem[]): AppliedCriterion[] {
-  return criteria.map((c) => ({
-    name: c.name,
-    description: c.description ?? "",
-    weight: c.weight,
-    min_score: c.min_score,
-    max_score: c.max_score,
-    anchor_descriptions: (c.anchor_descriptions ?? {}) as Record<string, string>,
-  }));
-}
+import { convertApiCriteriaToForm } from "@/components/rubric/rubricFormUtils";
+import type { FormCriterion } from "@/components/rubric/rubricFormUtils";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -54,7 +27,7 @@ function convertCriteria(criteria: TemplateCriteriaItem[]): AppliedCriterion[] {
 
 export interface TemplateApplyValues {
   name: string;
-  criteria: AppliedCriterion[];
+  criteria: FormCriterion[];
 }
 
 export interface TemplatePickerProps {
@@ -124,7 +97,7 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
     try {
       onApply({
         name: previewRubric.name,
-        criteria: convertCriteria(previewRubric.criteria),
+        criteria: convertApiCriteriaToForm(previewRubric.criteria),
       });
       onClose();
     } catch {

@@ -206,6 +206,16 @@ describe("TemplatePicker", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("calls onClose when Escape is pressed", async () => {
+    const user = userEvent.setup();
+    mockListTemplates.mockResolvedValue([]);
+    const { onClose } = renderPicker();
+    // Focus the dialog so keyboard events are delivered to it
+    screen.getByRole("dialog").focus();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("shows error message when preview fetch fails", async () => {
     const user = userEvent.setup();
     mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
