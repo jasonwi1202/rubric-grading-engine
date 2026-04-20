@@ -62,9 +62,10 @@ def _make_assignment_orm(
     return a
 
 
-def _make_class_ownership_row(teacher_id: uuid.UUID, class_id: uuid.UUID) -> MagicMock:
+def _make_ownership_row(teacher_id: uuid.UUID, resource_id: uuid.UUID) -> MagicMock:
+    """Generic ownership row mock (class, rubric, or any resource)."""
     row = MagicMock()
-    row.id = class_id
+    row.id = resource_id
     row.teacher_id = teacher_id
     return row
 
@@ -163,9 +164,7 @@ class TestCreateAssignment:
 
         # Class ownership query
         class_ownership_result = MagicMock()
-        class_ownership_result.one_or_none.return_value = _make_class_ownership_row(
-            teacher_id, class_id
-        )
+        class_ownership_result.one_or_none.return_value = _make_ownership_row(teacher_id, class_id)
 
         # Full class fetch
         class_full_result = MagicMock()
@@ -175,7 +174,7 @@ class TestCreateAssignment:
 
         # Rubric ownership query
         rubric_ownership_result = MagicMock()
-        rubric_ownership_result.one_or_none.return_value = _make_class_ownership_row(
+        rubric_ownership_result.one_or_none.return_value = _make_ownership_row(
             teacher_id, rubric.id
         )
 
@@ -249,9 +248,7 @@ class TestCreateAssignment:
         db = AsyncMock()
 
         class_ownership_result = MagicMock()
-        class_ownership_result.one_or_none.return_value = _make_class_ownership_row(
-            teacher_id, class_id
-        )
+        class_ownership_result.one_or_none.return_value = _make_ownership_row(teacher_id, class_id)
 
         class_full_result = MagicMock()
         class_full_result.scalar_one_or_none.return_value = MagicMock(
@@ -260,7 +257,7 @@ class TestCreateAssignment:
 
         # Rubric belongs to a different teacher
         rubric_ownership_result = MagicMock()
-        rubric_ownership_result.one_or_none.return_value = _make_class_ownership_row(
+        rubric_ownership_result.one_or_none.return_value = _make_ownership_row(
             other_teacher_id, rubric_id
         )
 
@@ -511,9 +508,7 @@ class TestListAssignments:
         db = AsyncMock()
         # Class ownership
         class_ownership_result = MagicMock()
-        class_ownership_result.one_or_none.return_value = _make_class_ownership_row(
-            teacher_id, class_id
-        )
+        class_ownership_result.one_or_none.return_value = _make_ownership_row(teacher_id, class_id)
         # Full class
         class_full_result = MagicMock()
         class_full_result.scalar_one_or_none.return_value = MagicMock(

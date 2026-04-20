@@ -58,13 +58,14 @@ def _validate_transition(current: AssignmentStatus, target: AssignmentStatus) ->
             field="status",
         )
     if allowed_next is None or target != allowed_next:
-        raise InvalidStateTransitionError(
-            f"Cannot transition from '{current}' to '{target}'. "
-            f"Only '{allowed_next}' is valid from '{current}'."
-            if allowed_next
-            else f"Assignment is in terminal status '{current}' and cannot be advanced.",
-            field="status",
-        )
+        if allowed_next is not None:
+            message = (
+                f"Cannot transition from '{current}' to '{target}'. "
+                f"Only '{allowed_next}' is valid from '{current}'."
+            )
+        else:
+            message = f"Assignment is in terminal status '{current}' and cannot be advanced."
+        raise InvalidStateTransitionError(message, field="status")
 
 
 # ---------------------------------------------------------------------------
