@@ -182,10 +182,36 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 |---|---|---|
 | GET | `/classes/{classId}/students` | List enrolled students in a class |
 | POST | `/classes/{classId}/students` | Enroll a new or existing student |
+| POST | `/classes/{classId}/students/import` | Parse a CSV roster and return an import diff (no DB write) |
+| POST | `/classes/{classId}/students/import/confirm` | Commit a reviewed CSV roster import |
 | DELETE | `/classes/{classId}/students/{studentId}` | Remove student from class (soft) |
 | GET | `/students/{studentId}` | Get student detail + skill profile |
 | GET | `/students/{studentId}/history` | Get all graded assignments for a student |
 | PATCH | `/students/{studentId}` | Update student name or external ID |
+
+#### CSV Roster Import Flow
+
+Two-phase import prevents accidental bulk writes:
+
+1. **`POST /classes/{classId}/students/import`** — multipart CSV upload (`file` field).
+   - Accepted columns: `full_name` (required, case-insensitive), `external_id` (optional).
+   - Returns a diff with per-row status and aggregate counts; **no students are written to the DB**.
+   - Returns `422` if the CSV is malformed, missing the `full_name` column, or exceeds 200 rows.
+   - Individual rows with an empty `full_name` appear in the diff with `status: "error"`.
+
+2. **`POST /classes/{classId}/students/import/confirm`** — JSON body `{ "rows": [...] }`.
+   - Teacher sends back only the rows they approve (may omit skipped/error rows).
+   - Server re-validates each row against the current roster before writing.
+   - Returns `{ "created": N, "updated": N, "skipped": N }`.
+
+**Per-row statuses:**
+
+| Status | Meaning |
+|---|---|
+| `new` | No match found; a new student record will be created and enrolled |
+| `updated` | Existing student matched by `external_id` (not currently enrolled); will be enrolled |
+| `skipped` | Already enrolled, or fuzzy name match detected — no change will be made |
+| `error` | Row failed validation (e.g. missing `full_name`); excluded from commit |
 
 ---
 

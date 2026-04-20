@@ -4,27 +4,37 @@ All endpoints require a valid JWT (``get_current_teacher`` dependency).
 Student PII (names) is never logged — only entity IDs appear in log output.
 
 Endpoints:
-  GET    /classes                              — list teacher's classes (filterable)
-  POST   /classes                              — create a new class
-  GET    /classes/{classId}                    — get class detail
-  PATCH  /classes/{classId}                    — update class name, subject, grade level, academic year
-  POST   /classes/{classId}/archive            — archive the class (soft)
-  GET    /classes/{classId}/students           — list enrolled students
-  POST   /classes/{classId}/students           — enroll a new or existing student
-  DELETE /classes/{classId}/students/{studentId} — soft-remove a student from the class
+  GET    /classes                                       — list teacher's classes (filterable)
+  POST   /classes                                       — create a new class
+  GET    /classes/{classId}                             — get class detail
+  PATCH  /classes/{classId}                             — update class name, subject, grade level, academic year
+  POST   /classes/{classId}/archive                     — archive the class (soft)
+  GET    /classes/{classId}/students                    — list enrolled students
+  POST   /classes/{classId}/students                    — enroll a new or existing student
+  POST   /classes/{classId}/students/import             — parse CSV and return import diff
+  POST   /classes/{classId}/students/import/confirm     — commit a previously reviewed import
+  DELETE /classes/{classId}/students/{studentId}        — soft-remove a student from the class
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
+from app.exceptions import ValidationError as DomainValidationError
 from app.models.user import User
 from app.schemas.class_ import ClassResponse, CreateClassRequest, PatchClassRequest
+from app.schemas.roster_import import (
+    DiffRowResponse,
+    ImportConfirmRequest,
+    ImportConfirmResponse,
+    ImportDiffResponse,
+    ImportRowStatus,
+)
 from app.schemas.student import EnrolledStudentResponse, EnrollStudentRequest, StudentResponse
 from app.services.class_ import (
     archive_class,
@@ -32,6 +42,13 @@ from app.services.class_ import (
     get_class,
     list_classes,
     update_class,
+)
+from app.services.roster_import import (
+    CsvParseResult,
+    ParsedRow,
+    build_import_diff,
+    commit_roster_import,
+    parse_csv_roster,
 )
 from app.services.student import (
     enroll_student,
@@ -278,6 +295,133 @@ async def enroll_student_endpoint(
         student=StudentResponse.model_validate(student),
     ).model_dump(mode="json")
     return JSONResponse(status_code=201, content={"data": response_data})
+
+
+# ---------------------------------------------------------------------------
+# POST /classes/{classId}/students/import
+# ---------------------------------------------------------------------------
+
+# Maximum CSV file size accepted (bytes).  200 rows × ~200 bytes/row fits
+# well under 1 MB; this limit prevents resource exhaustion from giant uploads.
+_MAX_CSV_BYTES: int = 1 * 1024 * 1024  # 1 MB
+
+
+@router.post(
+    "/{class_id}/students/import",
+    summary="Parse a CSV roster and return an import diff",
+)
+async def import_students_endpoint(
+    class_id: uuid.UUID,
+    file: UploadFile = File(
+        ..., description="CSV file with full_name and optional external_id columns"
+    ),
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Parse an uploaded CSV file and return a per-row import diff.
+
+    The diff classifies each row as **new** (will be created), **updated**
+    (existing student matched by external_id, will be enrolled), **skipped**
+    (already enrolled or potential fuzzy-name duplicate), or **error** (row
+    failed validation).
+
+    No students are written to the database by this endpoint.  The teacher
+    must review the diff and call POST .../import/confirm to commit.
+
+    Returns 422 if:
+    - The file cannot be decoded as UTF-8.
+    - The CSV has no header row or is missing the required ``full_name`` column.
+    - The CSV contains more than 200 data rows.
+
+    Returns 403 if the class belongs to a different teacher.
+    Returns 404 if the class does not exist.
+    """
+    raw = await file.read()
+    if len(raw) > _MAX_CSV_BYTES:
+        raise DomainValidationError(
+            f"CSV file is too large (maximum {_MAX_CSV_BYTES // 1024} KB).",
+            field="file",
+        )
+
+    parse_result: CsvParseResult = parse_csv_roster(raw)
+
+    # Build the diff for valid rows (may return empty list if all rows errored).
+    diff_rows = await build_import_diff(db, teacher.id, class_id, parse_result.rows)
+
+    # Merge parse errors (status=ERROR) with the diff rows, ordered by row number.
+    all_rows = diff_rows + parse_result.errors
+    all_rows.sort(key=lambda r: r.row_number)
+
+    response_rows = [
+        DiffRowResponse(
+            row_number=r.row_number,
+            full_name=r.full_name,
+            external_id=r.external_id,
+            status=r.status,
+            message=r.message,
+            existing_student_id=r.existing_student_id,
+        )
+        for r in all_rows
+    ]
+
+    diff_response = ImportDiffResponse(
+        rows=response_rows,
+        new_count=sum(1 for r in all_rows if r.status == ImportRowStatus.NEW),
+        updated_count=sum(1 for r in all_rows if r.status == ImportRowStatus.UPDATED),
+        skipped_count=sum(1 for r in all_rows if r.status == ImportRowStatus.SKIPPED),
+        error_count=sum(1 for r in all_rows if r.status == ImportRowStatus.ERROR),
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": diff_response.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /classes/{classId}/students/import/confirm
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{class_id}/students/import/confirm",
+    summary="Commit a reviewed CSV roster import",
+)
+async def confirm_import_endpoint(
+    class_id: uuid.UUID,
+    payload: ImportConfirmRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Commit the import rows that the teacher approved.
+
+    The server re-validates each row against the current class roster before
+    writing to the database.  Rows that are already enrolled (or that fail
+    re-validation) are silently skipped — they do not cause the request to
+    fail.
+
+    Returns 403 if the class belongs to a different teacher.
+    Returns 404 if the class does not exist.
+    """
+    rows_to_commit = [
+        ParsedRow(
+            row_number=r.row_number,
+            full_name=r.full_name,
+            external_id=r.external_id,
+        )
+        for r in payload.rows
+    ]
+
+    counts = await commit_roster_import(db, teacher.id, class_id, rows_to_commit)
+
+    confirm_response = ImportConfirmResponse(
+        created=counts["created"],
+        updated=counts["updated"],
+        skipped=counts["skipped"],
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": confirm_response.model_dump(mode="json")},
+    )
 
 
 # ---------------------------------------------------------------------------
