@@ -45,6 +45,10 @@ export interface RubricCriterionResponse {
   anchor_descriptions: AnchorDescriptions | null;
 }
 
+/**
+ * Full rubric response — matches the backend payload for GET /rubrics/{id},
+ * POST /rubrics, and PATCH /rubrics/{id}.
+ */
 export interface RubricResponse {
   id: string;
   name: string;
@@ -55,17 +59,19 @@ export interface RubricResponse {
   criteria: RubricCriterionResponse[];
 }
 
-export interface RubricDetailResponse {
-  id: string;
-  name: string;
-  created_at: string;
-  criteria: RubricCriterionResponse[];
-}
+/**
+ * Alias kept for backwards compatibility — `getRubric()` returns the full shape.
+ * @deprecated Use `RubricResponse` directly.
+ */
+export type RubricDetailResponse = RubricResponse;
 
 export interface RubricListItem {
   id: string;
   name: string;
+  description: string | null;
+  is_template: boolean;
   created_at: string;
+  updated_at: string;
   criterion_count: number;
 }
 
@@ -85,8 +91,8 @@ export async function listRubrics(): Promise<RubricListItem[]> {
  * Get a single rubric with all criteria.
  * Calls GET /api/v1/rubrics/{rubricId}.
  */
-export async function getRubric(rubricId: string): Promise<RubricDetailResponse> {
-  return apiGet<RubricDetailResponse>(`/rubrics/${rubricId}`);
+export async function getRubric(rubricId: string): Promise<RubricResponse> {
+  return apiGet<RubricResponse>(`/rubrics/${rubricId}`);
 }
 
 /**

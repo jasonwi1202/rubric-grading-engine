@@ -236,15 +236,13 @@ function CriterionRow({
     >
       {/* Criterion header row */}
       <div className="flex items-center gap-2 px-3 py-2">
-        {/* Drag handle — aria-hidden because keyboard reordering is provided
-            by the up/down buttons below */}
+        {/* Drag handle — decorative only because keyboard reordering is
+            provided by the up/down buttons below */}
         <span
           className="cursor-grab text-gray-400 hover:text-gray-600 select-none"
           aria-hidden="true"
           title="Drag to reorder"
-          role="img"
         >
-          <span className="sr-only">Drag handle</span>
           ⠿
         </span>
 
@@ -759,12 +757,13 @@ export function RubricBuilderForm({
         </div>
 
         {/* Criteria-level error (weight sum) — shown after first submit attempt */}
-        {hasAttemptedSubmit && Math.round(weightSum) !== 100 && (
-          <p className="mt-2 text-sm text-red-600" role="alert">
-            Criterion weights must sum to 100%. Current total:{" "}
-            {Math.round(weightSum)}%.
-          </p>
-        )}
+        {hasAttemptedSubmit &&
+          Math.round(weightSum * 100) / 100 !== 100 && (
+            <p className="mt-2 text-sm text-red-600" role="alert">
+              Criterion weights must sum to 100%. Current total:{" "}
+              {(Math.round(weightSum * 100) / 100).toFixed(2).replace(/\.?0+$/, "")}%.
+            </p>
+          )}
 
         {/* Add criterion button */}
         {canAddMore && (
