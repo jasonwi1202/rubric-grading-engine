@@ -336,7 +336,7 @@ async def import_students_endpoint(
     Returns 403 if the class belongs to a different teacher.
     Returns 404 if the class does not exist.
     """
-    raw = await file.read()
+    raw = await file.read(_MAX_CSV_BYTES + 1)
     if len(raw) > _MAX_CSV_BYTES:
         raise DomainValidationError(
             f"CSV file is too large (maximum {_MAX_CSV_BYTES // 1024} KB).",
@@ -394,9 +394,15 @@ async def confirm_import_endpoint(
 ) -> JSONResponse:
     """Commit the import rows that the teacher approved.
 
-    The server re-validates each row against the current class roster before
-    writing to the database.  Rows that are already enrolled (or that fail
-    re-validation) are silently skipped — they do not cause the request to
+    Request-schema validation happens before this endpoint runs. If the
+    payload is malformed (for example, ``rows`` is empty or a row has an
+    invalid ``full_name``), FastAPI/Pydantic rejects the request with a 422
+    response.
+
+    After schema validation succeeds, the server re-validates each row
+    against the current class roster before writing to the database. Rows
+    that are already enrolled, or that fail this business-level
+    re-validation, are silently skipped and do not cause the request to
     fail.
 
     Returns 403 if the class belongs to a different teacher.

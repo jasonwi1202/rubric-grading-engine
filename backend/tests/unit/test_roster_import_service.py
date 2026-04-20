@@ -19,10 +19,12 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.schemas.roster_import import ImportRowStatus
 from app.services.roster_import import (
+    MAX_EXTERNAL_ID_LENGTH,
     ParsedRow,
     _fuzzy_name_match,
     build_import_diff,
@@ -204,6 +206,26 @@ class TestParseCsvRoster:
         assert len(result.rows) == 0
         assert len(result.errors) == 1
         assert result.errors[0].status == ImportRowStatus.ERROR
+
+    def test_external_id_too_long_produces_error_row(self) -> None:
+        long_ext_id = "X" * (MAX_EXTERNAL_ID_LENGTH + 1)
+        content = f"full_name,external_id\nAlice A,{long_ext_id}\n".encode()
+        result = parse_csv_roster(content)
+
+        assert len(result.rows) == 0
+        assert len(result.errors) == 1
+        assert result.errors[0].status == ImportRowStatus.ERROR
+        assert result.errors[0].full_name == "Alice A"
+        assert result.errors[0].external_id == long_ext_id[:MAX_EXTERNAL_ID_LENGTH]
+
+    def test_external_id_at_max_length_is_valid(self) -> None:
+        ext_id = "X" * MAX_EXTERNAL_ID_LENGTH
+        content = f"full_name,external_id\nAlice A,{ext_id}\n".encode()
+        result = parse_csv_roster(content)
+
+        assert len(result.rows) == 1
+        assert result.errors == []
+        assert result.rows[0].external_id == ext_id
 
     def test_row_number_correct_with_errors_mixed_in(self) -> None:
         content = b"full_name\nAlice A\n   \nBob B\n"
@@ -536,3 +558,28 @@ class TestCommitRosterImport:
 
         with pytest.raises(ForbiddenError):
             await commit_roster_import(db, uuid.uuid4(), uuid.uuid4(), [])
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_on_commit_raises_validation_error(self) -> None:
+        """A concurrent enrollment race during commit must surface as ValidationError."""
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        db = _make_db()
+        db.execute = AsyncMock(
+            side_effect=[
+                _ownership_result(teacher_id),
+                _query_result([]),
+                _query_result([]),
+            ]
+        )
+        db.commit = AsyncMock(
+            side_effect=IntegrityError("INSERT", {}, Exception("unique constraint"))
+        )
+
+        rows = [ParsedRow(row_number=1, full_name="New Student", external_id=None)]
+        with pytest.raises(ValidationError) as exc_info:
+            await commit_roster_import(db, teacher_id, class_id, rows)
+
+        assert "retry" in str(exc_info.value).lower()
+        db.rollback.assert_called_once()

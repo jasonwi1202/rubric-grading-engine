@@ -43,6 +43,9 @@ MAX_IMPORT_ROWS: int = 200
 # Maximum length for a student's full_name (mirrors the DB column constraint).
 MAX_NAME_LENGTH: int = 255
 
+# Maximum length for a student's external_id (mirrors the DB column constraint).
+MAX_EXTERNAL_ID_LENGTH: int = 255
+
 # Ratio threshold for difflib fuzzy name matching (0–1).
 # Names with a similarity ratio >= this value are treated as potential
 # duplicates of enrolled students.
@@ -157,6 +160,18 @@ def parse_csv_roster(content: bytes, *, max_rows: int = MAX_IMPORT_ROWS) -> CsvP
                     external_id=None,
                     status=ImportRowStatus.ERROR,
                     message=f"full_name exceeds the {MAX_NAME_LENGTH}-character limit.",
+                )
+            )
+            continue
+
+        if raw_ext_id and len(raw_ext_id) > MAX_EXTERNAL_ID_LENGTH:
+            result.errors.append(
+                DiffRow(
+                    row_number=row_number,
+                    full_name=raw_name,
+                    external_id=raw_ext_id[:MAX_EXTERNAL_ID_LENGTH],
+                    status=ImportRowStatus.ERROR,
+                    message=f"external_id exceeds the {MAX_EXTERNAL_ID_LENGTH}-character limit.",
                 )
             )
             continue
@@ -413,18 +428,31 @@ async def commit_roster_import(
 
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
-        raise
+        logger.warning(
+            "Roster import commit conflict",
+            extra={
+                "class_id": str(class_id),
+                "teacher_id": str(teacher_id),
+                "rows_created": created,
+                "rows_updated": updated,
+                "rows_skipped": skipped,
+            },
+        )
+        raise ValidationError(
+            "Roster import could not be completed because the class roster"
+            " changed during import. Please retry."
+        ) from exc
 
     logger.info(
         "Roster import committed",
         extra={
             "class_id": str(class_id),
             "teacher_id": str(teacher_id),
-            "created": created,
-            "updated": updated,
-            "skipped": skipped,
+            "rows_created": created,
+            "rows_updated": updated,
+            "rows_skipped": skipped,
         },
     )
 
