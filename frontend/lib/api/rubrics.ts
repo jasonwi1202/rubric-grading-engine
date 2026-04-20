@@ -48,7 +48,11 @@ export interface RubricCriterionResponse {
 export interface RubricResponse {
   id: string;
   name: string;
+  description: string | null;
+  is_template: boolean;
   created_at: string;
+  updated_at: string;
+  criteria: RubricCriterionResponse[];
 }
 
 export interface RubricDetailResponse {

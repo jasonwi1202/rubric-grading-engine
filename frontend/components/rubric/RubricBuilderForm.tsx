@@ -35,26 +35,31 @@ import type {
 
 const anchorSchema = z.record(z.string(), z.string());
 
-export const criterionSchema = z.object({
-  name: z
-    .string()
-    .min(1, "Criterion name is required")
-    .max(255, "Criterion name is too long"),
-  description: z.string().max(2000, "Description is too long"),
-  weight: z
-    .number()
-    .min(0, "Weight must be at least 0")
-    .max(100, "Weight cannot exceed 100"),
-  min_score: z
-    .number()
-    .int("Min score must be a whole number")
-    .min(0, "Min score must be at least 0"),
-  max_score: z
-    .number()
-    .int("Max score must be a whole number")
-    .min(1, "Max score must be at least 1"),
-  anchor_descriptions: anchorSchema,
-});
+export const criterionSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1, "Criterion name is required")
+      .max(255, "Criterion name is too long"),
+    description: z.string().max(2000, "Description is too long"),
+    weight: z
+      .number()
+      .min(0.01, "Weight must be greater than 0")
+      .max(100, "Weight cannot exceed 100"),
+    min_score: z
+      .number()
+      .int("Min score must be a whole number")
+      .min(1, "Min score must be at least 1"),
+    max_score: z
+      .number()
+      .int("Max score must be a whole number")
+      .min(1, "Max score must be at least 1"),
+    anchor_descriptions: anchorSchema,
+  })
+  .refine((criterion) => criterion.max_score > criterion.min_score, {
+    message: "Max score must be greater than min score",
+    path: ["max_score"],
+  });
 
 export const rubricFormSchema = z
   .object({
@@ -73,7 +78,9 @@ export const rubricFormSchema = z
         (sum, c) => sum + (Number.isFinite(c.weight) ? c.weight : 0),
         0,
       );
-      return Math.round(total) === 100;
+      // Round to 2dp to match the backend's Numeric(5,2) quantization, then
+      // compare exactly to 100 (same rule the API enforces).
+      return Math.round(total * 100) / 100 === 100;
     },
     {
       message: "Criterion weights must sum to 100%",
@@ -123,8 +130,13 @@ interface WeightSumIndicatorProps {
 }
 
 export function WeightSumIndicator({ sum }: WeightSumIndicatorProps) {
-  const rounded = Math.round(sum);
-  const isValid = rounded === 100;
+  // Round to 2dp to match the backend's Numeric(5,2) rule used in validation.
+  const rounded2dp = Math.round(sum * 100) / 100;
+  const isValid = rounded2dp === 100;
+  // Display with up to 2 decimal places (drop trailing zeros for readability).
+  const displayPct = Number.isInteger(rounded2dp)
+    ? String(rounded2dp)
+    : rounded2dp.toFixed(2).replace(/\.?0+$/, "");
 
   return (
     <p
@@ -135,7 +147,7 @@ export function WeightSumIndicator({ sum }: WeightSumIndicatorProps) {
     >
       Weight total:{" "}
       <span className={isValid ? "text-green-700" : "text-red-600"}>
-        {rounded}%
+        {displayPct}%
       </span>{" "}
       {isValid ? "✓" : "(must equal 100%)"}
     </p>
@@ -297,10 +309,10 @@ function CriterionRow({
             <input
               id={`${fieldPrefix}-weight`}
               type="number"
-              min={0}
+              min={0.01}
               max={100}
-              step={1}
-              placeholder="0"
+              step={0.01}
+              placeholder="0.01"
               disabled={isSubmitting}
               aria-invalid={!!criterionErrors?.weight}
               aria-describedby={
@@ -392,7 +404,7 @@ function CriterionRow({
               <input
                 id={`${fieldPrefix}-min_score`}
                 type="number"
-                min={0}
+                min={1}
                 step={1}
                 disabled={isSubmitting}
                 aria-invalid={!!criterionErrors?.min_score}
@@ -507,6 +519,23 @@ export function RubricBuilderForm({
   onCancel,
   saveLabel = "Save rubric",
 }: RubricBuilderFormProps) {
+  // Normalize provided criteria so every entry has all required fields.
+  // Without this, criteria items that omit optional fields (e.g. description,
+  // anchor_descriptions) cause Zod to fail on submit even though the prop type
+  // allows partial entries.
+  const normalizedDefaults: RubricFormValues = {
+    name: defaultValues?.name ?? "",
+    criteria:
+      defaultValues?.criteria && defaultValues.criteria.length > 0
+        ? defaultValues.criteria.map((c, i) => ({
+            ...createEmptyCriterion(i + 1),
+            ...c,
+          }))
+        : Array.from({ length: DEFAULT_CRITERION_COUNT }, (_, i) =>
+            createEmptyCriterion(i + 1),
+          ),
+  };
+
   const {
     register,
     handleSubmit,
@@ -515,13 +544,7 @@ export function RubricBuilderForm({
     formState: { errors, isSubmitting, isDirty },
   } = useForm<RubricFormValues>({
     resolver: zodResolver(rubricFormSchema),
-    defaultValues: {
-      name: "",
-      criteria: Array.from({ length: DEFAULT_CRITERION_COUNT }, (_, i) =>
-        createEmptyCriterion(i + 1),
-      ),
-      ...defaultValues,
-    },
+    defaultValues: normalizedDefaults,
   });
 
   const { fields, append, remove, move } = useFieldArray({
@@ -577,8 +600,10 @@ export function RubricBuilderForm({
     try {
       await onSave(values);
     } catch (err) {
-      // Log to aid debugging; no student PII is present in this component.
-      console.error("[RubricBuilderForm] save failed:", err);
+      if (process.env.NODE_ENV !== "production") {
+        // Development-only: avoid leaking raw error details in production.
+        console.error("[RubricBuilderForm] save failed:", err);
+      }
       setServerError("Failed to save rubric. Please try again.");
     }
   };
@@ -598,6 +623,7 @@ export function RubricBuilderForm({
     (idx: number) => (e: React.DragEvent<HTMLDivElement>) => {
       dragIndexRef.current = idx;
       e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(idx));
     },
     [],
   );

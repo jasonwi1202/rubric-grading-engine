@@ -172,6 +172,83 @@ describe("rubricFormSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects min_score of 0 (backend requires >= 1)", () => {
+    const result = rubricFormSchema.safeParse({
+      name: "My Rubric",
+      criteria: [
+        { ...validCriterion, min_score: 0 },
+        { ...validCriterion, name: "C2", weight: 50 },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const minScoreErrors = result.error.issues.filter(
+        (e) => e.path[2] === "min_score",
+      );
+      expect(minScoreErrors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects when max_score is not greater than min_score", () => {
+    const result = rubricFormSchema.safeParse({
+      name: "My Rubric",
+      criteria: [
+        { ...validCriterion, min_score: 5, max_score: 5 },
+        { ...validCriterion, name: "C2", weight: 50 },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const maxScoreErrors = result.error.issues.filter(
+        (e) => e.path[2] === "max_score",
+      );
+      expect(maxScoreErrors.length).toBeGreaterThan(0);
+      expect(maxScoreErrors[0].message).toMatch(/greater/i);
+    }
+  });
+
+  it("rejects weight of 0 (backend requires > 0)", () => {
+    const result = rubricFormSchema.safeParse({
+      name: "My Rubric",
+      criteria: [
+        { ...validCriterion, weight: 0 },
+        { ...validCriterion, name: "C2", weight: 100 },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const weightErrors = result.error.issues.filter(
+        (e) => e.path[2] === "weight",
+      );
+      expect(weightErrors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects a weight sum of 99.6 (not exactly 100 at 2dp precision)", () => {
+    // 33.3 + 33.3 + 33.0 = 99.6 — passes old Math.round but fails 2dp check
+    const result = rubricFormSchema.safeParse({
+      name: "My Rubric",
+      criteria: [
+        { ...validCriterion, weight: 33.3 },
+        { ...validCriterion, name: "C2", weight: 33.3 },
+        { ...validCriterion, name: "C3", weight: 33.0 },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts weights that sum to exactly 100 at 2dp (e.g. 33.33 + 33.33 + 33.34)", () => {
+    const result = rubricFormSchema.safeParse({
+      name: "My Rubric",
+      criteria: [
+        { ...validCriterion, weight: 33.33 },
+        { ...validCriterion, name: "C2", weight: 33.33 },
+        { ...validCriterion, name: "C3", weight: 33.34 },
+      ],
+    });
+    expect(result.success, JSON.stringify(result)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -216,12 +293,12 @@ describe("WeightSumIndicator", () => {
     expect(el).toHaveTextContent("must equal 100%");
   });
 
-  it("rounds the displayed sum", () => {
+  it("shows red warning for a sum that is close but not exactly 100 after 2dp rounding", () => {
     render(<WeightSumIndicator sum={99.6} />);
     const el = screen.getByRole("status");
-    // Math.round(99.6) = 100 → shows green
-    expect(el).toHaveTextContent("100%");
-    expect(el).toHaveTextContent("✓");
+    // Math.round(99.6 * 100) / 100 = 99.6 ≠ 100 → shows red
+    expect(el).toHaveTextContent("99.6%");
+    expect(el).toHaveTextContent("must equal 100%");
   });
 });
 
@@ -491,12 +568,16 @@ describe("RubricBuilderForm — add / remove criteria", () => {
     await user.click(
       screen.getByRole("button", { name: /remove criterion 3/i }),
     );
-    await waitFor(() => screen.queryByLabelText(/criterion 3 name/i) === null);
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/criterion 3 name/i)).not.toBeInTheDocument();
+    });
 
     await user.click(
       screen.getByRole("button", { name: /remove criterion 2/i }),
     );
-    await waitFor(() => screen.queryByLabelText(/criterion 2 name/i) === null);
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/criterion 2 name/i)).not.toBeInTheDocument();
+    });
 
     const removeBtn = screen.getByRole("button", {
       name: /remove criterion 1/i,
