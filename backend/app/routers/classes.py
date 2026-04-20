@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
@@ -295,7 +295,7 @@ async def remove_enrollment_endpoint(
     student_id: uuid.UUID,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> Response:
     """Remove a student from a class by setting ``removed_at``.
 
     This is a soft operation — the student record and all assignment history
@@ -305,3 +305,4 @@ async def remove_enrollment_endpoint(
     Returns 403 if the class or student belongs to a different teacher.
     """
     await remove_enrollment(db, teacher.id, class_id, student_id)
+    return Response(status_code=204)

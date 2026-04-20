@@ -19,9 +19,10 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.student import Student
@@ -115,6 +116,7 @@ async def list_enrolled_students(
         .where(
             ClassEnrollment.class_id == class_id,
             ClassEnrollment.removed_at.is_(None),
+            Student.teacher_id == teacher_id,
         )
         .order_by(Student.full_name)
     )
@@ -148,7 +150,10 @@ async def enroll_student(
         student = await _get_student_owned_by(db, student_id, teacher_id)
     else:
         # Create a new student record.
-        assert full_name is not None  # enforced by schema validator
+        if full_name is None:
+            raise ValidationError(
+                "full_name is required when student_id is not provided.", field="full_name"
+            )
         student = Student(
             teacher_id=teacher_id,
             full_name=full_name,
@@ -173,7 +178,11 @@ async def enroll_student(
         student_id=student.id,
     )
     db.add(enrollment)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ConflictError("Student is already enrolled in this class.") from None
     await db.refresh(enrollment)
     await db.refresh(student)
 
