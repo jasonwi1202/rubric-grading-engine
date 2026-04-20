@@ -57,6 +57,7 @@ export function RosterList({ classId }: RosterListProps) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["students", classId] });
       void queryClient.invalidateQueries({ queryKey: ["class", classId] });
+      void queryClient.invalidateQueries({ queryKey: ["classes"] });
       setPendingRemove(null);
     },
     onError: () => {
@@ -67,13 +68,14 @@ export function RosterList({ classId }: RosterListProps) {
   const handleStudentAdded = () => {
     void queryClient.invalidateQueries({ queryKey: ["students", classId] });
     setShowAddStudent(false);
-    // Optimistically update class student count
     void queryClient.invalidateQueries({ queryKey: ["class", classId] });
+    void queryClient.invalidateQueries({ queryKey: ["classes"] });
   };
 
   const handleCsvImported = () => {
     void queryClient.invalidateQueries({ queryKey: ["students", classId] });
     void queryClient.invalidateQueries({ queryKey: ["class", classId] });
+    void queryClient.invalidateQueries({ queryKey: ["classes"] });
   };
 
   // ---- Render states ----

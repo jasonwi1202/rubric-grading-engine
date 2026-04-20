@@ -14,7 +14,7 @@ import { ApiError } from "@/lib/api/errors";
 
 const classSchema = z.object({
   name: z.string().min(1, "Class name is required").max(255, "Class name is too long"),
-  subject: z.string().min(1, "Subject is required").max(255, "Subject is too long"),
+  subject: z.string().min(1, "Subject is required").max(100, "Subject is too long"),
   grade_level: z.string().min(1, "Grade level is required"),
   academic_year: z.string().min(1, "Academic year is required"),
 });

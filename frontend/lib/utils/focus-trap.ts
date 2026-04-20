@@ -63,16 +63,22 @@ export function useFocusTrap({
       const focusable = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
       );
-      if (focusable.length === 0) return;
+      if (focusable.length === 0) {
+        // No enabled focusable children — keep focus on the panel itself.
+        e.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
       if (e.shiftKey) {
-        if (document.activeElement === first) {
+        if (active === dialogRef.current || active === first) {
           e.preventDefault();
           last.focus();
         }
       } else {
-        if (document.activeElement === last) {
+        if (active === dialogRef.current || active === last) {
           e.preventDefault();
           first.focus();
         }

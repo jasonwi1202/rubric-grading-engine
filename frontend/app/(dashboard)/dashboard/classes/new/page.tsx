@@ -3,10 +3,6 @@
 /**
  * /dashboard/classes/new — create a new class.
  *
- * Reuses the same form schema and grade level / academic year constants as
- * the onboarding wizard, but navigates back to the class list on success
- * rather than continuing through the onboarding flow.
- *
  * Security: no student PII is collected here.
  */
 
@@ -28,7 +24,7 @@ const classSchema = z.object({
     .string()
     .min(1, "Class name is required")
     .max(255, "Class name is too long"),
-  subject: z.string().min(1, "Subject is required").max(255, "Subject is too long"),
+  subject: z.string().min(1, "Subject is required").max(100, "Subject is too long"),
   grade_level: z.string().min(1, "Grade level is required"),
   academic_year: z.string().min(1, "Academic year is required"),
 });
@@ -52,8 +48,6 @@ const GRADE_LEVELS = [
   "College / University",
   "Other",
 ];
-
-// Computed once at module load time, not on every render.
 
 // ---------------------------------------------------------------------------
 // Page component
