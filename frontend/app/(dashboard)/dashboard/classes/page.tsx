@@ -13,7 +13,7 @@ import { listClasses } from "@/lib/api/classes";
 
 export default function ClassesPage() {
   const { data: classes, isLoading, isError } = useQuery({
-    queryKey: ["classes"],
+    queryKey: ["classes", { is_archived: false }],
     queryFn: () => listClasses({ is_archived: false }),
   });
 

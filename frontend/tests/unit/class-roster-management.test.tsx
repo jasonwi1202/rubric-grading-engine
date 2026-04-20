@@ -133,14 +133,18 @@ describe("AddStudentDialog — validation", () => {
 describe("AddStudentDialog — successful submission", () => {
   it("calls addStudent with correct values and invokes onAdded", async () => {
     const onAdded = vi.fn();
-    const student = {
-      id: "stu-1",
-      full_name: "Test Student",
-      external_id: null,
+    const enrolled = {
+      enrollment_id: "enr-1",
       enrolled_at: "2025-01-01T00:00:00Z",
-      is_active: true,
+      student: {
+        id: "stu-1",
+        teacher_id: "tch-1",
+        full_name: "Test Student",
+        external_id: null,
+        created_at: "2025-01-01T00:00:00Z",
+      },
     };
-    mockAddStudent.mockResolvedValueOnce(student);
+    mockAddStudent.mockResolvedValueOnce(enrolled);
 
     const user = userEvent.setup();
     render(
@@ -162,7 +166,7 @@ describe("AddStudentDialog — successful submission", () => {
       );
     });
     await waitFor(() => {
-      expect(onAdded).toHaveBeenCalledWith(student);
+      expect(onAdded).toHaveBeenCalledWith(enrolled);
     });
   });
 
@@ -387,9 +391,13 @@ describe("CsvImportDialog — upload phase", () => {
           external_id: null,
           status: "new" as const,
           message: null,
+          existing_student_id: null,
         },
       ],
-      counts: { new: 1, updated: 0, skipped: 0, error: 0 },
+      new_count: 1,
+      updated_count: 0,
+      skipped_count: 0,
+      error_count: 0,
     };
     mockPreviewCsvImport.mockResolvedValueOnce(preview);
 

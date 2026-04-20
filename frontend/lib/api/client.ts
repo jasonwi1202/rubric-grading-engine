@@ -65,7 +65,13 @@ async function apiFetch<T>(
   const headers = new Headers(init.headers);
   // Only set Content-Type for requests that carry a body (POST/PUT/PATCH).
   // Setting it on GET/DELETE triggers unnecessary CORS preflight requests.
-  if (init.body !== undefined && !headers.has("Content-Type")) {
+  // Skip for FormData — the browser must set Content-Type with the correct
+  // multipart boundary automatically.
+  if (
+    init.body !== undefined &&
+    !(init.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -181,4 +187,19 @@ export function apiPatch<T>(
 
 export function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
   return apiFetch<T>(path, { ...init, method: "DELETE" });
+}
+
+/**
+ * POST with a FormData body (multipart/form-data).
+ *
+ * Unlike apiPost, this helper deliberately does NOT set Content-Type so the
+ * browser can supply the correct multipart boundary automatically.  Auth,
+ * 401-refresh, and error handling are identical to all other helpers.
+ */
+export function apiPostForm<T>(
+  path: string,
+  formData: FormData,
+  init?: RequestInit,
+): Promise<T> {
+  return apiFetch<T>(path, { ...init, method: "POST", body: formData });
 }

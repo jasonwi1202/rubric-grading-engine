@@ -14,8 +14,9 @@ import { ApiError } from "@/lib/api/errors";
 
 const classSchema = z.object({
   name: z.string().min(1, "Class name is required").max(200, "Class name is too long"),
+  subject: z.string().min(1, "Subject is required").max(100, "Subject is too long"),
   grade_level: z.string().min(1, "Grade level is required"),
-  academic_year: z.string().optional(),
+  academic_year: z.string().min(1, "Academic year is required"),
 });
 
 type ClassFormValues = z.infer<typeof classSchema>;
@@ -77,8 +78,9 @@ export default function OnboardingClassPage() {
     try {
       await createClass({
         name: values.name,
+        subject: values.subject,
         grade_level: values.grade_level,
-        academic_year: values.academic_year ?? undefined,
+        academic_year: values.academic_year,
       });
       router.push("/onboarding/rubric");
     } catch (err) {
@@ -139,6 +141,32 @@ export default function OnboardingClassPage() {
             {errors.name && (
               <p id="name-error" className="mt-1 text-sm text-red-600" role="alert">
                 {errors.name.message}
+              </p>
+            )}
+          </div>
+
+          {/* Subject */}
+          <div>
+            <label
+              htmlFor="subject"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Subject
+            </label>
+            <input
+              id="subject"
+              type="text"
+              autoComplete="off"
+              placeholder="e.g. English Language Arts"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+              aria-describedby={errors.subject ? "subject-error" : undefined}
+              aria-invalid={!!errors.subject}
+              disabled={isSubmitting}
+              {...register("subject")}
+            />
+            {errors.subject && (
+              <p id="subject-error" className="mt-1 text-sm text-red-600" role="alert">
+                {errors.subject.message}
               </p>
             )}
           </div>

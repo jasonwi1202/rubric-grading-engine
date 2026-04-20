@@ -17,7 +17,7 @@ import { listStudents, removeStudent } from "@/lib/api/classes";
 import { AddStudentDialog } from "@/components/classes/AddStudentDialog";
 import { RemoveStudentDialog } from "@/components/classes/RemoveStudentDialog";
 import { CsvImportDialog } from "@/components/classes/CsvImportDialog";
-import type { StudentResponse } from "@/lib/api/classes";
+import type { EnrolledStudentResponse } from "@/lib/api/classes";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -37,7 +37,7 @@ export function RosterList({ classId }: RosterListProps) {
   // Dialogs
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
-  const [pendingRemove, setPendingRemove] = useState<StudentResponse | null>(
+  const [pendingRemove, setPendingRemove] = useState<EnrolledStudentResponse | null>(
     null,
   );
 
@@ -96,7 +96,8 @@ export function RosterList({ classId }: RosterListProps) {
     );
   }
 
-  const activeStudents = (students ?? []).filter((s) => s.is_active);
+  // Backend only returns active enrollments — no client-side filter needed.
+  const enrolledStudents = students ?? [];
 
   return (
     <section aria-labelledby="roster-heading">
@@ -105,7 +106,7 @@ export function RosterList({ classId }: RosterListProps) {
         <h2 id="roster-heading" className="text-base font-semibold text-gray-900">
           Students{" "}
           <span className="ml-1 text-sm font-normal text-gray-500">
-            ({activeStudents.length})
+            ({enrolledStudents.length})
           </span>
         </h2>
 
@@ -128,7 +129,7 @@ export function RosterList({ classId }: RosterListProps) {
       </div>
 
       {/* Roster table or empty state */}
-      {activeStudents.length === 0 ? (
+      {enrolledStudents.length === 0 ? (
         <div className="rounded-md border border-dashed border-gray-300 py-12 text-center text-sm text-gray-500">
           No students enrolled yet.{" "}
           <button
@@ -162,22 +163,22 @@ export function RosterList({ classId }: RosterListProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {activeStudents.map((student) => (
-                <tr key={student.id}>
+              {enrolledStudents.map((enrolled) => (
+                <tr key={enrolled.enrollment_id}>
                   <td className="px-4 py-3 font-medium text-gray-900">
-                    {student.full_name}
+                    {enrolled.student.full_name}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {student.external_id ?? "—"}
+                    {enrolled.student.external_id ?? "—"}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {new Date(student.enrolled_at).toLocaleDateString()}
+                    {new Date(enrolled.enrolled_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"
-                      onClick={() => setPendingRemove(student)}
-                      aria-label={`Remove ${student.full_name}`}
+                      onClick={() => setPendingRemove(enrolled)}
+                      aria-label={`Remove ${enrolled.student.full_name}`}
                       className="text-sm text-red-600 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 rounded"
                     >
                       Remove
@@ -207,10 +208,10 @@ export function RosterList({ classId }: RosterListProps) {
 
       {pendingRemove && (
         <RemoveStudentDialog
-          studentName={pendingRemove.full_name}
+          studentName={pendingRemove.student.full_name}
           open={true}
           onClose={() => setPendingRemove(null)}
-          onConfirm={() => removeMutation.mutate(pendingRemove.id)}
+          onConfirm={() => removeMutation.mutate(pendingRemove.student.id)}
           isPending={removeMutation.isPending}
         />
       )}

@@ -48,6 +48,10 @@ async function fillClassName(user: ReturnType<typeof userEvent.setup>, name: str
   await user.type(screen.getByLabelText(/class name/i), name);
 }
 
+async function fillSubject(user: ReturnType<typeof userEvent.setup>, subject: string) {
+  await user.type(screen.getByLabelText(/subject/i), subject);
+}
+
 async function selectGradeLevel(user: ReturnType<typeof userEvent.setup>, grade: string) {
   await user.selectOptions(screen.getByLabelText(/grade level/i), grade);
 }
@@ -60,6 +64,11 @@ describe("OnboardingClassPage — render", () => {
   it("renders the class name input", () => {
     render(<OnboardingClassPage />);
     expect(screen.getByLabelText(/class name/i)).toBeInTheDocument();
+  });
+
+  it("renders the subject input", () => {
+    render(<OnboardingClassPage />);
+    expect(screen.getByLabelText(/subject/i)).toBeInTheDocument();
   });
 
   it("renders the grade level select", () => {
@@ -109,7 +118,8 @@ describe("OnboardingClassPage — validation", () => {
     const user = userEvent.setup();
     render(<OnboardingClassPage />);
 
-    await user.type(screen.getByLabelText(/class name/i), "Period 3 English");
+    await fillClassName(user, "Period 3 English");
+    await fillSubject(user, "English");
     await user.click(screen.getByRole("button", { name: /create class/i }));
 
     await waitFor(() => {
@@ -131,6 +141,7 @@ describe("OnboardingClassPage — successful submission", () => {
     render(<OnboardingClassPage />);
 
     await fillClassName(user, "Period 3 English");
+    await fillSubject(user, "English Language Arts");
     await selectGradeLevel(user, "Grade 9");
     await user.click(screen.getByRole("button", { name: /create class/i }));
 
@@ -138,6 +149,7 @@ describe("OnboardingClassPage — successful submission", () => {
       expect(mockCreateClass).toHaveBeenCalledWith(
         expect.objectContaining({
           name: "Period 3 English",
+          subject: "English Language Arts",
           grade_level: "Grade 9",
         }),
       );
@@ -163,6 +175,7 @@ describe("OnboardingClassPage — error handling", () => {
     render(<OnboardingClassPage />);
 
     await fillClassName(user, "Period 3 English");
+    await fillSubject(user, "English Language Arts");
     await selectGradeLevel(user, "Grade 9");
     await user.click(screen.getByRole("button", { name: /create class/i }));
 
@@ -180,6 +193,7 @@ describe("OnboardingClassPage — error handling", () => {
     render(<OnboardingClassPage />);
 
     await fillClassName(user, "Period 3 English");
+    await fillSubject(user, "English Language Arts");
     await selectGradeLevel(user, "Grade 9");
     await user.click(screen.getByRole("button", { name: /create class/i }));
 
@@ -199,6 +213,7 @@ describe("OnboardingClassPage — error handling", () => {
     render(<OnboardingClassPage />);
 
     await fillClassName(user, "Period 3 English");
+    await fillSubject(user, "English Language Arts");
     await selectGradeLevel(user, "Grade 9");
     await user.click(screen.getByRole("button", { name: /create class/i }));
 
@@ -217,6 +232,7 @@ describe("OnboardingClassPage — error handling", () => {
     render(<OnboardingClassPage />);
 
     await fillClassName(user, "Period 3 English");
+    await fillSubject(user, "English Language Arts");
     await selectGradeLevel(user, "Grade 9");
     await user.click(screen.getByRole("button", { name: /create class/i }));
 

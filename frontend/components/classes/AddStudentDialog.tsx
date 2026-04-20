@@ -11,13 +11,17 @@
  * collected here — no essay content or grade data.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { addStudent } from "@/lib/api/classes";
-import type { StudentResponse } from "@/lib/api/classes";
+import type { EnrolledStudentResponse } from "@/lib/api/classes";
 import { ApiError } from "@/lib/api/errors";
+
+// Focusable element selector for focus-trapping (matches TemplatePicker)
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -41,7 +45,7 @@ interface AddStudentDialogProps {
   classId: string;
   open: boolean;
   onClose: () => void;
-  onAdded: (student: StudentResponse) => void;
+  onAdded: (enrolled: EnrolledStudentResponse) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +59,8 @@ export function AddStudentDialog({
   onAdded,
 }: AddStudentDialogProps) {
   const [serverError, setServerError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const {
     register,
@@ -66,6 +72,17 @@ export function AddStudentDialog({
     defaultValues: { full_name: "", external_id: "" },
   });
 
+  // Focus management: capture previous focus, move into dialog, restore on close
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    firstFocusable?.focus();
+    return () => {
+      previousFocusRef.current?.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const handleClose = () => {
@@ -74,15 +91,41 @@ export function AddStudentDialog({
     onClose();
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      handleClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  };
+
   const onSubmit = async (values: AddStudentFormValues) => {
     setServerError(null);
     try {
-      const student = await addStudent(classId, {
+      const enrolled = await addStudent(classId, {
         full_name: values.full_name,
         external_id: values.external_id || undefined,
       });
       reset();
-      onAdded(student);
+      onAdded(enrolled);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setServerError("A student with this name or ID is already enrolled.");
@@ -94,12 +137,19 @@ export function AddStudentDialog({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="add-student-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleClose();
+      }}
     >
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-student-title"
+        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+        onKeyDown={handleKeyDown}
+      >
         <h2
           id="add-student-title"
           className="mb-4 text-lg font-semibold text-gray-900"

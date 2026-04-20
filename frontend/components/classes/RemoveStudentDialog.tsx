@@ -8,6 +8,12 @@
  * soft-deleted.
  */
 
+import { useEffect, useRef } from "react";
+
+// Focusable element selector for focus-trapping (matches TemplatePicker)
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 interface RemoveStudentDialogProps {
   studentName: string;
   open: boolean;
@@ -23,17 +29,64 @@ export function RemoveStudentDialog({
   onConfirm,
   isPending = false,
 }: RemoveStudentDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // Focus management: capture previous focus, move into dialog, restore on close
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    firstFocusable?.focus();
+    return () => {
+      previousFocusRef.current?.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      onClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  };
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="remove-student-title"
-      aria-describedby="remove-student-desc"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-student-title"
+        aria-describedby="remove-student-desc"
+        className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
+        onKeyDown={handleKeyDown}
+      >
         <h2
           id="remove-student-title"
           className="mb-2 text-lg font-semibold text-gray-900"

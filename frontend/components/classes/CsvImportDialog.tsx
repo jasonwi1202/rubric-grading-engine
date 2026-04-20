@@ -14,10 +14,14 @@
  * is stored in browser storage or logged.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { previewCsvImport, confirmCsvImport } from "@/lib/api/classes";
 import type { CsvImportPreviewResponse, CsvImportRow } from "@/lib/api/classes";
 import { ApiError } from "@/lib/api/errors";
+
+// Focusable element selector used for focus-trapping (matches TemplatePicker)
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -40,12 +44,16 @@ function StatusBadge({ status }: { status: CsvImportRow["status"] }) {
   );
 }
 
+/** Aggregate diff counts displayed in the review phase. */
+interface DiffCounts {
+  new: number;
+  updated: number;
+  skipped: number;
+  error: number;
+}
+
 /** Summary row showing aggregate counts from the diff. */
-export function CsvDiffSummary({
-  counts,
-}: {
-  counts: CsvImportPreviewResponse["counts"];
-}) {
+export function CsvDiffSummary({ counts }: { counts: DiffCounts }) {
   return (
     <dl
       className="grid grid-cols-4 gap-2 rounded-md bg-gray-50 p-3 text-center text-sm"
@@ -93,6 +101,8 @@ export function CsvImportDialog({
   onImported,
 }: CsvImportDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const [phase, setPhase] = useState<"upload" | "review" | "confirming">(
     "upload",
@@ -101,6 +111,17 @@ export function CsvImportDialog({
   const [preview, setPreview] = useState<CsvImportPreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Focus management: capture previous focus, move into dialog, restore on close
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    firstFocusable?.focus();
+    return () => {
+      previousFocusRef.current?.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -113,6 +134,32 @@ export function CsvImportDialog({
     setIsLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     onClose();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      handleClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,8 +194,16 @@ export function CsvImportDialog({
 
   const handleConfirm = async () => {
     if (!preview) return;
-    // Send only rows that are not errors
-    const approvedRows = preview.rows.filter((r) => r.status !== "error");
+    // Send only new/updated rows, mapped to the shape the backend expects.
+    const approvedRows = preview.rows
+      .filter((r) => r.status === "new" || r.status === "updated")
+      .map(
+        (r): { row_number: number; full_name: string; external_id: string | null } => ({
+          row_number: r.row_number,
+          full_name: r.full_name,
+          external_id: r.external_id,
+        }),
+      );
     setPhase("confirming");
     setError(null);
     try {
@@ -161,14 +216,31 @@ export function CsvImportDialog({
     }
   };
 
+  // Map flat backend counts to the shape CsvDiffSummary expects
+  const diffCounts = preview
+    ? {
+        new: preview.new_count,
+        updated: preview.updated_count,
+        skipped: preview.skipped_count,
+        error: preview.error_count,
+      }
+    : null;
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="csv-import-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleClose();
+      }}
     >
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="csv-import-title"
+        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl"
+        onKeyDown={handleKeyDown}
+      >
         <h2
           id="csv-import-title"
           className="mb-4 text-lg font-semibold text-gray-900"
@@ -235,9 +307,9 @@ export function CsvImportDialog({
         )}
 
         {/* ---- Phase 2: Review diff ---- */}
-        {(phase === "review" || phase === "confirming") && preview && (
+        {(phase === "review" || phase === "confirming") && preview && diffCounts && (
           <div className="space-y-4">
-            <CsvDiffSummary counts={preview.counts} />
+            <CsvDiffSummary counts={diffCounts} />
 
             <div
               className="max-h-64 overflow-y-auto rounded-md border border-gray-200"
@@ -280,7 +352,7 @@ export function CsvImportDialog({
               </table>
             </div>
 
-            {preview.counts.new === 0 && preview.counts.updated === 0 && (
+            {preview.new_count === 0 && preview.updated_count === 0 && (
               <p className="text-sm text-gray-600">
                 No new students to import — all rows are already enrolled or
                 have errors.
@@ -310,13 +382,13 @@ export function CsvImportDialog({
                 onClick={handleConfirm}
                 disabled={
                   phase === "confirming" ||
-                  (preview.counts.new === 0 && preview.counts.updated === 0)
+                  (preview.new_count === 0 && preview.updated_count === 0)
                 }
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
               >
                 {phase === "confirming"
                   ? "Importing…"
-                  : `Confirm import (${preview.counts.new + preview.counts.updated})`}
+                  : `Confirm import (${preview.new_count + preview.updated_count})`}
               </button>
             </div>
           </div>
@@ -325,3 +397,4 @@ export function CsvImportDialog({
     </div>
   );
 }
+

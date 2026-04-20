@@ -9,44 +9,61 @@
  * - All endpoints require a valid JWT access token.
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api/client";
-import { getAccessToken } from "@/lib/auth/session";
-import { getBaseUrl } from "@/lib/api/baseFetch";
-import { ApiError } from "@/lib/api/errors";
-import type { ApiErrorBody } from "@/lib/api/errors";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/lib/api/client";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — Classes
 // ---------------------------------------------------------------------------
 
 export interface CreateClassRequest {
   name: string;
+  subject: string;
   grade_level: string;
-  academic_year?: string;
+  academic_year: string;
 }
 
 export interface UpdateClassRequest {
   name?: string;
+  subject?: string;
   grade_level?: string;
   academic_year?: string;
 }
 
 export interface ClassResponse {
   id: string;
+  teacher_id: string;
   name: string;
+  subject: string;
   grade_level: string;
-  academic_year: string | null;
+  academic_year: string;
   is_archived: boolean;
   created_at: string;
   student_count?: number;
 }
 
+export interface ListClassesParams {
+  academic_year?: string;
+  is_archived?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Types — Students / Roster
+// ---------------------------------------------------------------------------
+
+/** Matches backend StudentResponse (student record, not enrollment). */
 export interface StudentResponse {
   id: string;
+  teacher_id: string;
   full_name: string;
   external_id: string | null;
+  created_at: string;
+}
+
+/** Matches backend EnrolledStudentResponse — enrollment wrapper + nested student. */
+export interface EnrolledStudentResponse {
+  enrollment_id: string;
   enrolled_at: string;
-  is_active: boolean;
+  student: StudentResponse;
 }
 
 export interface AddStudentRequest {
@@ -54,36 +71,46 @@ export interface AddStudentRequest {
   external_id?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Types — CSV Roster Import (two-phase)
+// ---------------------------------------------------------------------------
+
 /** Per-row status from the CSV diff preview. */
 export type CsvRowStatus = "new" | "updated" | "skipped" | "error";
 
+/** Matches backend DiffRowResponse. */
 export interface CsvImportRow {
   row_number: number;
   full_name: string;
   external_id: string | null;
   status: CsvRowStatus;
   message: string | null;
+  existing_student_id: string | null;
 }
 
+/**
+ * Matches backend ImportDiffResponse.
+ * Counts are top-level flat fields, not a nested object.
+ */
 export interface CsvImportPreviewResponse {
   rows: CsvImportRow[];
-  counts: {
-    new: number;
-    updated: number;
-    skipped: number;
-    error: number;
-  };
+  new_count: number;
+  updated_count: number;
+  skipped_count: number;
+  error_count: number;
+}
+
+/** Rows sent back to the confirm endpoint — only the fields the backend expects. */
+export interface ImportRowInput {
+  row_number: number;
+  full_name: string;
+  external_id: string | null;
 }
 
 export interface CsvImportConfirmResponse {
   created: number;
   updated: number;
   skipped: number;
-}
-
-export interface ListClassesParams {
-  academic_year?: string;
-  is_archived?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,11 +176,15 @@ export async function archiveClass(classId: string): Promise<ClassResponse> {
 /**
  * List enrolled students in a class.
  * Calls GET /api/v1/classes/{classId}/students.
+ *
+ * Backend returns enrolled-student wrappers; this helper returns the full
+ * EnrolledStudentResponse so callers have access to both the student record
+ * and the enrollment metadata (enrollment_id, enrolled_at).
  */
 export async function listStudents(
   classId: string,
-): Promise<StudentResponse[]> {
-  return apiGet<StudentResponse[]>(`/classes/${classId}/students`);
+): Promise<EnrolledStudentResponse[]> {
+  return apiGet<EnrolledStudentResponse[]>(`/classes/${classId}/students`);
 }
 
 /**
@@ -163,8 +194,8 @@ export async function listStudents(
 export async function addStudent(
   classId: string,
   data: AddStudentRequest,
-): Promise<StudentResponse> {
-  return apiPost<StudentResponse>(`/classes/${classId}/students`, data);
+): Promise<EnrolledStudentResponse> {
+  return apiPost<EnrolledStudentResponse>(`/classes/${classId}/students`, data);
 }
 
 /**
@@ -186,7 +217,8 @@ export async function removeStudent(
  * Phase 1: Upload a CSV file and receive a diff preview (no DB writes).
  * Calls POST /api/v1/classes/{classId}/students/import (multipart/form-data).
  *
- * Uses raw fetch because the body is multipart, not JSON.
+ * Uses apiPostForm so the shared client's 401-refresh and error handling
+ * are applied, and the browser sets the correct multipart boundary.
  */
 export async function previewCsvImport(
   classId: string,
@@ -194,46 +226,22 @@ export async function previewCsvImport(
 ): Promise<CsvImportPreviewResponse> {
   const formData = new FormData();
   formData.append("file", file);
-
-  const url = `${getBaseUrl()}/classes/${classId}/students/import`;
-  const token = getAccessToken();
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: formData,
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    let errorBody: ApiErrorBody;
-    try {
-      const json = (await response.json()) as { error?: ApiErrorBody };
-      errorBody = json.error ?? {
-        code: "UNKNOWN_ERROR",
-        message: response.statusText,
-      };
-    } catch {
-      errorBody = { code: "UNKNOWN_ERROR", message: response.statusText };
-    }
-    throw new ApiError(response.status, errorBody);
-  }
-
-  const json = (await response.json()) as {
-    data: CsvImportPreviewResponse;
-  };
-  return json.data;
+  return apiPostForm<CsvImportPreviewResponse>(
+    `/classes/${classId}/students/import`,
+    formData,
+  );
 }
 
 /**
  * Phase 2: Commit approved rows from the CSV diff.
  * Calls POST /api/v1/classes/{classId}/students/import/confirm.
+ *
+ * Only sends rows with status "new" or "updated"; each row is mapped to the
+ * minimal shape the backend expects: { row_number, full_name, external_id }.
  */
 export async function confirmCsvImport(
   classId: string,
-  rows: CsvImportRow[],
+  rows: ImportRowInput[],
 ): Promise<CsvImportConfirmResponse> {
   return apiPost<CsvImportConfirmResponse>(
     `/classes/${classId}/students/import/confirm`,
