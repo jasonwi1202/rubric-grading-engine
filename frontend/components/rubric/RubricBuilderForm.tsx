@@ -10,6 +10,8 @@
  *   and anchor descriptions (score-level exemplars).
  * - Live weight-sum indicator — red when the total is not 100%.
  * - Save/cancel with an unsaved-changes guard (beforeunload + confirmation).
+ * - Template picker — load from a system or personal template (pre-fills form,
+ *   does not auto-save).
  * - React Hook Form + Zod validation.
  * - All API calls through lib/api/client.ts (via lib/api/rubrics.ts).
  *
@@ -28,6 +30,9 @@ import { z } from "zod";
 import type {
   AnchorDescriptions,
 } from "@/lib/api/rubrics";
+import { TemplatePicker } from "@/components/rubric/TemplatePicker";
+import type { TemplateApplyValues } from "@/components/rubric/TemplatePicker";
+import { convertApiCriteriaToForm } from "@/components/rubric/rubricFormUtils";
 
 // ---------------------------------------------------------------------------
 // Zod schema
@@ -594,6 +599,18 @@ export function RubricBuilderForm({
   // Track whether the user has attempted to submit (to show weight-sum error)
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
+  // Template picker visibility
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+
+  const handleApplyTemplate = (values: TemplateApplyValues) => {
+    reset({
+      name: values.name,
+      criteria:
+        values.criteria.length > 0 ? values.criteria : normalizedDefaults.criteria,
+    });
+    setHasAttemptedSubmit(false);
+  };
+
   const onSubmit = async (values: RubricFormValues) => {
     setServerError(null);
     try {
@@ -689,33 +706,51 @@ export function RubricBuilderForm({
       className="space-y-5"
       aria-label="Rubric builder"
     >
-      {/* Rubric name */}
-      <div>
-        <label
-          htmlFor="rubric-name"
-          className="block text-sm font-medium text-gray-700"
-        >
-          Rubric name
-        </label>
-        <input
-          id="rubric-name"
-          type="text"
-          placeholder="e.g. 5-Paragraph Essay"
-          disabled={isSubmitting}
-          aria-invalid={!!errors.name}
-          aria-describedby={errors.name ? "rubric-name-error" : undefined}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-          {...register("name")}
+      {/* Template picker dialog (rendered outside form flow) */}
+      {showTemplatePicker && (
+        <TemplatePicker
+          onApply={handleApplyTemplate}
+          onClose={() => setShowTemplatePicker(false)}
         />
-        {errors.name && (
-          <p
-            id="rubric-name-error"
-            className="mt-1 text-sm text-red-600"
-            role="alert"
+      )}
+
+      {/* Rubric name + load-from-template row */}
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          <label
+            htmlFor="rubric-name"
+            className="block text-sm font-medium text-gray-700"
           >
-            {errors.name.message}
-          </p>
-        )}
+            Rubric name
+          </label>
+          <input
+            id="rubric-name"
+            type="text"
+            placeholder="e.g. 5-Paragraph Essay"
+            disabled={isSubmitting}
+            aria-invalid={!!errors.name}
+            aria-describedby={errors.name ? "rubric-name-error" : undefined}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            {...register("name")}
+          />
+          {errors.name && (
+            <p
+              id="rubric-name-error"
+              className="mt-1 text-sm text-red-600"
+              role="alert"
+            >
+              {errors.name.message}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowTemplatePicker(true)}
+          disabled={isSubmitting}
+          className="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+        >
+          Load from template
+        </button>
       </div>
 
       {/* Criteria section */}
@@ -818,6 +853,9 @@ export function RubricBuilderForm({
 /**
  * Convert the API's criterion response array (ordered by display_order)
  * into the form's criteria array.
+ *
+ * @deprecated Import `convertApiCriteriaToForm` from `rubricFormUtils` directly.
+ *   This re-export exists for backward compatibility.
  */
 export function apiCriteriaToFormCriteria(
   apiCriteria: Array<{
@@ -829,12 +867,5 @@ export function apiCriteriaToFormCriteria(
     anchor_descriptions?: AnchorDescriptions | null;
   }>,
 ): RubricFormValues["criteria"] {
-  return apiCriteria.map((c) => ({
-    name: c.name,
-    description: c.description ?? "",
-    weight: c.weight,
-    min_score: c.min_score,
-    max_score: c.max_score,
-    anchor_descriptions: c.anchor_descriptions ?? {},
-  }));
+  return convertApiCriteriaToForm(apiCriteria);
 }
