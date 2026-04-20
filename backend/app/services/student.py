@@ -118,7 +118,7 @@ async def list_enrolled_students(
         )
         .order_by(Student.full_name)
     )
-    return list(result.all())
+    return [(row[0], row[1]) for row in result.all()]
 
 
 async def enroll_student(
