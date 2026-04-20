@@ -35,30 +35,46 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def _get_class_owned_by(
+async def _assert_class_owned_by(
     db: AsyncSession,
     class_id: uuid.UUID,
     teacher_id: uuid.UUID,
-) -> Class:
-    """Fetch a class row, raising NotFoundError or ForbiddenError.
+) -> None:
+    """Check class existence and ownership without loading the full Class row.
 
-    Returns 404 if the class does not exist; 403 if it belongs to another
-    teacher.
+    Raises :exc:`NotFoundError` if the class does not exist; raises
+    :exc:`ForbiddenError` if it belongs to a different teacher.  Uses a single
+    narrow query (id + teacher_id only) — callers that discard the Class ORM
+    object should prefer this over a full load.
     """
-    ownership = await db.execute(select(Class.id, Class.teacher_id).where(Class.id == class_id))
-    row = ownership.one_or_none()
+    result = await db.execute(select(Class.id, Class.teacher_id).where(Class.id == class_id))
+    row = result.one_or_none()
     if row is None:
         raise NotFoundError("Class not found.")
     if row.teacher_id != teacher_id:
         raise ForbiddenError("You do not have access to this class.")
 
+
+async def _assert_student_owned_by(
+    db: AsyncSession,
+    student_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> None:
+    """Check student existence and ownership without loading the full Student row.
+
+    Raises :exc:`NotFoundError` if the student does not exist; raises
+    :exc:`ForbiddenError` if it belongs to a different teacher.  Uses a single
+    narrow query (id + teacher_id only) — callers that discard the Student ORM
+    object should prefer this over a full load.
+    """
     result = await db.execute(
-        select(Class).where(Class.id == class_id, Class.teacher_id == teacher_id)
+        select(Student.id, Student.teacher_id).where(Student.id == student_id)
     )
-    class_obj = result.scalar_one_or_none()
-    if class_obj is None:
-        raise NotFoundError("Class not found.")
-    return class_obj
+    row = result.one_or_none()
+    if row is None:
+        raise NotFoundError("Student not found.")
+    if row.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this student.")
 
 
 async def _get_student_owned_by(
@@ -66,26 +82,24 @@ async def _get_student_owned_by(
     student_id: uuid.UUID,
     teacher_id: uuid.UUID,
 ) -> Student:
-    """Fetch a student row, raising NotFoundError or ForbiddenError.
+    """Fetch the full Student row after verifying ownership.
 
-    Returns 404 if the student does not exist; 403 if it belongs to another
-    teacher.
+    Raises :exc:`NotFoundError` if the student does not exist; raises
+    :exc:`ForbiddenError` if it belongs to a different teacher.  Uses a single
+    query that loads the full row and validates ownership in Python.
+
+    Note: ``teacher_id`` is intentionally *not* in the WHERE clause so that
+    we can distinguish a missing student (404) from a cross-tenant access
+    attempt (403).  Adding ``Student.teacher_id == teacher_id`` to the query
+    would fold both cases into a ``None`` result, making it impossible to
+    return the required 403 for cross-tenant requests.
     """
-    ownership = await db.execute(
-        select(Student.id, Student.teacher_id).where(Student.id == student_id)
-    )
-    row = ownership.one_or_none()
-    if row is None:
-        raise NotFoundError("Student not found.")
-    if row.teacher_id != teacher_id:
-        raise ForbiddenError("You do not have access to this student.")
-
-    result = await db.execute(
-        select(Student).where(Student.id == student_id, Student.teacher_id == teacher_id)
-    )
+    result = await db.execute(select(Student).where(Student.id == student_id))
     student_obj = result.scalar_one_or_none()
     if student_obj is None:
         raise NotFoundError("Student not found.")
+    if student_obj.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this student.")
     return student_obj
 
 
@@ -108,7 +122,7 @@ async def list_enrolled_students(
         NotFoundError: If the class does not exist.
         ForbiddenError: If the class belongs to a different teacher.
     """
-    await _get_class_owned_by(db, class_id, teacher_id)
+    await _assert_class_owned_by(db, class_id, teacher_id)
 
     result = await db.execute(
         select(ClassEnrollment, Student)
@@ -144,7 +158,7 @@ async def enroll_student(
         ConflictError: Student is already actively enrolled in the class.
     """
     # Validate class ownership.
-    await _get_class_owned_by(db, class_id, teacher_id)
+    await _assert_class_owned_by(db, class_id, teacher_id)
 
     if student_id is not None:
         student = await _get_student_owned_by(db, student_id, teacher_id)
@@ -212,8 +226,8 @@ async def remove_enrollment(
             enrollment for this student in this class.
         ForbiddenError: Class or student belongs to a different teacher.
     """
-    await _get_class_owned_by(db, class_id, teacher_id)
-    await _get_student_owned_by(db, student_id, teacher_id)
+    await _assert_class_owned_by(db, class_id, teacher_id)
+    await _assert_student_owned_by(db, student_id, teacher_id)
 
     result = await db.execute(
         select(ClassEnrollment).where(

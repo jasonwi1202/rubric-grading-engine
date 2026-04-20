@@ -105,18 +105,16 @@ class TestListEnrolledStudents:
     async def test_returns_enrollment_student_pairs(self) -> None:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
         student_orm = _make_student_orm(teacher_id)
         enrollment_orm = _make_enrollment_orm(class_id, student_orm.id)
 
         db = _make_db()
-        # _get_class_owned_by: ownership check + full fetch
+        # _assert_class_owned_by: narrow ownership check
         ownership_res = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         # list query result
         list_res = MagicMock()
         list_res.all.return_value = [(enrollment_orm, student_orm)]
-        db.execute = AsyncMock(side_effect=[ownership_res, class_res, list_res])
+        db.execute = AsyncMock(side_effect=[ownership_res, list_res])
 
         result = await list_enrolled_students(db, teacher_id, class_id)
 
@@ -152,14 +150,12 @@ class TestListEnrolledStudents:
     async def test_returns_empty_list_when_no_enrollments(self) -> None:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
 
         db = _make_db()
         ownership_res = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         list_res = MagicMock()
         list_res.all.return_value = []
-        db.execute = AsyncMock(side_effect=[ownership_res, class_res, list_res])
+        db.execute = AsyncMock(side_effect=[ownership_res, list_res])
 
         result = await list_enrolled_students(db, teacher_id, class_id)
 
@@ -176,15 +172,13 @@ class TestEnrollStudent:
     async def test_enrolls_new_student_successfully(self) -> None:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
 
         db = _make_db()
-        # _get_class_owned_by: ownership + full fetch
+        # _assert_class_owned_by: narrow ownership check
         ownership_res = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         # check existing active enrollment → None
         no_enrollment_res = _scalar_result(None)
-        db.execute = AsyncMock(side_effect=[ownership_res, class_res, no_enrollment_res])
+        db.execute = AsyncMock(side_effect=[ownership_res, no_enrollment_res])
 
         enr, stu = await enroll_student(db, teacher_id, class_id, full_name="Student A")
 
@@ -198,25 +192,15 @@ class TestEnrollStudent:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
         student_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
         student_orm = _make_student_orm(teacher_id, student_id)
 
         db = _make_db()
-        # _get_class_owned_by (ownership + full fetch) then _get_student_owned_by (ownership + full fetch)
+        # _assert_class_owned_by: narrow ownership check
         ownership_class = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
-        ownership_student = _ownership_result(teacher_id)
+        # _get_student_owned_by: single full-row query
         student_res = _scalar_result(student_orm)
         no_enrollment_res = _scalar_result(None)
-        db.execute = AsyncMock(
-            side_effect=[
-                ownership_class,
-                class_res,
-                ownership_student,
-                student_res,
-                no_enrollment_res,
-            ]
-        )
+        db.execute = AsyncMock(side_effect=[ownership_class, student_res, no_enrollment_res])
 
         enr, stu = await enroll_student(db, teacher_id, class_id, student_id=student_id)
 
@@ -227,15 +211,13 @@ class TestEnrollStudent:
     async def test_raises_conflict_when_already_enrolled(self) -> None:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
 
         db = _make_db()
         ownership_res = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         # active enrollment already exists (non-None scalar)
         existing_enrollment = _make_enrollment_orm(class_id, uuid.uuid4())
         existing_res = _scalar_result(existing_enrollment)
-        db.execute = AsyncMock(side_effect=[ownership_res, class_res, existing_res])
+        db.execute = AsyncMock(side_effect=[ownership_res, existing_res])
 
         with pytest.raises(ConflictError):
             await enroll_student(db, teacher_id, class_id, full_name="Student A")
@@ -247,13 +229,11 @@ class TestEnrollStudent:
         """Concurrent enrollment race: IntegrityError on commit → ConflictError."""
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
 
         db = _make_db()
         ownership_res = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         no_enrollment_res = _scalar_result(None)
-        db.execute = AsyncMock(side_effect=[ownership_res, class_res, no_enrollment_res])
+        db.execute = AsyncMock(side_effect=[ownership_res, no_enrollment_res])
         db.commit = AsyncMock(side_effect=IntegrityError(None, None, Exception("unique violation")))
 
         with pytest.raises(ConflictError):
@@ -266,12 +246,10 @@ class TestEnrollStudent:
         """student_id=None and full_name=None → ValidationError (not AssertionError)."""
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
 
         db = _make_db()
         ownership_res = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
-        db.execute = AsyncMock(side_effect=[ownership_res, class_res])
+        db.execute = AsyncMock(side_effect=[ownership_res])
 
         with pytest.raises(ValidationError) as exc_info:
             await enroll_student(db, teacher_id, class_id, student_id=None, full_name=None)
@@ -305,20 +283,15 @@ class TestRemoveEnrollment:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
         student_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
-        student_orm = _make_student_orm(teacher_id, student_id)
         enrollment_orm = _make_enrollment_orm(class_id, student_id)
         enrollment_orm.removed_at = None  # active
 
         db = _make_db()
+        # _assert_class_owned_by + _assert_student_owned_by: narrow queries
         ownership_class = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         ownership_student = _ownership_result(teacher_id)
-        student_res = _scalar_result(student_orm)
         enrollment_res = _scalar_result(enrollment_orm)
-        db.execute = AsyncMock(
-            side_effect=[ownership_class, class_res, ownership_student, student_res, enrollment_res]
-        )
+        db.execute = AsyncMock(side_effect=[ownership_class, ownership_student, enrollment_res])
 
         result = await remove_enrollment(db, teacher_id, class_id, student_id)
 
@@ -332,18 +305,12 @@ class TestRemoveEnrollment:
         teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
         student_id = uuid.uuid4()
-        class_orm = _make_class_orm(teacher_id, class_id)
-        student_orm = _make_student_orm(teacher_id, student_id)
 
         db = _make_db()
         ownership_class = _ownership_result(teacher_id)
-        class_res = _scalar_result(class_orm)
         ownership_student = _ownership_result(teacher_id)
-        student_res = _scalar_result(student_orm)
         no_enrollment = _scalar_result(None)
-        db.execute = AsyncMock(
-            side_effect=[ownership_class, class_res, ownership_student, student_res, no_enrollment]
-        )
+        db.execute = AsyncMock(side_effect=[ownership_class, ownership_student, no_enrollment])
 
         with pytest.raises(NotFoundError):
             await remove_enrollment(db, teacher_id, class_id, student_id)
@@ -378,9 +345,9 @@ class TestGetStudent:
         student_orm = _make_student_orm(teacher_id, student_id)
 
         db = _make_db()
-        ownership_res = _ownership_result(teacher_id)
+        # _get_student_owned_by: single full-row query
         student_res = _scalar_result(student_orm)
-        db.execute = AsyncMock(side_effect=[ownership_res, student_res])
+        db.execute = AsyncMock(side_effect=[student_res])
 
         result = await get_student(db, teacher_id, student_id)
 
@@ -389,7 +356,7 @@ class TestGetStudent:
     @pytest.mark.asyncio
     async def test_raises_not_found_for_missing_student(self) -> None:
         db = _make_db()
-        db.execute = AsyncMock(return_value=_not_found_result())
+        db.execute = AsyncMock(return_value=_scalar_result(None))
 
         with pytest.raises(NotFoundError):
             await get_student(db, uuid.uuid4(), uuid.uuid4())
@@ -398,12 +365,10 @@ class TestGetStudent:
     async def test_raises_forbidden_for_wrong_teacher(self) -> None:
         teacher_id = uuid.uuid4()
         other_teacher_id = uuid.uuid4()
-        row = MagicMock()
-        row.teacher_id = other_teacher_id
-        res = MagicMock()
-        res.one_or_none.return_value = row
+        # Full student row returned but owned by a different teacher
+        student_orm = _make_student_orm(other_teacher_id)
         db = _make_db()
-        db.execute = AsyncMock(return_value=res)
+        db.execute = AsyncMock(return_value=_scalar_result(student_orm))
 
         with pytest.raises(ForbiddenError):
             await get_student(db, teacher_id, uuid.uuid4())
@@ -423,9 +388,9 @@ class TestUpdateStudent:
         student_orm.full_name = "Original Name"
 
         db = _make_db()
-        ownership_res = _ownership_result(teacher_id)
+        # _get_student_owned_by: single full-row query
         student_res = _scalar_result(student_orm)
-        db.execute = AsyncMock(side_effect=[ownership_res, student_res])
+        db.execute = AsyncMock(side_effect=[student_res])
 
         result = await update_student(db, teacher_id, student_id, full_name="New Name")
 
@@ -440,9 +405,8 @@ class TestUpdateStudent:
         student_orm.external_id = "EXT-001"
 
         db = _make_db()
-        ownership_res = _ownership_result(teacher_id)
         student_res = _scalar_result(student_orm)
-        db.execute = AsyncMock(side_effect=[ownership_res, student_res])
+        db.execute = AsyncMock(side_effect=[student_res])
 
         result = await update_student(db, teacher_id, student_id, clear_external_id=True)
 
@@ -453,12 +417,10 @@ class TestUpdateStudent:
     async def test_raises_forbidden_for_wrong_teacher(self) -> None:
         teacher_id = uuid.uuid4()
         other_teacher_id = uuid.uuid4()
-        row = MagicMock()
-        row.teacher_id = other_teacher_id
-        res = MagicMock()
-        res.one_or_none.return_value = row
+        # Full student row returned but owned by a different teacher
+        student_orm = _make_student_orm(other_teacher_id)
         db = _make_db()
-        db.execute = AsyncMock(return_value=res)
+        db.execute = AsyncMock(return_value=_scalar_result(student_orm))
 
         with pytest.raises(ForbiddenError):
             await update_student(db, teacher_id, uuid.uuid4(), full_name="New Name")
@@ -468,7 +430,7 @@ class TestUpdateStudent:
     @pytest.mark.asyncio
     async def test_raises_not_found_for_missing_student(self) -> None:
         db = _make_db()
-        db.execute = AsyncMock(return_value=_not_found_result())
+        db.execute = AsyncMock(return_value=_scalar_result(None))
 
         with pytest.raises(NotFoundError):
             await update_student(db, uuid.uuid4(), uuid.uuid4(), full_name="New Name")
