@@ -232,11 +232,7 @@ async def build_import_diff(
 
     # Collect only the external_ids present in this CSV so the cross-class
     # lookup query does not load every student owned by the teacher.
-    csv_external_ids = {
-        row.external_id
-        for row in rows
-        if row.external_id
-    }
+    csv_external_ids = {row.external_id for row in rows if row.external_id}
 
     # Load only matching student records owned by this teacher (for
     # external_id look-up across classes — to find students that exist but

@@ -44,12 +44,23 @@ export const fileSchema = z
   .instanceof(File)
   .refine(
     (f) => {
-      // Files without a dot (no extension) can only be validated by MIME type.
       const dotIndex = f.name.lastIndexOf(".");
       const ext = dotIndex >= 0 ? f.name.slice(dotIndex).toLowerCase() : "";
-      return (
-        ALLOWED_MIME_TYPES.has(f.type) || (ext !== "" && ALLOWED_EXTENSIONS.has(ext))
-      );
+      const hasAllowedMimeType = ALLOWED_MIME_TYPES.has(f.type);
+      const hasExtension = ext !== "";
+      const hasAllowedExtension = hasExtension && ALLOWED_EXTENSIONS.has(ext);
+
+      // When both signals are present, require both to pass.
+      // A file with a spoofed extension (valid MIME, wrong ext) or a spoofed
+      // MIME type (valid ext, wrong MIME) is rejected.
+      if (hasExtension && f.type !== "") {
+        return hasAllowedMimeType && hasAllowedExtension;
+      }
+      // Fall back to the available signal when the other is absent.
+      if (hasExtension) {
+        return hasAllowedExtension;
+      }
+      return hasAllowedMimeType;
     },
     { message: "Only PDF, DOCX, and TXT files are allowed." },
   )
@@ -107,6 +118,10 @@ export function EssayUploadDialog({
   const [progress, setProgress] = useState(0); // 0-100
 
   const handleClose = () => {
+    // Prevent the teacher from accidentally closing the dialog mid-upload.
+    // The backdrop click, Escape key (via useFocusTrap), and any other
+    // dismiss action all go through this function.
+    if (isUploading) return;
     setActiveTab("file");
     setSelectedFiles([]);
     setPasteText("");

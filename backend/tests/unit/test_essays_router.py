@@ -3,6 +3,8 @@
 Tests cover:
 - POST /api/v1/assignments/{id}/essays — happy path (TXT), 422 (no files),
   422 (file too large), 403 (cross-teacher), 404 (no assignment), 401 (no auth)
+- GET  /api/v1/assignments/{id}/essays — happy path, 401, 404, 403
+- PATCH /api/v1/essays/{id}            — happy path, 401, 404, 403, 422
 
 No real PostgreSQL, S3, or file I/O.  All DB / service calls are mocked.
 No student PII in fixtures.
@@ -22,6 +24,7 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_current_teacher
 from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
 from app.main import create_app
+from app.schemas.essay import EssayListItemResponse
 from app.services.student_matching import AutoAssignResult
 
 # ---------------------------------------------------------------------------
@@ -63,7 +66,9 @@ def _make_version(
     return v
 
 
-def _make_auto_result(status: Literal["assigned", "ambiguous", "unassigned"] = "unassigned") -> AutoAssignResult:
+def _make_auto_result(
+    status: Literal["assigned", "ambiguous", "unassigned"] = "unassigned",
+) -> AutoAssignResult:
     return AutoAssignResult(status=status, student_id=None, match_count=0)
 
 
@@ -265,3 +270,195 @@ class TestUploadEssays:
         assert resp.status_code == 422, resp.text
         body = resp.json()
         assert body["error"]["code"] == "VALIDATION_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/assignments/{id}/essays
+# ---------------------------------------------------------------------------
+
+
+class TestListEssays:
+    def _url(self, assignment_id: uuid.UUID | None = None) -> str:
+        aid = assignment_id or uuid.uuid4()
+        return f"/api/v1/assignments/{aid}/essays"
+
+    def test_happy_path_returns_essay_list(self) -> None:
+        teacher = _make_teacher()
+        assignment_id = uuid.uuid4()
+        item = EssayListItemResponse(
+            essay_id=uuid.uuid4(),
+            assignment_id=assignment_id,
+            student_id=None,
+            student_name=None,
+            status="unassigned",
+            word_count=200,
+            submitted_at=datetime.now(UTC),
+            auto_assign_status="unassigned",
+        )
+
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.list_essays_for_assignment",
+            new_callable=AsyncMock,
+            return_value=[item],
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get(self._url(assignment_id))
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body) == 1
+        assert body[0]["auto_assign_status"] == "unassigned"
+        assert body[0]["student_id"] is None
+
+    def test_no_auth_returns_401(self) -> None:
+        app = create_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get(self._url())
+        assert resp.status_code == 401
+
+    def test_assignment_not_found_returns_404(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.list_essays_for_assignment",
+            new_callable=AsyncMock,
+            side_effect=NotFoundError("Assignment not found."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get(self._url())
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_cross_teacher_returns_403(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.list_essays_for_assignment",
+            new_callable=AsyncMock,
+            side_effect=ForbiddenError("Forbidden."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get(self._url())
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/v1/essays/{id}
+# ---------------------------------------------------------------------------
+
+
+class TestAssignEssay:
+    def _url(self, essay_id: uuid.UUID | None = None) -> str:
+        eid = essay_id or uuid.uuid4()
+        return f"/api/v1/essays/{eid}"
+
+    def test_happy_path_assigns_student(self) -> None:
+        teacher = _make_teacher()
+        essay_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        item = EssayListItemResponse(
+            essay_id=essay_id,
+            assignment_id=assignment_id,
+            student_id=student_id,
+            student_name=None,
+            status="queued",
+            word_count=200,
+            submitted_at=datetime.now(UTC),
+            auto_assign_status="assigned",
+        )
+
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.assign_essay_to_student",
+            new_callable=AsyncMock,
+            return_value=item,
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.patch(
+                self._url(essay_id),
+                json={"student_id": str(student_id)},
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["auto_assign_status"] == "assigned"
+        assert body["student_id"] == str(student_id)
+
+    def test_no_auth_returns_401(self) -> None:
+        app = create_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.patch(
+            self._url(),
+            json={"student_id": str(uuid.uuid4())},
+        )
+        assert resp.status_code == 401
+
+    def test_essay_not_found_returns_404(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.assign_essay_to_student",
+            new_callable=AsyncMock,
+            side_effect=NotFoundError("Essay not found."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.patch(
+                self._url(),
+                json={"student_id": str(uuid.uuid4())},
+            )
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_cross_teacher_returns_403(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.assign_essay_to_student",
+            new_callable=AsyncMock,
+            side_effect=ForbiddenError("Forbidden."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.patch(
+                self._url(),
+                json={"student_id": str(uuid.uuid4())},
+            )
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_student_not_enrolled_returns_403(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.assign_essay_to_student",
+            new_callable=AsyncMock,
+            side_effect=ForbiddenError("Student is not enrolled in this assignment's class."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.patch(
+                self._url(),
+                json={"student_id": str(uuid.uuid4())},
+            )
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_missing_student_id_returns_422(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.patch(self._url(), json={})
+        assert resp.status_code == 422

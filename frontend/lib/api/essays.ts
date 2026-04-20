@@ -92,9 +92,6 @@ export async function uploadEssays(
 /**
  * List all essays for an assignment with status and student assignment.
  * Calls GET /api/v1/assignments/{assignmentId}/essays.
- *
- * TODO: The backend GET endpoint is not yet implemented. This function is
- * wired up and ready; it will work once the backend route is added.
  */
 export async function listEssays(
   assignmentId: string,
@@ -105,9 +102,6 @@ export async function listEssays(
 /**
  * Manually assign an essay to a student (manual-correction step).
  * Calls PATCH /api/v1/essays/{essayId}.
- *
- * TODO: The backend PATCH endpoint is not yet implemented. This function is
- * wired up and ready; it will work once the backend route is added.
  */
 export async function assignEssay(
   essayId: string,
