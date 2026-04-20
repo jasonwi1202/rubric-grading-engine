@@ -296,7 +296,9 @@ def upgrade() -> None:
     )
     # Use ON CONFLICT DO NOTHING so the migration is safe to re-run after a
     # partial/failed upgrade (duplicate IDs silently skip instead of failing).
-    op.execute(pg_insert(rubrics_table).values(_RUBRICS).on_conflict_do_nothing(index_elements=["id"]))
+    op.execute(
+        pg_insert(rubrics_table).values(_RUBRICS).on_conflict_do_nothing(index_elements=["id"])
+    )
 
     criteria_table = sa.table(
         "rubric_criteria",
@@ -310,7 +312,9 @@ def upgrade() -> None:
         sa.column("display_order", sa.Integer),
         sa.column("anchor_descriptions", postgresql.JSONB()),
     )
-    op.execute(pg_insert(criteria_table).values(_CRITERIA).on_conflict_do_nothing(index_elements=["id"]))
+    op.execute(
+        pg_insert(criteria_table).values(_CRITERIA).on_conflict_do_nothing(index_elements=["id"])
+    )
 
 
 def downgrade() -> None:
