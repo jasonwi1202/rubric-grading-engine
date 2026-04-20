@@ -49,9 +49,9 @@ import type { EnrolledStudentResponse } from "@/lib/api/classes";
 
 // Deterministic counter-based IDs to satisfy the testing guide's requirement
 // to avoid random data in fixtures while still being unique per test.
-let _idCounter = 0;
+let idCounter = 0;
 function nextId(prefix: string): string {
-  return `${prefix}-${String(++_idCounter).padStart(3, "0")}`;
+  return `${prefix}-${String(++idCounter).padStart(3, "0")}`;
 }
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -97,6 +97,8 @@ function makeStudent(overrides: Partial<EnrolledStudentResponse["student"]> = {}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reset the ID counter so each test starts with deterministic IDs.
+  idCounter = 0;
 });
 
 // ===========================================================================
@@ -170,7 +172,7 @@ describe("pasteTextSchema — Zod validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects text over 500 000 characters", () => {
+  it("rejects text over 500,000 characters", () => {
     const result = pasteTextSchema.safeParse({ text: "a".repeat(500_001) });
     expect(result.success).toBe(false);
     if (!result.success) {
