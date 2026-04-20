@@ -91,7 +91,7 @@ async def upload_essays_endpoint(
 
         filename = upload.filename or f"essay_{uuid.uuid4()}"
 
-        essay, version = await ingest_essay(
+        essay, version, auto_result = await ingest_essay(
             db=db,
             teacher_id=teacher.id,
             assignment_id=assignment_id,
@@ -110,6 +110,7 @@ async def upload_essays_endpoint(
                 word_count=version.word_count,
                 file_storage_key=version.file_storage_key,
                 submitted_at=version.submitted_at,
+                auto_assign_status=auto_result.status if student_id is None else None,
             )
         )
 

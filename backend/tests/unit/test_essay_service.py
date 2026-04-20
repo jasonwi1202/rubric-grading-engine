@@ -32,6 +32,7 @@ from app.services.essay import (
     validate_file_size,
     validate_mime_type,
 )
+from app.services.student_matching import AutoAssignResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -297,6 +298,12 @@ class TestIngestEssay:
 
         db.execute = AsyncMock(side_effect=[first_result, second_result])
 
+    def _make_empty_roster_result(self) -> MagicMock:
+        """Return a mock db.execute result that yields an empty class roster."""
+        roster_result = MagicMock()
+        roster_result.all = MagicMock(return_value=[])
+        return roster_result
+
     @pytest.mark.asyncio
     async def test_happy_path_txt(self) -> None:
         from app.services.essay import ingest_essay
@@ -307,6 +314,9 @@ class TestIngestEssay:
 
         db = self._make_db()
         self._setup_ownership_query(db, assignment_id, teacher_id)
+        # Extend with empty roster result (roster query runs after extraction).
+        existing = list(db.execute.side_effect)
+        db.execute = AsyncMock(side_effect=[*existing, self._make_empty_roster_result()])
 
         # After flush, essay.id must be set; simulate by making db.add capture the essay
         essay_ids: list[Any] = []
@@ -325,7 +335,7 @@ class TestIngestEssay:
                 "app.services.essay.extract_text", return_value="This is a test essay"
             ) as mock_extract,
         ):
-            essay, version = await ingest_essay(
+            essay, version, auto_result = await ingest_essay(
                 db=db,
                 teacher_id=teacher_id,
                 assignment_id=assignment_id,
@@ -339,6 +349,7 @@ class TestIngestEssay:
 
         assert essay is not None, "Expected essay to be created"
         assert version is not None, "Expected essay version to be created"
+        assert isinstance(auto_result, AutoAssignResult), "Expected AutoAssignResult"
 
     @pytest.mark.asyncio
     async def test_s3_upload_called_before_extraction(self) -> None:
@@ -350,6 +361,9 @@ class TestIngestEssay:
 
         db = self._make_db()
         self._setup_ownership_query(db, assignment_id, teacher_id)
+        # Extend with empty roster result (roster query runs after extraction).
+        existing = list(db.execute.side_effect)
+        db.execute = AsyncMock(side_effect=[*existing, self._make_empty_roster_result()])
 
         call_order: list[str] = []
 

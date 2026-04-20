@@ -4,14 +4,17 @@ Handles file validation, S3 storage, text extraction, normalization, and
 database record creation for uploaded essay files.
 
 Pipeline:
-  1. Validate MIME type server-side using ``python-magic``
-  2. Validate file size (``settings.max_essay_file_size_mb``)
-  3. Upload raw bytes to S3 (before any extraction attempt)
-  4. Extract text: PDF → pdfplumber, DOCX → python-docx, TXT → direct read
+  1. Validate file size (``settings.max_essay_file_size_mb``)
+  2. Validate MIME type server-side using ``python-magic``
+  3. Verify assignment ownership (teacher_id)
+  4. Validate explicit student_id enrollment (when provided)
+  5. Create ``Essay`` DB record early so its UUID is available for the S3 key
+  6. Upload raw bytes to S3 (before any extraction attempt)
+  7. Extract text: PDF → pdfplumber, DOCX → python-docx, TXT → direct read
      On failure the S3 object is deleted to avoid orphaned storage objects.
-  5. Normalize extracted text (whitespace, Unicode, non-printable chars)
-  6. Compute word count
-  7. Create ``Essay`` + ``EssayVersion`` database records
+  8. Normalize extracted text (whitespace, Unicode, non-printable chars)
+  9. Attempt student auto-assignment (fuzzy match against class roster)
+  10. Create ``EssayVersion`` database record and commit
 
 No student PII is logged at any point — only entity IDs appear in log output.
 """
@@ -36,6 +39,7 @@ from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.student import Student
+from app.services.student_matching import HEADER_CHAR_LIMIT, AutoAssignResult, match_student
 from app.storage.s3 import delete_file, upload_file
 
 logger = logging.getLogger(__name__)
@@ -276,6 +280,63 @@ async def _get_assignment_for_teacher(
     return assignment
 
 
+def _extract_docx_author(data: bytes) -> str | None:
+    """Return the author from a DOCX file's core properties, or ``None``.
+
+    Reads ``docProps/core.xml`` directly from the ZIP archive instead of
+    building a full ``python-docx`` Document object, so the bytes are only
+    parsed once (text extraction already called ``_extract_text_docx``).
+
+    Extraction failure is non-fatal — if the author field is absent or
+    the file cannot be parsed here, ``None`` is returned silently.
+
+    The returned value is used only as a fuzzy-matching signal and is
+    **never logged**.
+    """
+    import xml.etree.ElementTree as ET  # noqa: PLC0415 — defer import
+    import zipfile  # noqa: PLC0415 — defer import
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as docx_zip:
+            core_xml = docx_zip.read("docProps/core.xml")
+        root = ET.fromstring(core_xml)
+        author = root.findtext(
+            "dc:creator",
+            default="",
+            namespaces={"dc": "http://purl.org/dc/elements/1.1/"},
+        )
+        return (author or "").strip() or None
+    except Exception:  # noqa: BLE001 — any parse error is non-fatal
+        return None
+
+
+async def _load_class_roster(
+    db: AsyncSession,
+    class_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> list[tuple[uuid.UUID, str]]:
+    """Return ``(student_id, full_name)`` pairs for all actively enrolled students.
+
+    Only students owned by *teacher_id* and currently enrolled (``removed_at
+    IS NULL``) in *class_id* are returned.
+
+    Returns an empty list when the class has no enrolled students.
+
+    No student PII is logged here or by callers — only entity IDs appear in
+    log output.
+    """
+    result = await db.execute(
+        select(Student.id, Student.full_name)
+        .join(ClassEnrollment, Student.id == ClassEnrollment.student_id)
+        .where(
+            ClassEnrollment.class_id == class_id,
+            ClassEnrollment.removed_at.is_(None),
+            Student.teacher_id == teacher_id,
+        )
+    )
+    return [(row.id, row.full_name) for row in result.all()]
+
+
 async def _validate_student_for_assignment(
     db: AsyncSession,
     student_id: uuid.UUID,
@@ -324,7 +385,7 @@ async def ingest_essay(
     filename: str,
     data: bytes,
     student_id: uuid.UUID | None = None,
-) -> tuple[Essay, EssayVersion]:
+) -> tuple[Essay, EssayVersion, AutoAssignResult]:
     """Validate, store, extract, and persist a single uploaded essay file.
 
     Args:
@@ -336,10 +397,18 @@ async def ingest_essay(
         data: Raw file bytes read from the upload.
         student_id: Optional — if provided, the essay is immediately assigned to
             this student.  The student must be owned by *teacher_id* and
-            actively enrolled in the assignment's class.
+            actively enrolled in the assignment's class.  Skips auto-assignment.
 
     Returns:
-        A ``(Essay, EssayVersion)`` tuple for the newly created records.
+        A ``(Essay, EssayVersion, AutoAssignResult)`` triple.
+
+        *  ``Essay`` — the newly created essay record (``student_id`` and
+           ``status`` already reflect the auto-assignment outcome).
+        *  ``EssayVersion`` — version 1 of the essay.
+        *  ``AutoAssignResult`` — detailed outcome of the auto-assignment
+           attempt.  When *student_id* was explicitly provided the result
+           has ``status="assigned"`` with ``match_count=0`` (no roster search
+           was performed).
 
     Raises:
         FileTooLargeError: File exceeds ``settings.max_essay_file_size_mb``.
@@ -425,7 +494,61 @@ async def ingest_essay(
             extra={"essay_id": str(essay.id), "word_count": words, "mime_type": mime_type},
         )
 
-    # 9. Create EssayVersion record (version 1 = original submission).
+    # 9. Attempt student auto-assignment when no student_id was explicitly
+    #    supplied.  The roster is loaded fresh for every call so that any
+    #    concurrent enrollment changes are reflected.
+    auto_result: AutoAssignResult
+    if student_id is None:
+        roster = await _load_class_roster(db, assignment.class_id, teacher_id)
+
+        # Extract DOCX author from core properties when the file is a DOCX.
+        docx_author: str | None = None
+        if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            docx_author = _extract_docx_author(data)
+
+        # Use the first HEADER_CHAR_LIMIT characters as the header signal.
+        header_text = normalized[:HEADER_CHAR_LIMIT]
+
+        auto_result = match_student(
+            roster=roster,
+            filename=filename,
+            docx_author=docx_author,
+            header_text=header_text,
+        )
+
+        if auto_result.status == "assigned":
+            essay.student_id = auto_result.student_id
+            essay.status = EssayStatus.queued
+            logger.info(
+                "Essay auto-assigned to student",
+                extra={
+                    "essay_id": str(essay.id),
+                    "signal": auto_result.candidates[0].signal,
+                    "confidence": round(auto_result.candidates[0].confidence, 4),
+                },
+            )
+        elif auto_result.status == "ambiguous":
+            logger.info(
+                "Essay auto-assignment ambiguous — held for manual review",
+                extra={
+                    "essay_id": str(essay.id),
+                    "match_count": auto_result.match_count,
+                },
+            )
+        else:
+            logger.info(
+                "Essay auto-assignment found no match — held for manual review",
+                extra={"essay_id": str(essay.id)},
+            )
+    else:
+        # student_id was explicitly provided — no roster search was performed.
+        auto_result = AutoAssignResult(
+            status="assigned",
+            student_id=student_id,
+            match_count=0,
+        )
+
+    # 10. Create EssayVersion record (version 1 = original submission).
     version = EssayVersion(
         essay_id=essay.id,
         version_number=1,
@@ -448,4 +571,4 @@ async def ingest_essay(
             "word_count": words,
         },
     )
-    return essay, version
+    return essay, version, auto_result

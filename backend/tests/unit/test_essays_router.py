@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from io import BytesIO
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,6 +22,7 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_current_teacher
 from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
 from app.main import create_app
+from app.services.student_matching import AutoAssignResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,6 +63,10 @@ def _make_version(
     return v
 
 
+def _make_auto_result(status: Literal["assigned", "ambiguous", "unassigned"] = "unassigned") -> AutoAssignResult:
+    return AutoAssignResult(status=status, student_id=None, match_count=0)
+
+
 def _app_with_teacher(teacher: MagicMock | None = None) -> object:
     teacher = teacher or _make_teacher()
     app = create_app()
@@ -89,7 +95,7 @@ class TestUploadEssays:
         with patch(
             "app.routers.essays.ingest_essay",
             new_callable=AsyncMock,
-            return_value=(essay, version),
+            return_value=(essay, version, _make_auto_result()),
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.post(
@@ -120,7 +126,10 @@ class TestUploadEssays:
         with patch(
             "app.routers.essays.ingest_essay",
             new_callable=AsyncMock,
-            side_effect=[(essay1, version1), (essay2, version2)],
+            side_effect=[
+                (essay1, version1, _make_auto_result()),
+                (essay2, version2, _make_auto_result()),
+            ],
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.post(

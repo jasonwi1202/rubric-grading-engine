@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.models.essay import EssayStatus
+
+AutoAssignStatus = Literal["assigned", "ambiguous", "unassigned"]
 
 
 class EssayVersionResponse(BaseModel):
@@ -36,5 +39,12 @@ class EssayUploadItemResponse(BaseModel):
     word_count: int
     file_storage_key: str | None
     submitted_at: datetime
+    #: Outcome of the auto-assignment attempt.
+    #:  ``"assigned"``  — matched and assigned to a student.
+    #:  ``"ambiguous"`` — multiple candidates; held for manual review.
+    #:  ``"unassigned"`` — no match found; held for manual review.
+    #: ``None`` when the caller supplied an explicit ``student_id`` (no
+    #: roster search was performed) or the field is not available.
+    auto_assign_status: AutoAssignStatus | None = None
 
     model_config = {"from_attributes": True}

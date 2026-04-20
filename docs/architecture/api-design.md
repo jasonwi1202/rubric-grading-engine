@@ -373,11 +373,14 @@ MIME type is validated server-side from file magic bytes (not the file extension
       "status": "unassigned",
       "word_count": 412,
       "file_storage_key": "essays/{assignmentId}/{essayId}/filename.pdf",
-      "submitted_at": "2026-04-20T18:00:00Z"
+      "submitted_at": "2026-04-20T18:00:00Z",
+      "auto_assign_status": "unassigned"
     }
   ]
 }
 ```
+
+`auto_assign_status` reflects the outcome of the auto-assignment attempt: `"assigned"` (essay matched to exactly one student with confidence ≥ 0.85), `"ambiguous"` (multiple students matched — held for manual review), or `"unassigned"` (no match found). When `student_id` is explicitly provided in the request this field is `null` (no roster search is performed).
 
 Errors: `404 NOT_FOUND` (assignment not found, or student not found for this teacher), `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled in the class), `422 VALIDATION_ERROR` (no files, more than one file with `student_id`, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED`, `FILE_TOO_LARGE`, or `VALIDATION_ERROR` as appropriate).
 
