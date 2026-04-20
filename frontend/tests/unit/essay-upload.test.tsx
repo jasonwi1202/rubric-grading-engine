@@ -18,7 +18,7 @@
  * No real API calls — all API modules are mocked.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
@@ -362,6 +362,10 @@ describe("EssayUploadDialog — text-paste tab", () => {
 });
 
 describe("EssayUploadDialog — successful upload", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("calls uploadEssays with selected files and invokes onUploaded", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const onUploaded = vi.fn();
@@ -409,8 +413,6 @@ describe("EssayUploadDialog — successful upload", () => {
       );
       expect(onUploaded).toHaveBeenCalledWith(result);
     });
-
-    vi.useRealTimers();
   });
 });
 

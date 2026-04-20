@@ -151,7 +151,9 @@ export function EssayUploadDialog({
   };
 
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!dropZoneRef.current?.contains(e.relatedTarget as Node)) {
+    const dropZone = dropZoneRef.current;
+    const relatedTarget = e.relatedTarget;
+    if (!dropZone || !(relatedTarget instanceof Node) || !dropZone.contains(relatedTarget)) {
       setIsDragging(false);
     }
   };
@@ -460,19 +462,12 @@ export function EssayUploadDialog({
         {/* ── Progress bar ──────────────────────────────────────────────── */}
         {isUploading && (
           <div className="mt-4">
-            <div
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress}
+            <progress
+              value={progress}
+              max={100}
               aria-label="Upload progress"
-              className="h-2 w-full overflow-hidden rounded-full bg-gray-200"
-            >
-              <div
-                className="h-full bg-blue-600 transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+              className="h-2 w-full accent-blue-600"
+            />
             <p className="mt-1 text-center text-xs text-gray-500">
               Uploading… {progress}%
             </p>

@@ -54,6 +54,7 @@ export default function AssignmentEssaysPage() {
   const {
     data: students,
     isLoading: studentsLoading,
+    isError: studentsError,
   } = useQuery({
     queryKey: ["students", classId],
     queryFn: () => listStudents(classId),
@@ -112,6 +113,16 @@ export default function AssignmentEssaysPage() {
           className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
         >
           Failed to load essays. Please refresh the page.
+        </p>
+      )}
+
+      {studentsError && !isLoading && (
+        <p
+          role="alert"
+          className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          Failed to load class roster. Manual student assignment is unavailable
+          until the page is refreshed.
         </p>
       )}
 

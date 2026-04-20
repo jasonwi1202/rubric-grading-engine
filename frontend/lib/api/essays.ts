@@ -27,7 +27,7 @@ export interface EssayUploadResult {
   student_id: string | null;
   status: string;
   word_count: number;
-  file_storage_key: string;
+  file_storage_key: string | null;
   submitted_at: string;
   auto_assign_status: AutoAssignStatus;
 }
@@ -59,7 +59,8 @@ export interface AssignEssayRequest {
  * Calls POST /api/v1/assignments/{assignmentId}/essays (multipart/form-data).
  *
  * - `files` are appended as separate `files` parts (one per file).
- * - `text` is appended as a plain-text `text` part when provided.
+ * - `text` is converted to a TXT blob and appended as a file part, so it is
+ *   handled by the same multipart upload endpoint that processes file uploads.
  * - `student_id` is included only when the caller passes it (bypasses auto-assignment).
  *
  * Uses apiPostForm so the shared client's 401-refresh and error handling
@@ -73,8 +74,11 @@ export async function uploadEssays(
   for (const file of payload.files ?? []) {
     formData.append("files", file);
   }
+  // Convert pasted text to a plain-text file so the existing upload endpoint
+  // (which requires `files`) handles both input modes uniformly.
   if (payload.text) {
-    formData.append("text", payload.text);
+    const textBlob = new Blob([payload.text], { type: "text/plain" });
+    formData.append("files", textBlob, "essay.txt");
   }
   if (payload.studentId) {
     formData.append("student_id", payload.studentId);
@@ -88,6 +92,9 @@ export async function uploadEssays(
 /**
  * List all essays for an assignment with status and student assignment.
  * Calls GET /api/v1/assignments/{assignmentId}/essays.
+ *
+ * TODO: The backend GET endpoint is not yet implemented. This function is
+ * wired up and ready; it will work once the backend route is added.
  */
 export async function listEssays(
   assignmentId: string,
@@ -98,6 +105,9 @@ export async function listEssays(
 /**
  * Manually assign an essay to a student (manual-correction step).
  * Calls PATCH /api/v1/essays/{essayId}.
+ *
+ * TODO: The backend PATCH endpoint is not yet implemented. This function is
+ * wired up and ready; it will work once the backend route is added.
  */
 export async function assignEssay(
   essayId: string,
