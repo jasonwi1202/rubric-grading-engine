@@ -336,7 +336,7 @@ describe("EssayUploadDialog — text-paste tab", () => {
     ).toBeDisabled();
   });
 
-  it("shows validation error when submit with empty text", async () => {
+  it("keeps Upload button disabled when text is whitespace-only", async () => {
     const user = userEvent.setup();
     render(
       <EssayUploadDialog

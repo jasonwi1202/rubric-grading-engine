@@ -135,14 +135,14 @@ async def upload_essays_endpoint(
 
 @router.get(
     "/{assignment_id}/essays",
-    response_model=list[EssayListItemResponse],
     summary="List all essays for an assignment",
+    response_model=list[EssayListItemResponse],
 )
 async def list_essays_endpoint(
     assignment_id: uuid.UUID,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-) -> list[EssayListItemResponse]:
+) -> JSONResponse:
     """Return all essays for an assignment, including student name and status.
 
     Each essay carries an ``auto_assign_status`` derived from the current
@@ -151,13 +151,19 @@ async def list_essays_endpoint(
     - ``"assigned"``   — a student is assigned to the essay.
     - ``"unassigned"`` — no student is assigned yet.
 
+    Response body: ``{"data": list[EssayListItemResponse]}``
+
     Returns 403 if the assignment belongs to a different teacher.
     Returns 404 if the assignment does not exist.
     """
-    return await list_essays_for_assignment(
+    items = await list_essays_for_assignment(
         db=db,
         assignment_id=assignment_id,
         teacher_id=teacher.id,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": [item.model_dump(mode="json") for item in items]},
     )
 
 
@@ -168,28 +174,34 @@ async def list_essays_endpoint(
 
 @essay_router.patch(
     "/{essay_id}",
-    response_model=EssayListItemResponse,
     summary="Manually assign a student to an essay",
+    response_model=EssayListItemResponse,
 )
 async def assign_essay_endpoint(
     essay_id: uuid.UUID,
     body: AssignEssayRequest,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-) -> EssayListItemResponse:
+) -> JSONResponse:
     """Manually assign a student to an essay (auto-assignment correction).
 
     The student must be owned by the authenticated teacher and actively
     enrolled in the assignment's class.  The essay status is transitioned
     from ``unassigned`` → ``queued`` when it was previously unassigned.
 
+    Response body: ``{"data": EssayListItemResponse}``
+
     Returns 403 if the essay belongs to a different teacher's assignment, or
     if the student is not enrolled in the assignment's class.
     Returns 404 if the essay or student does not exist.
     """
-    return await assign_essay_to_student(
+    item = await assign_essay_to_student(
         db=db,
         essay_id=essay_id,
         teacher_id=teacher.id,
         student_id=body.student_id,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": item.model_dump(mode="json")},
     )

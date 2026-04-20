@@ -664,7 +664,10 @@ async def list_essays_for_assignment(
             (Essay.id == EssayVersion.essay_id)
             & (EssayVersion.version_number == latest_ver_sq.c.max_ver),
         )
-        .outerjoin(Student, Essay.student_id == Student.id)
+        .outerjoin(
+            Student,
+            (Essay.student_id == Student.id) & (Student.teacher_id == teacher_id),
+        )
         .where(Essay.assignment_id == assignment_id)
         .order_by(Essay.created_at)
     )

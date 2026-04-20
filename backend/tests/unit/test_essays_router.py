@@ -308,9 +308,9 @@ class TestListEssays:
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert len(body) == 1
-        assert body[0]["auto_assign_status"] == "unassigned"
-        assert body[0]["student_id"] is None
+        assert len(body["data"]) == 1
+        assert body["data"][0]["auto_assign_status"] == "unassigned"
+        assert body["data"][0]["student_id"] is None
 
     def test_no_auth_returns_401(self) -> None:
         app = create_app()
@@ -389,7 +389,7 @@ class TestAssignEssay:
             )
 
         assert resp.status_code == 200, resp.text
-        body = resp.json()
+        body = resp.json()["data"]
         assert body["auto_assign_status"] == "assigned"
         assert body["student_id"] == str(student_id)
 

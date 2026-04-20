@@ -245,6 +245,9 @@ export function EssayUploadDialog({
       // Short delay so the teacher sees 100% before the dialog closes.
       await new Promise((r) => setTimeout(r, 400));
 
+      // Clear the uploading flag before closing so handleClose() is not
+      // blocked by the mid-upload guard on the success path.
+      setIsUploading(false);
       handleClose();
       onUploaded(results);
     } catch (err) {

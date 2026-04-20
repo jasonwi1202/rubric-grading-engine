@@ -162,17 +162,17 @@ export function AutoAssignmentReview({
   const canProceed = unresolvedCount === 0 && essays.length > 0;
 
   function needsManualReview(essay: EssayListItem): boolean {
+    // ambiguous and unassigned essays need manual review. null auto_assign_status
+    // means the student was explicitly provided on upload — treat as assigned.
     return (
-      essay.auto_assign_status === null ||
       essay.auto_assign_status === "ambiguous" ||
       essay.auto_assign_status === "unassigned"
     );
   }
 
-  // Group essays for display
-  const assignedEssays = essays.filter(
-    (e) => e.auto_assign_status === "assigned",
-  );
+  // Group essays for display. Essays with null status (explicitly assigned on
+  // upload) and those already auto-assigned are shown in the "assigned" section.
+  const assignedEssays = essays.filter((e) => !needsManualReview(e));
   const needsReviewEssays = essays.filter((e) => needsManualReview(e));
 
   return (
