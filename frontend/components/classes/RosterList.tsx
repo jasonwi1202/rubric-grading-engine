@@ -63,13 +63,11 @@ export function RosterList({ classId }: RosterListProps) {
     },
   });
 
-  const handleStudentAdded = (student: StudentResponse) => {
+  const handleStudentAdded = () => {
     void queryClient.invalidateQueries({ queryKey: ["students", classId] });
     setShowAddStudent(false);
-    // Optimistically add to class count
+    // Optimistically update class student count
     void queryClient.invalidateQueries({ queryKey: ["class", classId] });
-    // Silence unused-var lint
-    void student;
   };
 
   const handleCsvImported = () => {

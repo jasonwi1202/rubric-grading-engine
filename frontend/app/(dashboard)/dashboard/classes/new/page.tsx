@@ -52,6 +52,7 @@ const GRADE_LEVELS = [
   "Other",
 ];
 
+// Computed once at module load time, not on every render.
 const CURRENT_YEAR = new Date().getFullYear();
 const ACADEMIC_YEARS = [
   `${CURRENT_YEAR - 1}–${CURRENT_YEAR}`,
