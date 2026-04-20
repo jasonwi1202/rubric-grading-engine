@@ -356,9 +356,8 @@ System templates are accessible to any authenticated teacher; personal templates
 | GET | `/essays/{essayId}/integrity` | Get integrity report |
 
 **POST /assignments/{id}/essays** — multipart form:
-- `files[]`: one or more files (PDF, DOCX, TXT)
-- `text`: raw text (alternative to file upload)
-- `student_id`: optional — if provided, all uploaded essays are immediately assigned to this student
+- `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
+- `student_id`: optional — if provided, all uploaded essays are immediately assigned to this student; only one file may be uploaded when `student_id` is set
 
 MIME type is validated server-side from file magic bytes (not the file extension). File size limit is enforced before reading file content (`MAX_ESSAY_FILE_SIZE_MB`, default 10 MB). The raw file is uploaded to S3 before text extraction so the original is preserved even if extraction fails.
 
@@ -380,7 +379,7 @@ MIME type is validated server-side from file magic bytes (not the file extension
 }
 ```
 
-Errors: `404 NOT_FOUND` (assignment not found), `403 FORBIDDEN` (assignment belongs to another teacher), `422 VALIDATION_ERROR` (no files, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED` or `FILE_TOO_LARGE` as appropriate).
+Errors: `404 NOT_FOUND` (assignment not found, or student not found for this teacher), `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled in the class), `422 VALIDATION_ERROR` (no files, more than one file with `student_id`, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED`, `FILE_TOO_LARGE`, or `VALIDATION_ERROR` as appropriate).
 
 ---
 

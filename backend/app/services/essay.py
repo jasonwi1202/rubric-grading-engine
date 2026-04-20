@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
 import re
 import unicodedata
 import uuid
@@ -31,7 +32,9 @@ from app.config import settings
 from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
+from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
+from app.models.student import Student
 from app.storage.s3 import upload_file
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,32 @@ ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
 # Minimum extracted word count below which we flag the version as potentially
 # a poor extraction (e.g. image-only PDF).
 _MIN_WORD_COUNT_THRESHOLD = 50
+
+# Maximum length of the sanitized filename component used in S3 keys and stored
+# in EssayVersion.file_storage_key (String(500)).  The fixed prefix
+# ``essays/{uuid}/{uuid}/`` consumes 81 chars; 200 leaves a comfortable margin.
+_MAX_FILENAME_LENGTH = 200
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — filename sanitization
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Return a safe version of *filename* for use in S3 object keys.
+
+    - Takes only the basename to strip any directory-traversal sequences.
+    - Replaces every character that is not alphanumeric, dot, hyphen, or
+      underscore with an underscore.
+    - Truncates to :data:`_MAX_FILENAME_LENGTH` characters to prevent
+      ``EssayVersion.file_storage_key`` (``String(500)``) overflow.
+    - Falls back to a UUID-based name if the sanitized result is empty.
+    """
+    name = os.path.basename(filename)
+    name = re.sub(r"[^A-Za-z0-9._\-]", "_", name)
+    name = name[:_MAX_FILENAME_LENGTH]
+    return name or f"essay_{uuid.uuid4()}"
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +275,42 @@ async def _get_assignment_for_teacher(
     return assignment
 
 
+async def _validate_student_for_assignment(
+    db: AsyncSession,
+    student_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID,
+) -> None:
+    """Verify *student_id* is owned by *teacher_id* and enrolled in *class_id*.
+
+    Raises:
+        NotFoundError: Student does not exist or does not belong to *teacher_id*.
+        ForbiddenError: Student is not actively enrolled in the assignment's class.
+    """
+    student_result = await db.execute(
+        select(Student.id).where(
+            Student.id == student_id,
+            Student.teacher_id == teacher_id,
+        )
+    )
+    if student_result.scalar_one_or_none() is None:
+        logger.debug(
+            "Student not found for teacher during essay ingest",
+            extra={"student_id": str(student_id), "teacher_id": str(teacher_id)},
+        )
+        raise NotFoundError("Student not found.")
+
+    enrollment_result = await db.execute(
+        select(ClassEnrollment.id).where(
+            ClassEnrollment.student_id == student_id,
+            ClassEnrollment.class_id == class_id,
+            ClassEnrollment.removed_at.is_(None),
+        )
+    )
+    if enrollment_result.scalar_one_or_none() is None:
+        raise ForbiddenError("Student is not enrolled in this assignment's class.")
+
+
 # ---------------------------------------------------------------------------
 # Public service function
 # ---------------------------------------------------------------------------
@@ -265,12 +330,12 @@ async def ingest_essay(
         db: Async database session.
         teacher_id: The authenticated teacher's UUID (used for tenant scoping).
         assignment_id: Target assignment UUID.
-        filename: Original filename from the upload (used only for S3 key naming
-            — never logged or executed).
+        filename: Original filename from the upload (sanitized server-side before
+            use — never logged or executed).
         data: Raw file bytes read from the upload.
         student_id: Optional — if provided, the essay is immediately assigned to
-            this student.  No validation of student ownership is performed here;
-            that is the caller's responsibility.
+            this student.  The student must be owned by *teacher_id* and
+            actively enrolled in the assignment's class.
 
     Returns:
         A ``(Essay, EssayVersion)`` tuple for the newly created records.
@@ -278,14 +343,19 @@ async def ingest_essay(
     Raises:
         FileTooLargeError: File exceeds ``settings.max_essay_file_size_mb``.
         FileTypeNotAllowedError: MIME type is not allowed.
-        NotFoundError: Assignment does not exist.
-        ForbiddenError: Assignment belongs to a different teacher.
+        NotFoundError: Assignment does not exist, or *student_id* is provided
+            but the student is not found for this teacher.
+        ForbiddenError: Assignment belongs to a different teacher, or
+            *student_id* is provided but the student is not enrolled in the
+            assignment's class.
 
     Security notes:
         - MIME type is validated from magic bytes, **not** the file extension.
         - File size is checked before any extraction attempt.
         - The raw file is uploaded to S3 **before** extraction, preserving the
           original even if extraction fails.
+        - The client-supplied filename is sanitized (basename only, safe chars,
+          length capped) before being embedded in the S3 key.
         - Extracted text is stored as a plain string — it is never executed.
         - No student PII appears in any log output.
     """
@@ -298,7 +368,11 @@ async def ingest_essay(
     # 3. Verify the assignment exists and belongs to this teacher.
     assignment = await _get_assignment_for_teacher(db, assignment_id, teacher_id)
 
-    # 4. Create the Essay record (status unassigned until auto-assign runs).
+    # 4. If a student_id was supplied, verify ownership and enrollment.
+    if student_id is not None:
+        await _validate_student_for_assignment(db, student_id, teacher_id, assignment.class_id)
+
+    # 5. Create the Essay record (status unassigned until auto-assign runs).
     essay = Essay(
         assignment_id=assignment.id,
         student_id=student_id,
@@ -307,19 +381,20 @@ async def ingest_essay(
     db.add(essay)
     await db.flush()  # populate essay.id
 
-    # 5. Upload the raw file to S3 before any extraction attempt.
-    #    This preserves the original even if extraction fails later.
+    # 6. Upload the raw file to S3 before any extraction attempt.
+    #    Sanitize the filename to prevent path-traversal and DB column overflow.
     #    upload_file is synchronous (boto3); run it in a thread-pool executor
     #    so it does not block the event loop.
-    s3_key = f"essays/{assignment.id}/{essay.id}/{filename}"
-    loop = asyncio.get_event_loop()
+    safe_filename = _sanitize_filename(filename)
+    s3_key = f"essays/{assignment.id}/{essay.id}/{safe_filename}"
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, upload_file, s3_key, data, mime_type)
     logger.info(
         "Essay file uploaded to S3",
         extra={"essay_id": str(essay.id), "assignment_id": str(assignment.id)},
     )
 
-    # 6. Extract text.  On failure the essay is still preserved in S3.
+    # 7. Extract text.  On failure the essay is still preserved in S3.
     try:
         raw_text = extract_text(data, mime_type)
     except Exception:
@@ -329,7 +404,7 @@ async def ingest_essay(
         )
         raise
 
-    # 7. Normalize extracted text.
+    # 8. Normalize extracted text.
     normalized = normalize_text(raw_text)
     words = count_words(normalized)
 
@@ -339,7 +414,7 @@ async def ingest_essay(
             extra={"essay_id": str(essay.id), "word_count": words},
         )
 
-    # 8. Create EssayVersion record (version 1 = original submission).
+    # 9. Create EssayVersion record (version 1 = original submission).
     version = EssayVersion(
         essay_id=essay.id,
         version_number=1,

@@ -70,6 +70,12 @@ async def upload_essays_endpoint(
     if not files:
         raise DomainValidationError("At least one file must be provided.", field="files")
 
+    if student_id is not None and len(files) > 1:
+        raise DomainValidationError(
+            "Only one file may be uploaded when a student_id is provided.",
+            field="files",
+        )
+
     max_bytes = settings.max_essay_file_size_mb * 1024 * 1024
     results: list[EssayUploadItemResponse] = []
 
@@ -79,8 +85,7 @@ async def upload_essays_endpoint(
         raw = await upload.read(max_bytes + 1)
         if len(raw) > max_bytes:
             raise FileTooLargeError(
-                f"File '{upload.filename}' exceeds the maximum allowed size "
-                f"of {settings.max_essay_file_size_mb} MB.",
+                f"File exceeds the maximum allowed size of {settings.max_essay_file_size_mb} MB.",
                 field="file",
             )
 

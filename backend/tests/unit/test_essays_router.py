@@ -236,3 +236,23 @@ class TestUploadEssays:
         assert resp.status_code == 422
         body = resp.json()
         assert body["error"]["code"] == "FILE_TOO_LARGE"
+
+    def test_multiple_files_with_student_id_returns_422(self) -> None:
+        """Uploading more than one file with a student_id is rejected."""
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+        student_id = uuid.uuid4()
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            self._url(),
+            data={"student_id": str(student_id)},
+            files=[
+                ("files", ("a.txt", BytesIO(b"Essay one."), "text/plain")),
+                ("files", ("b.txt", BytesIO(b"Essay two."), "text/plain")),
+            ],
+        )
+
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        assert body["error"]["code"] == "VALIDATION_ERROR"

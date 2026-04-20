@@ -7,7 +7,9 @@ Tests cover:
 - normalize_text: whitespace stripping, Unicode NFC, non-printable chars,
   blank-line collapsing
 - count_words: basic counting
-- ingest_essay: happy path (TXT, mocked DB + S3), cross-teacher 403, 404
+- _sanitize_filename: path traversal stripping, unsafe char replacement, length cap
+- ingest_essay: happy path (TXT, mocked DB + S3), cross-teacher 403, 404,
+  student ownership/enrollment validation, s3-before-extraction ordering
 
 No real PostgreSQL, S3, or file I/O.  All external calls are mocked.
 No student PII in fixtures.
@@ -23,6 +25,7 @@ import pytest
 
 from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
 from app.services.essay import (
+    _sanitize_filename,
     count_words,
     extract_text,
     normalize_text,
@@ -225,6 +228,38 @@ class TestCountWords:
 
 
 # ---------------------------------------------------------------------------
+# _sanitize_filename
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeFilename:
+    def test_strips_directory_separators(self) -> None:
+        result = _sanitize_filename("../../etc/passwd")
+        assert "/" not in result
+        assert "\\" not in result
+
+    def test_keeps_safe_chars(self) -> None:
+        result = _sanitize_filename("my-essay_v2.txt")
+        assert result == "my-essay_v2.txt"
+
+    def test_replaces_unsafe_chars(self) -> None:
+        result = _sanitize_filename("essay with spaces!.pdf")
+        assert " " not in result
+        assert "!" not in result
+
+    def test_truncates_long_name(self) -> None:
+        long_name = "a" * 300 + ".txt"
+        result = _sanitize_filename(long_name)
+        assert len(result) <= 200
+
+    def test_empty_after_sanitization_returns_uuid_fallback(self) -> None:
+        # A bare "/" has an empty basename, so sanitization yields "" → fallback.
+        result = _sanitize_filename("/")
+        assert len(result) > 0
+        assert result.startswith("essay_")
+
+
+# ---------------------------------------------------------------------------
 # ingest_essay — happy path (TXT, everything mocked)
 # ---------------------------------------------------------------------------
 
@@ -410,3 +445,71 @@ class TestIngestEssay:
 
         # DB should not have been touched
         db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_student_not_owned_by_teacher_raises_not_found(self) -> None:
+        from app.services.essay import ingest_essay
+
+        teacher_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+
+        db = self._make_db()
+        self._setup_ownership_query(db, assignment_id, teacher_id)
+
+        # Student lookup (3rd execute) returns None — student not found for teacher.
+        student_result = MagicMock()
+        student_result.scalar_one_or_none = MagicMock(return_value=None)
+        # Append to existing side_effect list
+        existing_side_effect = list(db.execute.side_effect)
+        db.execute = AsyncMock(side_effect=[*existing_side_effect, student_result])
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            pytest.raises(NotFoundError),
+        ):
+            await ingest_essay(
+                db=db,
+                teacher_id=teacher_id,
+                assignment_id=assignment_id,
+                filename="essay.txt",
+                data=b"content",
+                student_id=student_id,
+            )
+
+    @pytest.mark.asyncio
+    async def test_student_not_enrolled_raises_forbidden(self) -> None:
+        from app.services.essay import ingest_essay
+
+        teacher_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+
+        db = self._make_db()
+        self._setup_ownership_query(db, assignment_id, teacher_id)
+
+        # Student ownership check passes (4th execute).
+        student_result = MagicMock()
+        student_result.scalar_one_or_none = MagicMock(return_value=student_id)
+
+        # Enrollment check returns None — student not enrolled.
+        enrollment_result = MagicMock()
+        enrollment_result.scalar_one_or_none = MagicMock(return_value=None)
+
+        existing_side_effect = list(db.execute.side_effect)
+        db.execute = AsyncMock(
+            side_effect=[*existing_side_effect, student_result, enrollment_result]
+        )
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            pytest.raises(ForbiddenError),
+        ):
+            await ingest_essay(
+                db=db,
+                teacher_id=teacher_id,
+                assignment_id=assignment_id,
+                filename="essay.txt",
+                data=b"content",
+                student_id=student_id,
+            )
