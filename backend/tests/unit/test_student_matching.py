@@ -47,7 +47,7 @@ from app.services.student_matching import (
 # ---------------------------------------------------------------------------
 
 
-def _roster(*names: str) -> list[tuple[uuid.UUID, str]]:
+def _make_roster(*names: str) -> list[tuple[uuid.UUID, str]]:
     """Build a synthetic roster of (uuid, name) pairs from *names*."""
     return [(uuid.uuid4(), name) for name in names]
 
@@ -198,7 +198,7 @@ class TestMatchStudent:
         assert result.match_count == 0
 
     def test_roster_with_no_matches_returns_unassigned(self) -> None:
-        roster = _roster("Bob Thompson", "Carol Davis", "Eve Martinez")
+        roster = _make_roster("Bob Thompson", "Carol Davis", "Eve Martinez")
         result = match_student(
             roster=roster,
             filename="alice_walker.txt",
@@ -212,7 +212,7 @@ class TestMatchStudent:
 
     def test_filename_match_assigns_student(self) -> None:
         student_id = uuid.uuid4()
-        roster = [(student_id, "Alice Walker"), *_roster("Bob Thompson", "Carol Davis")]
+        roster = [(student_id, "Alice Walker"), *_make_roster("Bob Thompson", "Carol Davis")]
 
         result = match_student(
             roster=roster,
@@ -226,7 +226,7 @@ class TestMatchStudent:
 
     def test_reversed_filename_assigns_correct_student(self) -> None:
         student_id = uuid.uuid4()
-        roster = [(student_id, "Alice Walker"), *_roster("Bob Thompson")]
+        roster = [(student_id, "Alice Walker"), *_make_roster("Bob Thompson")]
 
         result = match_student(
             roster=roster,
@@ -238,7 +238,7 @@ class TestMatchStudent:
 
     def test_docx_author_match_assigns_student(self) -> None:
         student_id = uuid.uuid4()
-        roster = [(student_id, "Bob Thompson"), *_roster("Carol Davis")]
+        roster = [(student_id, "Bob Thompson"), *_make_roster("Carol Davis")]
 
         # Filename is unrelated but author matches.
         result = match_student(
@@ -253,7 +253,7 @@ class TestMatchStudent:
 
     def test_header_text_match_assigns_student(self) -> None:
         student_id = uuid.uuid4()
-        roster = [(student_id, "Carol Davis"), *_roster("Eve Martinez")]
+        roster = [(student_id, "Carol Davis"), *_make_roster("Eve Martinez")]
 
         header = "Carol Davis\nLiterature 301\nDr. Patel\n\nIn this essay I will argue..."
 
@@ -405,12 +405,12 @@ class TestMatchStudent:
     # ------------------------------------------------------------------
 
     def test_unassigned_result_has_no_student_id(self) -> None:
-        roster = _roster("Bob Thompson", "Carol Davis")
+        roster = _make_roster("Bob Thompson", "Carol Davis")
         result = match_student(roster=roster, filename="unrelated.txt")
         assert result.student_id is None, "student_id must be None when unassigned"
 
     def test_ambiguous_result_has_no_student_id(self) -> None:
-        roster = _roster("Alice Walker", "Alice Waters")
+        roster = _make_roster("Alice Walker", "Alice Waters")
         with patch("app.services.student_matching._score_filename", return_value=0.95):
             result = match_student(roster=roster, filename="essay.txt")
         assert result.student_id is None, "student_id must be None when ambiguous"
@@ -434,6 +434,6 @@ class TestMatchStudent:
         assert 0.0 <= candidate.confidence <= 1.0
 
     def test_result_is_autoassignresult_instance(self) -> None:
-        roster = _roster("Alice Walker")
+        roster = _make_roster("Alice Walker")
         result = match_student(roster=roster, filename="alice_walker.txt")
         assert isinstance(result, AutoAssignResult)
