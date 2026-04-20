@@ -304,7 +304,7 @@ def upgrade() -> None:
         sa.column("min_score", sa.Integer),
         sa.column("max_score", sa.Integer),
         sa.column("display_order", sa.Integer),
-        sa.column("anchor_descriptions", sa.JSON),
+        sa.column("anchor_descriptions", postgresql.JSONB()),
     )
     op.bulk_insert(criteria_table, _CRITERIA)
 

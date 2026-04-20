@@ -31,6 +31,7 @@ import type {
   AnchorDescriptions,
 } from "@/lib/api/rubrics";
 import { TemplatePicker } from "@/components/rubric/TemplatePicker";
+import type { TemplateApplyValues } from "@/components/rubric/TemplatePicker";
 
 // ---------------------------------------------------------------------------
 // Zod schema
@@ -600,7 +601,7 @@ export function RubricBuilderForm({
   // Template picker visibility
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
-  const handleApplyTemplate = (values: Partial<RubricFormValues>) => {
+  const handleApplyTemplate = (values: TemplateApplyValues) => {
     reset({
       name: values.name ?? normalizedDefaults.name,
       criteria:

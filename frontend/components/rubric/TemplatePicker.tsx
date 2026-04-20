@@ -9,27 +9,64 @@
  * - "Apply template" pre-fills the rubric builder form (does NOT auto-save).
  * - Keyboard accessible: template rows are reachable via standard button
  *   focus, and Escape closes the dialog.
+ * - Focus is trapped within the dialog; restored to the trigger on close.
  *
  * Security: no student PII is handled here.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listRubricTemplates, getRubricTemplate } from "@/lib/api/rubric-templates";
 import type { RubricTemplateListItem } from "@/lib/api/rubric-templates";
-import type { RubricFormValues } from "@/components/rubric/RubricBuilderForm";
-import { apiCriteriaToFormCriteria } from "@/components/rubric/RubricBuilderForm";
+
+// ---------------------------------------------------------------------------
+// Local types — avoids circular import with RubricBuilderForm
+// ---------------------------------------------------------------------------
+
+/** Criteria shape that TemplatePicker emits to its consumer. */
+type AppliedCriterion = {
+  name: string;
+  description: string;
+  weight: number;
+  min_score: number;
+  max_score: number;
+  anchor_descriptions: Record<string, string>;
+};
+
+type TemplateCriteriaItem = Awaited<
+  ReturnType<typeof getRubricTemplate>
+>["criteria"][number];
+
+function convertCriteria(criteria: TemplateCriteriaItem[]): AppliedCriterion[] {
+  return criteria.map((c) => ({
+    name: c.name,
+    description: c.description ?? "",
+    weight: c.weight,
+    min_score: c.min_score,
+    max_score: c.max_score,
+    anchor_descriptions: (c.anchor_descriptions ?? {}) as Record<string, string>,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
+export interface TemplateApplyValues {
+  name: string;
+  criteria: AppliedCriterion[];
+}
+
 export interface TemplatePickerProps {
   /** Called with form values to pre-fill the builder. Does not save. */
-  onApply: (values: Partial<RubricFormValues>) => void;
+  onApply: (values: TemplateApplyValues) => void;
   /** Called when the user dismisses the picker without choosing. */
   onClose: () => void;
 }
+
+// Focusable element selector used for focus-trapping
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -39,6 +76,21 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+
+  // Ref to the dialog panel (inner white box) for focus management
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // Manage focus: capture previous focus, move focus into dialog, restore on close
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    // Focus the first focusable element inside the dialog
+    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    firstFocusable?.focus();
+    return () => {
+      previousFocusRef.current?.focus();
+    };
+  }, []);
 
   // Fetch the template list.
   const {
@@ -55,6 +107,7 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
   const {
     data: previewRubric,
     isLoading: isPreviewLoading,
+    isError: isPreviewError,
   } = useQuery({
     queryKey: ["rubric-template", selectedId],
     queryFn: () => getRubricTemplate(selectedId!),
@@ -71,13 +124,40 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
     try {
       onApply({
         name: previewRubric.name,
-        criteria: apiCriteriaToFormCriteria(previewRubric.criteria),
+        criteria: convertCriteria(previewRubric.criteria),
       });
       onClose();
     } catch {
       setApplyError("Failed to apply template. Please try again.");
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  // Tab-key focus trap: keep focus inside the dialog
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      onClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
   };
 
@@ -89,14 +169,16 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
     /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Choose a rubric template"
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
     >
-      <div className="flex h-full max-h-[600px] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl">
+      {/* Dialog panel */}
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose a rubric template"
+        className="flex h-full max-h-[600px] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl"
+        onKeyDown={handleKeyDown}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">
@@ -205,7 +287,13 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
                   </div>
                 )}
 
-                {previewRubric && !isPreviewLoading && (
+                {isPreviewError && !isPreviewLoading && (
+                  <p className="text-sm text-red-600" role="alert">
+                    Failed to load template criteria. Please try again.
+                  </p>
+                )}
+
+                {previewRubric && !isPreviewLoading && !isPreviewError && (
                   <div>
                     <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-400">
                       Criteria ({previewRubric.criteria.length})
@@ -256,7 +344,13 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
             <button
               type="button"
               onClick={handleApply}
-              disabled={!selectedId || isPreviewLoading || isApplying}
+              disabled={
+                !selectedId ||
+                isPreviewLoading ||
+                isPreviewError ||
+                !previewRubric ||
+                isApplying
+              }
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
             >
               {isApplying ? "Applying…" : "Apply template"}
@@ -303,3 +397,4 @@ function TemplateList({ items, selectedId, onSelect }: TemplateListProps) {
     </ul>
   );
 }
+

@@ -206,6 +206,41 @@ describe("TemplatePicker", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("shows error message when preview fetch fails", async () => {
+    const user = userEvent.setup();
+    mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
+    mockGetRubricTemplate.mockRejectedValue(new Error("Network error"));
+    renderPicker();
+    await waitFor(() =>
+      expect(screen.getByText("5-Paragraph Essay")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText("5-Paragraph Essay"));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/failed to load template criteria/i),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("Apply button stays disabled when preview fetch fails", async () => {
+    const user = userEvent.setup();
+    mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
+    mockGetRubricTemplate.mockRejectedValue(new Error("Network error"));
+    renderPicker();
+    await waitFor(() =>
+      expect(screen.getByText("5-Paragraph Essay")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText("5-Paragraph Essay"));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/failed to load template criteria/i),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: /apply template/i }),
+    ).toBeDisabled();
+  });
+
   it("shows criteria preview after selecting a template", async () => {
     const user = userEvent.setup();
     mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
