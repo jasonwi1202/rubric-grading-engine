@@ -66,7 +66,7 @@ export default function NewClassPage() {
   // Compute academic years inside the component using UTC year to avoid
   // SSR/client hydration mismatches around year boundaries.
   const academicYears = useMemo(() => {
-    const year = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)).getUTCFullYear();
+    const year = new Date().getUTCFullYear();
     return [
       `${year - 1}–${year}`,
       `${year}–${year + 1}`,
