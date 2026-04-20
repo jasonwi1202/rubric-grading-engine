@@ -40,6 +40,9 @@ logger = logging.getLogger(__name__)
 # Maximum rows per CSV upload (enforced before building the diff).
 MAX_IMPORT_ROWS: int = 200
 
+# Maximum length for a student's full_name (mirrors the DB column constraint).
+MAX_NAME_LENGTH: int = 255
+
 # Ratio threshold for difflib fuzzy name matching (0–1).
 # Names with a similarity ratio >= this value are treated as potential
 # duplicates of enrolled students.
@@ -146,14 +149,14 @@ def parse_csv_roster(content: bytes, *, max_rows: int = MAX_IMPORT_ROWS) -> CsvP
             )
             continue
 
-        if len(raw_name) > 255:
+        if len(raw_name) > MAX_NAME_LENGTH:
             result.errors.append(
                 DiffRow(
                     row_number=row_number,
-                    full_name=raw_name[:255],
+                    full_name=raw_name[:MAX_NAME_LENGTH],
                     external_id=None,
                     status=ImportRowStatus.ERROR,
-                    message="full_name exceeds the 255-character limit.",
+                    message=f"full_name exceeds the {MAX_NAME_LENGTH}-character limit.",
                 )
             )
             continue
@@ -402,7 +405,6 @@ async def commit_roster_import(
                 student_id=student_obj.id,
             )
             db.add(enrollment)
-            await db.flush()
             updated += 1
 
         else:

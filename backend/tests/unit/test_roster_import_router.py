@@ -433,7 +433,7 @@ class TestConfirmImport:
 
         assert resp.status_code == 200, resp.text
         commit_mock.assert_called_once()
-        _, kwargs_teacher, kwargs_class, kwargs_rows = commit_mock.call_args[0]
-        assert kwargs_rows[0].full_name == "Student One"
-        assert kwargs_rows[0].external_id == "ext-001"
-        assert kwargs_rows[0].row_number == 1
+        call_db, call_teacher_id, call_class_id, call_rows = commit_mock.call_args[0]
+        assert call_rows[0].full_name == "Student One"
+        assert call_rows[0].external_id == "ext-001"
+        assert call_rows[0].row_number == 1
