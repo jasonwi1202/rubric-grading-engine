@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from io import BytesIO
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -62,8 +63,8 @@ def _make_version(
     return v
 
 
-def _make_auto_result(status: str = "unassigned") -> AutoAssignResult:
-    return AutoAssignResult(status=status, student_id=None, match_count=0)  # type: ignore[arg-type]
+def _make_auto_result(status: Literal["assigned", "ambiguous", "unassigned"] = "unassigned") -> AutoAssignResult:
+    return AutoAssignResult(status=status, student_id=None, match_count=0)
 
 
 def _app_with_teacher(teacher: MagicMock | None = None) -> object:

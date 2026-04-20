@@ -4,15 +4,17 @@ Handles file validation, S3 storage, text extraction, normalization, and
 database record creation for uploaded essay files.
 
 Pipeline:
-  1. Validate MIME type server-side using ``python-magic``
-  2. Validate file size (``settings.max_essay_file_size_mb``)
-  3. Upload raw bytes to S3 (before any extraction attempt)
-  4. Extract text: PDF → pdfplumber, DOCX → python-docx, TXT → direct read
+  1. Validate file size (``settings.max_essay_file_size_mb``)
+  2. Validate MIME type server-side using ``python-magic``
+  3. Verify assignment ownership (teacher_id)
+  4. Validate explicit student_id enrollment (when provided)
+  5. Create ``Essay`` DB record early so its UUID is available for the S3 key
+  6. Upload raw bytes to S3 (before any extraction attempt)
+  7. Extract text: PDF → pdfplumber, DOCX → python-docx, TXT → direct read
      On failure the S3 object is deleted to avoid orphaned storage objects.
-  5. Normalize extracted text (whitespace, Unicode, non-printable chars)
-  6. Compute word count
-  7. Attempt student auto-assignment (fuzzy match against class roster)
-  8. Create ``Essay`` + ``EssayVersion`` database records
+  8. Normalize extracted text (whitespace, Unicode, non-printable chars)
+  9. Attempt student auto-assignment (fuzzy match against class roster)
+  10. Create ``EssayVersion`` database record and commit
 
 No student PII is logged at any point — only entity IDs appear in log output.
 """
@@ -281,18 +283,29 @@ async def _get_assignment_for_teacher(
 def _extract_docx_author(data: bytes) -> str | None:
     """Return the author from a DOCX file's core properties, or ``None``.
 
+    Reads ``docProps/core.xml`` directly from the ZIP archive instead of
+    building a full ``python-docx`` Document object, so the bytes are only
+    parsed once (text extraction already called ``_extract_text_docx``).
+
     Extraction failure is non-fatal — if the author field is absent or
     the file cannot be parsed here, ``None`` is returned silently.
 
     The returned value is used only as a fuzzy-matching signal and is
     **never logged**.
     """
-    try:
-        from docx import Document  # noqa: PLC0415 — defer import
+    import xml.etree.ElementTree as ET  # noqa: PLC0415 — defer import
+    import zipfile  # noqa: PLC0415 — defer import
 
-        doc = Document(io.BytesIO(data))
-        author: str = doc.core_properties.author or ""
-        return author.strip() or None
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as docx_zip:
+            core_xml = docx_zip.read("docProps/core.xml")
+        root = ET.fromstring(core_xml)
+        author = root.findtext(
+            "dc:creator",
+            default="",
+            namespaces={"dc": "http://purl.org/dc/elements/1.1/"},
+        )
+        return (author or "").strip() or None
     except Exception:  # noqa: BLE001 — any parse error is non-fatal
         return None
 
