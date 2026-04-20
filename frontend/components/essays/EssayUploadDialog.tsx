@@ -201,7 +201,7 @@ export function EssayUploadDialog({
       const parsed = pasteTextSchema.safeParse({ text: pasteText });
       if (!parsed.success) {
         setValidationErrors(
-          parsed.error.errors.map((e) => e.message),
+          parsed.error.issues.map((issue) => issue.message),
         );
         return;
       }
