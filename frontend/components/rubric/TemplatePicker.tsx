@@ -7,17 +7,16 @@
  * - Lists system templates and the teacher's personal saved templates.
  * - Clicking a template row shows a preview panel with the criteria list.
  * - "Apply template" pre-fills the rubric builder form (does NOT auto-save).
- * - Keyboard accessible: arrow-key navigation within the list, Enter to
- *   apply, Escape to close.
+ * - Keyboard accessible: template rows are reachable via standard button
+ *   focus, and Escape closes the dialog.
  *
  * Security: no student PII is handled here.
  */
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listRubricTemplates } from "@/lib/api/rubric-templates";
+import { listRubricTemplates, getRubricTemplate } from "@/lib/api/rubric-templates";
 import type { RubricTemplateListItem } from "@/lib/api/rubric-templates";
-import { getRubric } from "@/lib/api/rubrics";
 import type { RubricFormValues } from "@/components/rubric/RubricBuilderForm";
 import { apiCriteriaToFormCriteria } from "@/components/rubric/RubricBuilderForm";
 
@@ -57,8 +56,8 @@ export function TemplatePicker({ onApply, onClose }: TemplatePickerProps) {
     data: previewRubric,
     isLoading: isPreviewLoading,
   } = useQuery({
-    queryKey: ["rubric", selectedId],
-    queryFn: () => getRubric(selectedId!),
+    queryKey: ["rubric-template", selectedId],
+    queryFn: () => getRubricTemplate(selectedId!),
     enabled: selectedId !== null,
     staleTime: 5 * 60 * 1000,
   });
@@ -281,12 +280,13 @@ interface TemplateListProps {
 
 function TemplateList({ items, selectedId, onSelect }: TemplateListProps) {
   return (
-    <ul role="listbox" aria-label="Templates">
+    <ul role="list" aria-label="Templates">
       {items.map((t) => (
-        <li key={t.id} role="option" aria-selected={t.id === selectedId}>
+        <li key={t.id}>
           <button
             type="button"
             onClick={() => onSelect(t.id)}
+            aria-pressed={t.id === selectedId}
             className={`w-full px-4 py-2 text-left text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 ${
               t.id === selectedId
                 ? "bg-blue-50 font-medium text-blue-700"

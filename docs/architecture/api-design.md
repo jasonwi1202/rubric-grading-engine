@@ -210,6 +210,7 @@ System templates have `is_system: true` (`teacher_id IS NULL`); personal templat
 | Method | Path | Description |
 |---|---|---|
 | GET | `/rubric-templates` | List system + teacher's personal templates |
+| GET | `/rubric-templates/{templateId}` | Get a single template with full criteria |
 | POST | `/rubric-templates` | Save a rubric as a personal template |
 
 **GET /rubric-templates response:**
@@ -253,6 +254,10 @@ System templates have `is_system: true` (`teacher_id IS NULL`); personal templat
 ```
 
 Errors: `404 NOT_FOUND` (source rubric not found), `403 FORBIDDEN` (source rubric belongs to another teacher).
+
+**GET /rubric-templates/{templateId} response (200):**
+Returns the same shape as `POST /rubric-templates` response but for any template.
+System templates are accessible to any authenticated teacher; personal templates return `403` if accessed by a different teacher.
 
 **POST /rubrics body:**
 ```json

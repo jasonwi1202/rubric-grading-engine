@@ -1,8 +1,9 @@
 """Unit tests for the rubric templates router endpoints.
 
 Tests cover:
-- GET  /api/v1/rubric-templates  — list, auth required
-- POST /api/v1/rubric-templates  — create, 403, 404, auth required
+- GET  /api/v1/rubric-templates           — list, auth required
+- GET  /api/v1/rubric-templates/{id}      — get single template, 403, 404, auth required
+- POST /api/v1/rubric-templates           — create, 403, 404, auth required
 
 No real PostgreSQL.  All DB / service calls are mocked.  No student PII.
 """
@@ -101,8 +102,6 @@ class TestListRubricTemplates:
         teacher = _make_teacher()
         system_rubric = _make_rubric_orm(teacher_id=None, name="5-Paragraph Essay")
         personal_rubric = _make_rubric_orm(teacher_id=teacher.id, name="My Template")
-        criterion_sys = _make_criterion_orm(rubric_id=system_rubric.id, weight=Decimal("100"))
-        criterion_pers = _make_criterion_orm(rubric_id=personal_rubric.id, weight=Decimal("100"))
         app = _app_with_teacher(teacher)
 
         with (
@@ -110,8 +109,8 @@ class TestListRubricTemplates:
                 "app.routers.rubric_templates.list_rubric_templates",
                 new_callable=AsyncMock,
                 return_value=[
-                    (system_rubric, [criterion_sys], True),
-                    (personal_rubric, [criterion_pers], False),
+                    (system_rubric, 1, True),
+                    (personal_rubric, 1, False),
                 ],
             ),
             TestClient(app, raise_server_exceptions=False) as client,  # type: ignore[arg-type]
@@ -245,5 +244,78 @@ class TestSaveRubricAsTemplate:
                 "/api/v1/rubric-templates",
                 json={"rubric_id": str(uuid.uuid4())},
             )
+
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/rubric-templates/{template_id}
+# ---------------------------------------------------------------------------
+
+
+class TestGetRubricTemplate:
+    def test_returns_system_template(self) -> None:
+        teacher = _make_teacher()
+        template_id = uuid.uuid4()
+        system_rubric = _make_rubric_orm(
+            teacher_id=None, rubric_id=template_id, name="5-Paragraph Essay"
+        )
+        criterion = _make_criterion_orm(rubric_id=template_id)
+        app = _app_with_teacher(teacher)
+
+        with (
+            patch(
+                "app.routers.rubric_templates.get_rubric_template",
+                new_callable=AsyncMock,
+                return_value=(system_rubric, [criterion], True),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,  # type: ignore[arg-type]
+        ):
+            resp = client.get(f"/api/v1/rubric-templates/{template_id}")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["name"] == system_rubric.name
+        assert data["is_system"] is True
+        assert len(data["criteria"]) == 1
+
+    def test_returns_404_when_not_found(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with (
+            patch(
+                "app.routers.rubric_templates.get_rubric_template",
+                new_callable=AsyncMock,
+                side_effect=NotFoundError("Template not found."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,  # type: ignore[arg-type]
+        ):
+            resp = client.get(f"/api/v1/rubric-templates/{uuid.uuid4()}")
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_returns_403_for_cross_teacher_personal(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with (
+            patch(
+                "app.routers.rubric_templates.get_rubric_template",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("You do not have access to this template."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,  # type: ignore[arg-type]
+        ):
+            resp = client.get(f"/api/v1/rubric-templates/{uuid.uuid4()}")
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_returns_401_without_auth(self) -> None:
+        app = create_app()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get(f"/api/v1/rubric-templates/{uuid.uuid4()}")
 
         assert resp.status_code == 401

@@ -31,17 +31,13 @@ import { TemplatePicker } from "@/components/rubric/TemplatePicker";
 
 vi.mock("@/lib/api/rubric-templates", () => ({
   listRubricTemplates: vi.fn(),
+  getRubricTemplate: vi.fn(),
 }));
 
-vi.mock("@/lib/api/rubrics", () => ({
-  getRubric: vi.fn(),
-}));
-
-import { listRubricTemplates } from "@/lib/api/rubric-templates";
-import { getRubric } from "@/lib/api/rubrics";
+import { listRubricTemplates, getRubricTemplate } from "@/lib/api/rubric-templates";
 
 const mockListTemplates = vi.mocked(listRubricTemplates);
-const mockGetRubric = vi.mocked(getRubric);
+const mockGetRubricTemplate = vi.mocked(getRubricTemplate);
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -71,7 +67,7 @@ const FULL_RUBRIC = {
   id: "sys-1",
   name: "5-Paragraph Essay",
   description: "A starter template for five-paragraph essays.",
-  is_template: true,
+  is_system: true,
   created_at: "2026-04-20T00:00:00Z",
   updated_at: "2026-04-20T00:00:00Z",
   criteria: [
@@ -213,7 +209,7 @@ describe("TemplatePicker", () => {
   it("shows criteria preview after selecting a template", async () => {
     const user = userEvent.setup();
     mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
-    mockGetRubric.mockResolvedValue(FULL_RUBRIC as Awaited<ReturnType<typeof getRubric>>);
+    mockGetRubricTemplate.mockResolvedValue(FULL_RUBRIC as Awaited<ReturnType<typeof getRubricTemplate>>);
     renderPicker();
     await waitFor(() =>
       expect(screen.getByText("5-Paragraph Essay")).toBeInTheDocument(),
@@ -228,7 +224,7 @@ describe("TemplatePicker", () => {
   it("calls onApply with template values and onClose after applying", async () => {
     const user = userEvent.setup();
     mockListTemplates.mockResolvedValue([SYSTEM_TEMPLATE]);
-    mockGetRubric.mockResolvedValue(FULL_RUBRIC as Awaited<ReturnType<typeof getRubric>>);
+    mockGetRubricTemplate.mockResolvedValue(FULL_RUBRIC as Awaited<ReturnType<typeof getRubricTemplate>>);
     const { onApply, onClose } = renderPicker();
 
     await waitFor(() =>

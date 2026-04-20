@@ -69,3 +69,14 @@ export async function saveRubricAsTemplate(
 ): Promise<RubricTemplateResponse> {
   return apiPost<RubricTemplateResponse>("/rubric-templates", data);
 }
+
+/**
+ * Get a single template with its full criteria list.
+ * System templates are accessible to any authenticated teacher.
+ * Calls GET /api/v1/rubric-templates/{templateId}.
+ */
+export async function getRubricTemplate(
+  templateId: string,
+): Promise<RubricTemplateResponse> {
+  return apiGet<RubricTemplateResponse>(`/rubric-templates/${templateId}`);
+}

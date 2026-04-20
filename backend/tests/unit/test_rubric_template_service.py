@@ -2,6 +2,7 @@
 
 Tests cover:
 - list_rubric_templates: system + personal results, empty result
+- get_rubric_template: system template, personal template, cross-teacher, not-found
 - save_rubric_as_template: success, not-found, cross-teacher
 
 No real PostgreSQL.  All DB calls are mocked.  No student PII in fixtures.
@@ -16,7 +17,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.exceptions import ForbiddenError, NotFoundError
-from app.services.rubric_template import list_rubric_templates, save_rubric_as_template
+from app.services.rubric_template import (
+    get_rubric_template,
+    list_rubric_templates,
+    save_rubric_as_template,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -82,34 +87,109 @@ class TestListRubricTemplates:
         teacher_id = uuid.uuid4()
         system_rubric = _make_rubric_orm(teacher_id=None, name="System Template")
         personal_rubric = _make_rubric_orm(teacher_id=teacher_id, name="Personal Template")
-        criterion_sys = _make_criterion_orm(rubric_id=system_rubric.id)
-        criterion_pers = _make_criterion_orm(rubric_id=personal_rubric.id)
 
         db = _make_db()
-        # First execute: returns rubrics; second: returns criteria.
+        # First execute: returns rubrics; second: returns COUNT rows.
         rubric_result = MagicMock()
         rubric_result.scalars.return_value.all.return_value = [
             system_rubric,
             personal_rubric,
         ]
-        criteria_result = MagicMock()
-        criteria_result.scalars.return_value.all.return_value = [
-            criterion_sys,
-            criterion_pers,
-        ]
-        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+        mock_count_row_sys = MagicMock()
+        mock_count_row_sys.rubric_id = system_rubric.id
+        mock_count_row_sys.cnt = 2
+        mock_count_row_pers = MagicMock()
+        mock_count_row_pers.rubric_id = personal_rubric.id
+        mock_count_row_pers.cnt = 1
+        count_result = MagicMock()
+        count_result.all.return_value = [mock_count_row_sys, mock_count_row_pers]
+        db.execute = AsyncMock(side_effect=[rubric_result, count_result])
 
         result = await list_rubric_templates(db, teacher_id)
 
         assert len(result) == 2
         # System template: teacher_id is None → is_system=True
-        r0, c0, is_system0 = result[0]
+        r0, cnt0, is_system0 = result[0]
         assert r0.name == "System Template"
+        assert cnt0 == 2
         assert is_system0 is True
         # Personal template: teacher_id is teacher_id → is_system=False
-        r1, c1, is_system1 = result[1]
+        r1, cnt1, is_system1 = result[1]
         assert r1.name == "Personal Template"
+        assert cnt1 == 1
         assert is_system1 is False
+
+
+# ---------------------------------------------------------------------------
+# get_rubric_template
+# ---------------------------------------------------------------------------
+
+
+class TestGetRubricTemplate:
+    @pytest.mark.asyncio
+    async def test_returns_system_template_for_any_teacher(self) -> None:
+        """System templates (teacher_id=None) are accessible to any teacher."""
+        teacher_id = uuid.uuid4()
+        template_id = uuid.uuid4()
+        system_rubric = _make_rubric_orm(teacher_id=None, rubric_id=template_id)
+        criterion = _make_criterion_orm(rubric_id=template_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = system_rubric
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = [criterion]
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        rubric, criteria, is_system = await get_rubric_template(db, teacher_id, template_id)
+
+        assert rubric is system_rubric
+        assert len(criteria) == 1
+        assert is_system is True
+
+    @pytest.mark.asyncio
+    async def test_returns_personal_template_for_owner(self) -> None:
+        teacher_id = uuid.uuid4()
+        template_id = uuid.uuid4()
+        personal_rubric = _make_rubric_orm(teacher_id=teacher_id, rubric_id=template_id)
+        criterion = _make_criterion_orm(rubric_id=template_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = personal_rubric
+        criteria_result = MagicMock()
+        criteria_result.scalars.return_value.all.return_value = [criterion]
+        db.execute = AsyncMock(side_effect=[rubric_result, criteria_result])
+
+        rubric, criteria, is_system = await get_rubric_template(db, teacher_id, template_id)
+
+        assert rubric is personal_rubric
+        assert is_system is False
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_when_template_missing(self) -> None:
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=rubric_result)
+
+        with pytest.raises(NotFoundError):
+            await get_rubric_template(db, uuid.uuid4(), uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_raises_forbidden_for_cross_teacher_personal(self) -> None:
+        teacher_id = uuid.uuid4()
+        other_teacher_id = uuid.uuid4()
+        template_id = uuid.uuid4()
+        personal_rubric = _make_rubric_orm(teacher_id=other_teacher_id, rubric_id=template_id)
+
+        db = _make_db()
+        rubric_result = MagicMock()
+        rubric_result.scalar_one_or_none.return_value = personal_rubric
+        db.execute = AsyncMock(return_value=rubric_result)
+
+        with pytest.raises(ForbiddenError):
+            await get_rubric_template(db, teacher_id, template_id)
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +245,7 @@ class TestSaveRubricAsTemplate:
         criteria_result = MagicMock()
         criteria_result.scalars.return_value.all.return_value = [criterion]
 
-        db.execute = AsyncMock(
-            side_effect=[ownership_result, full_rubric_result, criteria_result]
-        )
+        db.execute = AsyncMock(side_effect=[ownership_result, full_rubric_result, criteria_result])
         db.flush = AsyncMock()
 
         added_items: list[object] = []
@@ -192,9 +270,7 @@ class TestSaveRubricAsTemplate:
 
         db.flush = AsyncMock(side_effect=fake_flush)
 
-        result_rubric, result_criteria = await save_rubric_as_template(
-            db, teacher_id, rubric_id
-        )
+        result_rubric, result_criteria = await save_rubric_as_template(db, teacher_id, rubric_id)
 
         # Verify that db.add was called (at least for the new Rubric).
         assert db.add.called
@@ -204,7 +280,9 @@ class TestSaveRubricAsTemplate:
     async def test_uses_name_override_when_provided(self) -> None:
         teacher_id = uuid.uuid4()
         rubric_id = uuid.uuid4()
-        source_rubric = _make_rubric_orm(teacher_id=teacher_id, rubric_id=rubric_id, name="Original")
+        source_rubric = _make_rubric_orm(
+            teacher_id=teacher_id, rubric_id=rubric_id, name="Original"
+        )
 
         db = _make_db()
 
@@ -219,9 +297,7 @@ class TestSaveRubricAsTemplate:
         criteria_result = MagicMock()
         criteria_result.scalars.return_value.all.return_value = []
 
-        db.execute = AsyncMock(
-            side_effect=[ownership_result, full_rubric_result, criteria_result]
-        )
+        db.execute = AsyncMock(side_effect=[ownership_result, full_rubric_result, criteria_result])
         db.flush = AsyncMock()
 
         added_items: list[object] = []

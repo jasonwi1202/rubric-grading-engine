@@ -13,6 +13,8 @@ Personal templates have ``is_system=False`` (``teacher_id = teacher.id``).
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
@@ -26,7 +28,11 @@ from app.schemas.rubric import (
     RubricTemplateResponse,
     SaveRubricAsTemplateRequest,
 )
-from app.services.rubric_template import list_rubric_templates, save_rubric_as_template
+from app.services.rubric_template import (
+    get_rubric_template,
+    list_rubric_templates,
+    save_rubric_as_template,
+)
 
 router = APIRouter(prefix="/rubric-templates", tags=["rubric-templates"])
 
@@ -91,13 +97,44 @@ async def list_rubric_templates_endpoint(
             is_system=is_system,
             created_at=rubric.created_at,
             updated_at=rubric.updated_at,
-            criterion_count=len(criteria),
+            criterion_count=count,
         )
-        for rubric, criteria, is_system in items
+        for rubric, count, is_system in items
     ]
     return JSONResponse(
         status_code=200,
         content={"data": [item.model_dump(mode="json") for item in response_items]},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /rubric-templates/{template_id}
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{template_id}",
+    summary="Get a rubric template with full criteria",
+)
+async def get_rubric_template_endpoint(
+    template_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return a single template including all its criteria.
+
+    System templates (``is_system=true``) are accessible to any authenticated
+    teacher.  Personal templates are only accessible to the teacher who owns
+    them (403 otherwise).
+
+    Returns 404 if the template does not exist or is soft-deleted.
+    Returns 403 if a personal template belongs to a different teacher.
+    """
+    rubric, criteria, is_system = await get_rubric_template(db, teacher.id, template_id)
+    response_data = _template_response(rubric, criteria, is_system)
+    return JSONResponse(
+        status_code=200,
+        content={"data": response_data.model_dump(mode="json")},
     )
 
 

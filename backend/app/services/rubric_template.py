@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ForbiddenError, NotFoundError
@@ -35,13 +35,14 @@ logger = logging.getLogger(__name__)
 async def list_rubric_templates(
     db: AsyncSession,
     teacher_id: uuid.UUID,
-) -> list[tuple[Rubric, list[RubricCriterion], bool]]:
-    """Return system templates and the teacher's personal templates.
+) -> list[tuple[Rubric, int, bool]]:
+    """Return system templates and the teacher's personal templates with criterion counts.
 
-    Returns a list of (Rubric, criteria, is_system) tuples where
+    Returns a list of (Rubric, criterion_count, is_system) tuples where
     ``is_system`` is True for templates with no teacher owner.
 
-    Uses two queries (rubrics, then all criteria in one batch) to avoid N+1.
+    Uses two queries (rubrics, then a COUNT GROUP BY) to avoid N+1 and avoid
+    loading full criteria rows for the list view.
     System templates are returned first, then personal templates (both
     sub-groups ordered by name ascending).
     """
@@ -66,21 +67,61 @@ async def list_rubric_templates(
         return []
 
     rubric_ids = [r.id for r in rubrics]
+    counts_rows = (
+        await db.execute(
+            select(
+                RubricCriterion.rubric_id,
+                func.count(RubricCriterion.id).label("cnt"),
+            )
+            .where(RubricCriterion.rubric_id.in_(rubric_ids))
+            .group_by(RubricCriterion.rubric_id)
+        )
+    ).all()
+    counts_by_rubric: dict[uuid.UUID, int] = {row.rubric_id: row.cnt for row in counts_rows}
+
+    return [(r, counts_by_rubric.get(r.id, 0), r.teacher_id is None) for r in rubrics]
+
+
+async def get_rubric_template(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    template_id: uuid.UUID,
+) -> tuple[Rubric, list[RubricCriterion], bool]:
+    """Return a single template with full criteria.
+
+    System templates (``teacher_id IS NULL``) are accessible to any
+    authenticated teacher.  Personal templates are only accessible to their
+    owner.
+
+    Returns (Rubric, criteria, is_system).
+
+    Raises:
+        NotFoundError: If the template does not exist or is soft-deleted.
+        ForbiddenError: If a personal template belongs to a different teacher.
+    """
+    rubric_result = await db.execute(
+        select(Rubric).where(
+            Rubric.id == template_id,
+            Rubric.is_template.is_(True),
+            Rubric.deleted_at.is_(None),
+        )
+    )
+    rubric = rubric_result.scalar_one_or_none()
+    if rubric is None:
+        raise NotFoundError("Template not found.")
+
+    is_system = rubric.teacher_id is None
+    if not is_system and rubric.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this template.")
+
     criteria_result = await db.execute(
         select(RubricCriterion)
-        .where(RubricCriterion.rubric_id.in_(rubric_ids))
-        .order_by(RubricCriterion.rubric_id, RubricCriterion.display_order)
+        .where(RubricCriterion.rubric_id == template_id)
+        .order_by(RubricCriterion.display_order)
     )
-    all_criteria = list(criteria_result.scalars().all())
+    criteria = list(criteria_result.scalars().all())
 
-    criteria_by_rubric: dict[uuid.UUID, list[RubricCriterion]] = {}
-    for c in all_criteria:
-        criteria_by_rubric.setdefault(c.rubric_id, []).append(c)
-
-    return [
-        (r, criteria_by_rubric.get(r.id, []), r.teacher_id is None)
-        for r in rubrics
-    ]
+    return rubric, criteria, is_system
 
 
 async def save_rubric_as_template(

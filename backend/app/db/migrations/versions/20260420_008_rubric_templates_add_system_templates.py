@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "008_rubric_templates"
@@ -40,9 +41,9 @@ _NOW = datetime(2026, 4, 20, 0, 0, 0, tzinfo=UTC)
 # Pre-generated stable UUIDs for the system templates and their criteria so
 # that repeated upgrades/downgrades are idempotent.
 
-_FIVE_PARA_ID = "00000000-0000-0000-0001-000000000001"
-_ARGUMENTATIVE_ID = "00000000-0000-0000-0001-000000000002"
-_RESEARCH_PAPER_ID = "00000000-0000-0000-0001-000000000003"
+_FIVE_PARA_ID = uuid.UUID("00000000-0000-0000-0001-000000000001")
+_ARGUMENTATIVE_ID = uuid.UUID("00000000-0000-0000-0001-000000000002")
+_RESEARCH_PAPER_ID = uuid.UUID("00000000-0000-0000-0001-000000000003")
 
 _SYSTEM_TEMPLATE_IDS = [_FIVE_PARA_ID, _ARGUMENTATIVE_ID, _RESEARCH_PAPER_ID]
 
@@ -91,7 +92,7 @@ _RUBRICS = [
 _CRITERIA = [
     # --- 5-Paragraph Essay ---
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000001")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000001"),
         "rubric_id": _FIVE_PARA_ID,
         "name": "Thesis Statement",
         "description": (
@@ -105,7 +106,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000002")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000002"),
         "rubric_id": _FIVE_PARA_ID,
         "name": "Supporting Evidence",
         "description": (
@@ -119,7 +120,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000003")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000003"),
         "rubric_id": _FIVE_PARA_ID,
         "name": "Organization",
         "description": (
@@ -133,12 +134,11 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000004")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000004"),
         "rubric_id": _FIVE_PARA_ID,
         "name": "Grammar & Mechanics",
         "description": (
-            "Is the writing free of major grammatical, spelling, and "
-            "punctuation errors?"
+            "Is the writing free of major grammatical, spelling, and punctuation errors?"
         ),
         "weight": "25.00",
         "min_score": 1,
@@ -148,7 +148,7 @@ _CRITERIA = [
     },
     # --- Argumentative Essay ---
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000005")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000005"),
         "rubric_id": _ARGUMENTATIVE_ID,
         "name": "Claim",
         "description": (
@@ -162,7 +162,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000006")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000006"),
         "rubric_id": _ARGUMENTATIVE_ID,
         "name": "Evidence & Reasoning",
         "description": (
@@ -176,12 +176,11 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000007")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000007"),
         "rubric_id": _ARGUMENTATIVE_ID,
         "name": "Counterargument",
         "description": (
-            "Does the essay acknowledge and effectively refute at least one "
-            "opposing viewpoint?"
+            "Does the essay acknowledge and effectively refute at least one opposing viewpoint?"
         ),
         "weight": "20.00",
         "min_score": 1,
@@ -190,7 +189,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000008")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000008"),
         "rubric_id": _ARGUMENTATIVE_ID,
         "name": "Style & Voice",
         "description": (
@@ -205,7 +204,7 @@ _CRITERIA = [
     },
     # --- Research Paper ---
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000009")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000009"),
         "rubric_id": _RESEARCH_PAPER_ID,
         "name": "Thesis & Focus",
         "description": (
@@ -219,7 +218,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000010")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000010"),
         "rubric_id": _RESEARCH_PAPER_ID,
         "name": "Research & Evidence",
         "description": (
@@ -233,7 +232,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000011")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000011"),
         "rubric_id": _RESEARCH_PAPER_ID,
         "name": "Analysis & Synthesis",
         "description": (
@@ -247,7 +246,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000012")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000012"),
         "rubric_id": _RESEARCH_PAPER_ID,
         "name": "Organization",
         "description": (
@@ -261,7 +260,7 @@ _CRITERIA = [
         "anchor_descriptions": None,
     },
     {
-        "id": str(uuid.UUID("00000000-0000-0000-0002-000000000013")),
+        "id": uuid.UUID("00000000-0000-0000-0002-000000000013"),
         "rubric_id": _RESEARCH_PAPER_ID,
         "name": "Citations & Mechanics",
         "description": (
@@ -284,8 +283,8 @@ def upgrade() -> None:
     # 2. Seed system rubric templates.
     rubrics_table = sa.table(
         "rubrics",
-        sa.column("id", sa.Text),
-        sa.column("teacher_id", sa.Text),
+        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("teacher_id", postgresql.UUID(as_uuid=True)),
         sa.column("name", sa.Text),
         sa.column("description", sa.Text),
         sa.column("is_template", sa.Boolean),
@@ -297,8 +296,8 @@ def upgrade() -> None:
 
     criteria_table = sa.table(
         "rubric_criteria",
-        sa.column("id", sa.Text),
-        sa.column("rubric_id", sa.Text),
+        sa.column("id", postgresql.UUID(as_uuid=True)),
+        sa.column("rubric_id", postgresql.UUID(as_uuid=True)),
         sa.column("name", sa.Text),
         sa.column("description", sa.Text),
         sa.column("weight", sa.Numeric(5, 2)),
@@ -314,22 +313,18 @@ def downgrade() -> None:
     # 1. Remove seeded system template criteria.
     rubric_criteria_t = sa.table(
         "rubric_criteria",
-        sa.column("rubric_id", sa.Text),
+        sa.column("rubric_id", postgresql.UUID(as_uuid=True)),
     )
     op.execute(
-        rubric_criteria_t.delete().where(
-            rubric_criteria_t.c.rubric_id.in_(_SYSTEM_TEMPLATE_IDS)
-        )
+        rubric_criteria_t.delete().where(rubric_criteria_t.c.rubric_id.in_(_SYSTEM_TEMPLATE_IDS))
     )
 
     # 2. Remove seeded system template rubrics.
     rubrics_t = sa.table(
         "rubrics",
-        sa.column("id", sa.Text),
+        sa.column("id", postgresql.UUID(as_uuid=True)),
     )
-    op.execute(
-        rubrics_t.delete().where(rubrics_t.c.id.in_(_SYSTEM_TEMPLATE_IDS))
-    )
+    op.execute(rubrics_t.delete().where(rubrics_t.c.id.in_(_SYSTEM_TEMPLATE_IDS)))
 
     # 3. Re-add NOT NULL constraint (only safe if no NULL rows remain).
     op.alter_column("rubrics", "teacher_id", nullable=False)
