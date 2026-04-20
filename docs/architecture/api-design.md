@@ -358,7 +358,29 @@ System templates are accessible to any authenticated teacher; personal templates
 **POST /assignments/{id}/essays** — multipart form:
 - `files[]`: one or more files (PDF, DOCX, TXT)
 - `text`: raw text (alternative to file upload)
-- `student_id`: optional — skip auto-assignment
+- `student_id`: optional — if provided, all uploaded essays are immediately assigned to this student
+
+MIME type is validated server-side from file magic bytes (not the file extension). File size limit is enforced before reading file content (`MAX_ESSAY_FILE_SIZE_MB`, default 10 MB). The raw file is uploaded to S3 before text extraction so the original is preserved even if extraction fails.
+
+**POST /assignments/{id}/essays response (201):**
+```json
+{
+  "data": [
+    {
+      "essay_id": "uuid",
+      "essay_version_id": "uuid",
+      "assignment_id": "uuid",
+      "student_id": null,
+      "status": "unassigned",
+      "word_count": 412,
+      "file_storage_key": "essays/{assignmentId}/{essayId}/filename.pdf",
+      "submitted_at": "2026-04-20T18:00:00Z"
+    }
+  ]
+}
+```
+
+Errors: `404 NOT_FOUND` (assignment not found), `403 FORBIDDEN` (assignment belongs to another teacher), `422 VALIDATION_ERROR` (no files, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED` or `FILE_TOO_LARGE` as appropriate).
 
 ---
 
