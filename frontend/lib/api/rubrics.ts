@@ -1,19 +1,19 @@
 /**
- * Rubrics API helpers — stub for M3 implementation.
- *
- * The full CRUD implementation lives in M3. This stub exposes only the
- * `createRubric` function needed by the onboarding wizard (Step 2).
+ * Rubrics API helpers — full CRUD implementation for M3.
  *
  * Security notes:
  * - No student PII is collected or processed in this module.
  * - These endpoints require a valid JWT access token.
  */
 
-import { apiPost } from "@/lib/api/client";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api/client";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** Score-level anchor descriptions keyed by score value (as string). */
+export type AnchorDescriptions = Record<string, string>;
 
 export interface RubricCriterionRequest {
   name: string;
@@ -21,17 +21,60 @@ export interface RubricCriterionRequest {
   weight: number;
   min_score: number;
   max_score: number;
+  anchor_descriptions?: AnchorDescriptions | null;
 }
 
 export interface CreateRubricRequest {
   name: string;
+  description?: string | null;
   criteria: RubricCriterionRequest[];
 }
 
+export interface UpdateRubricRequest {
+  name?: string;
+  description?: string | null;
+  criteria?: RubricCriterionRequest[];
+}
+
+export interface RubricCriterionResponse {
+  id: string;
+  name: string;
+  description: string;
+  weight: number;
+  min_score: number;
+  max_score: number;
+  display_order: number;
+  anchor_descriptions: AnchorDescriptions | null;
+}
+
+/**
+ * Full rubric response — matches the backend payload for GET /rubrics/{id},
+ * POST /rubrics, and PATCH /rubrics/{id}.
+ */
 export interface RubricResponse {
   id: string;
   name: string;
+  description: string | null;
+  is_template: boolean;
   created_at: string;
+  updated_at: string;
+  criteria: RubricCriterionResponse[];
+}
+
+/**
+ * Alias kept for backwards compatibility — `getRubric()` returns the full shape.
+ * @deprecated Use `RubricResponse` directly.
+ */
+export type RubricDetailResponse = RubricResponse;
+
+export interface RubricListItem {
+  id: string;
+  name: string;
+  description: string | null;
+  is_template: boolean;
+  created_at: string;
+  updated_at: string;
+  criterion_count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,11 +82,46 @@ export interface RubricResponse {
 // ---------------------------------------------------------------------------
 
 /**
+ * List all rubrics for the authenticated teacher.
+ * Calls GET /api/v1/rubrics.
+ */
+export async function listRubrics(): Promise<RubricListItem[]> {
+  return apiGet<RubricListItem[]>("/rubrics");
+}
+
+/**
+ * Get a single rubric with all criteria.
+ * Calls GET /api/v1/rubrics/{rubricId}.
+ */
+export async function getRubric(rubricId: string): Promise<RubricResponse> {
+  return apiGet<RubricResponse>(`/rubrics/${rubricId}`);
+}
+
+/**
  * Create a new rubric for the authenticated teacher.
- * Calls POST /api/v1/rubrics (M3 endpoint).
+ * Calls POST /api/v1/rubrics.
  */
 export async function createRubric(
   data: CreateRubricRequest,
 ): Promise<RubricResponse> {
   return apiPost<RubricResponse>("/rubrics", data);
+}
+
+/**
+ * Update a rubric's name and/or criteria.
+ * Calls PATCH /api/v1/rubrics/{rubricId}.
+ */
+export async function updateRubric(
+  rubricId: string,
+  data: UpdateRubricRequest,
+): Promise<RubricResponse> {
+  return apiPatch<RubricResponse>(`/rubrics/${rubricId}`, data);
+}
+
+/**
+ * Soft-delete a rubric (blocked if in use by an open assignment).
+ * Calls DELETE /api/v1/rubrics/{rubricId}.
+ */
+export async function deleteRubric(rubricId: string): Promise<void> {
+  return apiDelete<void>(`/rubrics/${rubricId}`);
 }
