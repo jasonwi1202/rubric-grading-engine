@@ -200,6 +200,60 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | DELETE | `/rubrics/{rubricId}` | Soft-delete rubric (blocked if in use by an open assignment) |
 | POST | `/rubrics/{rubricId}/duplicate` | Duplicate rubric as a new draft |
 
+---
+
+### Rubric Templates
+
+System starter templates (seeded via migration) and teacher-owned personal templates.
+System templates have `is_system: true` (`teacher_id IS NULL`); personal templates have `is_system: false`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/rubric-templates` | List system + teacher's personal templates |
+| POST | `/rubric-templates` | Save a rubric as a personal template |
+
+**GET /rubric-templates response:**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "5-Paragraph Essay",
+      "description": "A starter template for five-paragraph essays.",
+      "is_system": true,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z",
+      "criterion_count": 4
+    }
+  ]
+}
+```
+
+**POST /rubric-templates body:**
+```json
+{
+  "rubric_id": "uuid-of-source-rubric",
+  "name": "Optional override name"
+}
+```
+
+**POST /rubric-templates response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "name": "My Template",
+    "description": "...",
+    "is_system": false,
+    "created_at": "2026-04-20T00:00:00Z",
+    "updated_at": "2026-04-20T00:00:00Z",
+    "criteria": [...]
+  }
+}
+```
+
+Errors: `404 NOT_FOUND` (source rubric not found), `403 FORBIDDEN` (source rubric belongs to another teacher).
+
 **POST /rubrics body:**
 ```json
 {
