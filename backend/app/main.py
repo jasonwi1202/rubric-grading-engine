@@ -195,6 +195,7 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.auth import router as auth_router
     from app.routers.classes import router as classes_router
     from app.routers.contact import router as contact_router
+    from app.routers.essays import router as essays_router
     from app.routers.health import router as health_router
     from app.routers.onboarding import router as onboarding_router
     from app.routers.rubric_templates import router as rubric_templates_router
@@ -210,6 +211,7 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(rubric_templates_router, prefix="/api/v1")
     application.include_router(classes_router, prefix="/api/v1")
     application.include_router(students_router, prefix="/api/v1")
+    application.include_router(essays_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

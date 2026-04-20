@@ -1,0 +1,361 @@
+"""Essay ingestion service.
+
+Handles file validation, S3 storage, text extraction, normalization, and
+database record creation for uploaded essay files.
+
+Pipeline:
+  1. Validate MIME type server-side using ``python-magic``
+  2. Validate file size (``settings.max_essay_file_size_mb``)
+  3. Upload raw bytes to S3 (before any extraction attempt)
+  4. Extract text: PDF → pdfplumber, DOCX → python-docx, TXT → direct read
+  5. Normalize extracted text (whitespace, Unicode, non-printable chars)
+  6. Compute word count
+  7. Create ``Essay`` + ``EssayVersion`` database records
+
+No student PII is logged at any point — only entity IDs appear in log output.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+import re
+import unicodedata
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
+from app.models.assignment import Assignment
+from app.models.class_ import Class
+from app.models.essay import Essay, EssayStatus, EssayVersion
+from app.storage.s3 import upload_file
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
+    {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+    }
+)
+
+# Minimum extracted word count below which we flag the version as potentially
+# a poor extraction (e.g. image-only PDF).
+_MIN_WORD_COUNT_THRESHOLD = 50
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — text extraction
+# ---------------------------------------------------------------------------
+
+
+def _detect_mime_type(data: bytes) -> str:
+    """Return the MIME type of *data* detected server-side via ``python-magic``.
+
+    Does **not** trust the ``Content-Type`` header or file extension — the
+    MIME type is computed from the file's magic bytes.
+    """
+    import magic  # noqa: PLC0415 — defer import; magic is always installed
+
+    return magic.from_buffer(data, mime=True)
+
+
+def _extract_text_pdf(data: bytes) -> str:
+    """Extract plain text from a PDF file using ``pdfplumber``.
+
+    Concatenates text from all pages with a single newline separator.
+    Returns an empty string if pdfplumber finds no text (e.g. image-only PDF).
+    """
+    import pdfplumber  # noqa: PLC0415 — defer import
+
+    pages: list[str] = []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            pages.append(text)
+    return "\n".join(pages)
+
+
+def _extract_text_docx(data: bytes) -> str:
+    """Extract plain text from a DOCX file using ``python-docx``.
+
+    Joins all non-empty paragraphs with a newline.
+    """
+    from docx import Document  # noqa: PLC0415 — defer import
+
+    doc = Document(io.BytesIO(data))
+    return "\n".join(para.text for para in doc.paragraphs if para.text)
+
+
+def _extract_text_txt(data: bytes) -> str:
+    """Decode a plain-text file as UTF-8 (falling back to latin-1)."""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
+
+
+def extract_text(data: bytes, mime_type: str) -> str:
+    """Dispatch text extraction to the appropriate extractor by MIME type.
+
+    Args:
+        data: Raw file bytes.
+        mime_type: Validated MIME type string (one of :data:`ALLOWED_MIME_TYPES`).
+
+    Returns:
+        Raw extracted text (un-normalized).
+
+    Raises:
+        FileTypeNotAllowedError: If ``mime_type`` is not in the allowed set.
+    """
+    if mime_type == "application/pdf":
+        return _extract_text_pdf(data)
+    if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return _extract_text_docx(data)
+    if mime_type == "text/plain":
+        return _extract_text_txt(data)
+    raise FileTypeNotAllowedError(
+        f"Unsupported MIME type for extraction: {mime_type}", field="file"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — normalization
+# ---------------------------------------------------------------------------
+
+
+def normalize_text(text: str) -> str:
+    """Normalize extracted essay text.
+
+    Steps applied in order:
+    1. NFC Unicode normalization (canonical decomposition → composition).
+    2. Remove non-printable characters (except newlines and tabs).
+    3. Collapse runs of blank lines (more than two consecutive newlines → two).
+    4. Strip leading/trailing whitespace from each line.
+    5. Strip leading/trailing whitespace from the whole string.
+
+    The result is stored verbatim as plain text — it is **never executed**.
+    """
+    # 1. NFC normalization.
+    text = unicodedata.normalize("NFC", text)
+
+    # 2. Remove non-printable characters, preserving newlines (\n) and
+    #    horizontal tabs (\t) which carry structural meaning in some files.
+    text = "".join(
+        ch for ch in text if ch in ("\n", "\t") or not unicodedata.category(ch).startswith("C")
+    )
+
+    # 3. Strip leading/trailing whitespace from each line.
+    lines = [line.rstrip() for line in text.splitlines()]
+    text = "\n".join(lines)
+
+    # 4. Collapse runs of three or more consecutive blank lines to two.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # 5. Strip the whole string.
+    return text.strip()
+
+
+def count_words(text: str) -> int:
+    """Return the number of whitespace-delimited tokens in *text*."""
+    return len(text.split())
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — validation
+# ---------------------------------------------------------------------------
+
+
+def validate_file_size(data: bytes) -> None:
+    """Raise :exc:`FileTooLargeError` if *data* exceeds the configured limit.
+
+    The limit is read from ``settings.max_essay_file_size_mb``.
+    """
+    max_bytes = settings.max_essay_file_size_mb * 1024 * 1024
+    if len(data) > max_bytes:
+        raise FileTooLargeError(
+            f"File exceeds the maximum allowed size of {settings.max_essay_file_size_mb} MB.",
+            field="file",
+        )
+
+
+def validate_mime_type(data: bytes) -> str:
+    """Detect the MIME type of *data* and raise if it is not allowed.
+
+    Returns the detected MIME type string on success.
+
+    Raises:
+        FileTypeNotAllowedError: If the MIME type is not in
+            :data:`ALLOWED_MIME_TYPES`.
+    """
+    mime_type = _detect_mime_type(data)
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise FileTypeNotAllowedError(
+            f"File type '{mime_type}' is not allowed. "
+            "Only PDF, DOCX, and plain-text files are accepted.",
+            field="file",
+        )
+    return mime_type
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers — assignment ownership
+# ---------------------------------------------------------------------------
+
+
+async def _get_assignment_for_teacher(
+    db: AsyncSession,
+    assignment_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> Assignment:
+    """Return the Assignment if it exists and is owned by *teacher_id*.
+
+    Raises:
+        NotFoundError: Assignment does not exist.
+        ForbiddenError: Assignment belongs to a different teacher.
+    """
+    # Two-step ownership check: first confirm existence, then check teacher.
+    ownership_result = await db.execute(
+        select(Assignment.id, Class.teacher_id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(Assignment.id == assignment_id)
+    )
+    row = ownership_result.one_or_none()
+    if row is None:
+        raise NotFoundError("Assignment not found.")
+    if row.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this assignment.")
+
+    result = await db.execute(
+        select(Assignment)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(Assignment.id == assignment_id, Class.teacher_id == teacher_id)
+    )
+    assignment = result.scalar_one_or_none()
+    if assignment is None:
+        raise NotFoundError("Assignment not found.")
+    return assignment
+
+
+# ---------------------------------------------------------------------------
+# Public service function
+# ---------------------------------------------------------------------------
+
+
+async def ingest_essay(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    filename: str,
+    data: bytes,
+    student_id: uuid.UUID | None = None,
+) -> tuple[Essay, EssayVersion]:
+    """Validate, store, extract, and persist a single uploaded essay file.
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (used for tenant scoping).
+        assignment_id: Target assignment UUID.
+        filename: Original filename from the upload (used only for S3 key naming
+            — never logged or executed).
+        data: Raw file bytes read from the upload.
+        student_id: Optional — if provided, the essay is immediately assigned to
+            this student.  No validation of student ownership is performed here;
+            that is the caller's responsibility.
+
+    Returns:
+        A ``(Essay, EssayVersion)`` tuple for the newly created records.
+
+    Raises:
+        FileTooLargeError: File exceeds ``settings.max_essay_file_size_mb``.
+        FileTypeNotAllowedError: MIME type is not allowed.
+        NotFoundError: Assignment does not exist.
+        ForbiddenError: Assignment belongs to a different teacher.
+
+    Security notes:
+        - MIME type is validated from magic bytes, **not** the file extension.
+        - File size is checked before any extraction attempt.
+        - The raw file is uploaded to S3 **before** extraction, preserving the
+          original even if extraction fails.
+        - Extracted text is stored as a plain string — it is never executed.
+        - No student PII appears in any log output.
+    """
+    # 1. Validate file size (fast path — before any extraction or S3 I/O).
+    validate_file_size(data)
+
+    # 2. Detect and validate MIME type from magic bytes (not file extension).
+    mime_type = validate_mime_type(data)
+
+    # 3. Verify the assignment exists and belongs to this teacher.
+    assignment = await _get_assignment_for_teacher(db, assignment_id, teacher_id)
+
+    # 4. Create the Essay record (status unassigned until auto-assign runs).
+    essay = Essay(
+        assignment_id=assignment.id,
+        student_id=student_id,
+        status=EssayStatus.unassigned if student_id is None else EssayStatus.queued,
+    )
+    db.add(essay)
+    await db.flush()  # populate essay.id
+
+    # 5. Upload the raw file to S3 before any extraction attempt.
+    #    This preserves the original even if extraction fails later.
+    s3_key = f"essays/{assignment.id}/{essay.id}/{filename}"
+    upload_file(s3_key, data, mime_type)
+    logger.info(
+        "Essay file uploaded to S3",
+        extra={"essay_id": str(essay.id), "assignment_id": str(assignment.id)},
+    )
+
+    # 6. Extract text.  On failure the essay is still preserved in S3.
+    try:
+        raw_text = extract_text(data, mime_type)
+    except Exception:
+        logger.error(
+            "Text extraction failed",
+            extra={"essay_id": str(essay.id)},
+        )
+        raise
+
+    # 7. Normalize extracted text.
+    normalized = normalize_text(raw_text)
+    words = count_words(normalized)
+
+    if words < _MIN_WORD_COUNT_THRESHOLD:
+        logger.warning(
+            "Extracted text is suspiciously short — may be an image-only PDF",
+            extra={"essay_id": str(essay.id), "word_count": words},
+        )
+
+    # 8. Create EssayVersion record (version 1 = original submission).
+    version = EssayVersion(
+        essay_id=essay.id,
+        version_number=1,
+        content=normalized,
+        file_storage_key=s3_key,
+        word_count=words,
+    )
+    db.add(version)
+
+    await db.commit()
+    await db.refresh(essay)
+    await db.refresh(version)
+
+    logger.info(
+        "Essay ingested",
+        extra={
+            "essay_id": str(essay.id),
+            "essay_version_id": str(version.id),
+            "assignment_id": str(assignment.id),
+            "word_count": words,
+        },
+    )
+    return essay, version
