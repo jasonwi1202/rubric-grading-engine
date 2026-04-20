@@ -30,10 +30,10 @@ class Rubric(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    teacher_id: Mapped[uuid.UUID] = mapped_column(
+    teacher_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)

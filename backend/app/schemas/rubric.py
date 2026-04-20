@@ -90,3 +90,46 @@ class RubricListItemResponse(BaseModel):
     criterion_count: int
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Rubric template schemas
+# ---------------------------------------------------------------------------
+
+
+class SaveRubricAsTemplateRequest(BaseModel):
+    """Request body for POST /rubric-templates.
+
+    Saves a copy of an existing rubric as a personal template.
+    """
+
+    rubric_id: uuid.UUID
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class RubricTemplateListItemResponse(BaseModel):
+    """Summary item returned by GET /rubric-templates."""
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+    criterion_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class RubricTemplateResponse(BaseModel):
+    """Full template response including criteria."""
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+    criteria: list[RubricCriterionResponse]
+
+    model_config = {"from_attributes": True}
