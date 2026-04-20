@@ -8,11 +8,7 @@
  * soft-deleted.
  */
 
-import { useEffect, useRef } from "react";
-
-// Focusable element selector for focus-trapping (matches TemplatePicker)
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { useFocusTrap } from "@/lib/utils/focus-trap";
 
 interface RemoveStudentDialogProps {
   studentName: string;
@@ -29,47 +25,9 @@ export function RemoveStudentDialog({
   onConfirm,
   isPending = false,
 }: RemoveStudentDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  // Focus management: capture previous focus, move into dialog, restore on close
-  useEffect(() => {
-    if (!open) return;
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    firstFocusable?.focus();
-    return () => {
-      previousFocusRef.current?.focus();
-    };
-  }, [open]);
+  const { dialogRef, handleKeyDown } = useFocusTrap({ open, onClose });
 
   if (!open) return null;
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      onClose();
-      return;
-    }
-    if (e.key === "Tab") {
-      const focusable = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  };
 
   return (
     <div

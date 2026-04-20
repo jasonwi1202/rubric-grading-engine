@@ -11,17 +11,14 @@
  * collected here — no essay content or grade data.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { addStudent } from "@/lib/api/classes";
 import type { EnrolledStudentResponse } from "@/lib/api/classes";
 import { ApiError } from "@/lib/api/errors";
-
-// Focusable element selector for focus-trapping (matches TemplatePicker)
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { useFocusTrap } from "@/lib/utils/focus-trap";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -59,8 +56,6 @@ export function AddStudentDialog({
   onAdded,
 }: AddStudentDialogProps) {
   const [serverError, setServerError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const {
     register,
@@ -72,50 +67,15 @@ export function AddStudentDialog({
     defaultValues: { full_name: "", external_id: "" },
   });
 
-  // Focus management: capture previous focus, move into dialog, restore on close
-  useEffect(() => {
-    if (!open) return;
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    firstFocusable?.focus();
-    return () => {
-      previousFocusRef.current?.focus();
-    };
-  }, [open]);
-
-  if (!open) return null;
-
   const handleClose = () => {
     reset();
     setServerError(null);
     onClose();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      handleClose();
-      return;
-    }
-    if (e.key === "Tab") {
-      const focusable = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  };
+  const { dialogRef, handleKeyDown } = useFocusTrap({ open, onClose: handleClose });
+
+  if (!open) return null;
 
   const onSubmit = async (values: AddStudentFormValues) => {
     setServerError(null);

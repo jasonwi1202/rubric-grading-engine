@@ -14,14 +14,11 @@
  * is stored in browser storage or logged.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { previewCsvImport, confirmCsvImport } from "@/lib/api/classes";
 import type { CsvImportPreviewResponse, CsvImportRow } from "@/lib/api/classes";
 import { ApiError } from "@/lib/api/errors";
-
-// Focusable element selector used for focus-trapping (matches TemplatePicker)
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { useFocusTrap } from "@/lib/utils/focus-trap";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -101,8 +98,6 @@ export function CsvImportDialog({
   onImported,
 }: CsvImportDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const [phase, setPhase] = useState<"upload" | "review" | "confirming">(
     "upload",
@@ -111,19 +106,6 @@ export function CsvImportDialog({
   const [preview, setPreview] = useState<CsvImportPreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Focus management: capture previous focus, move into dialog, restore on close
-  useEffect(() => {
-    if (!open) return;
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    firstFocusable?.focus();
-    return () => {
-      previousFocusRef.current?.focus();
-    };
-  }, [open]);
-
-  if (!open) return null;
 
   const handleClose = () => {
     // Reset all state on close
@@ -136,31 +118,9 @@ export function CsvImportDialog({
     onClose();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      handleClose();
-      return;
-    }
-    if (e.key === "Tab") {
-      const focusable = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  };
+  const { dialogRef, handleKeyDown } = useFocusTrap({ open, onClose: handleClose });
+
+  if (!open) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
