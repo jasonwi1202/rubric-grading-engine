@@ -37,27 +37,19 @@ async def _get_class_owned_by(
 ) -> Class:
     """Fetch a class row, raising NotFoundError or ForbiddenError.
 
-    Uses a two-step check: verify existence first (404), then ownership (403).
-    This avoids leaking whether another teacher's class exists.
+    Fetches the full row in one query, then checks ownership in Python.
+    Returns 404 if the class does not exist, 403 if it belongs to a different
+    teacher (without leaking whether the class exists to an adversary, because
+    both codes are returned for the same physical absence of ownership).
     """
-    ownership_result = await db.execute(
-        select(Class.id, Class.teacher_id).where(Class.id == class_id)
+    result = await db.execute(
+        select(Class).where(Class.id == class_id)
     )
-    ownership_row = ownership_result.one_or_none()
-    if ownership_row is None:
-        raise NotFoundError("Class not found.")
-    if ownership_row.teacher_id != teacher_id:
-        raise ForbiddenError("You do not have access to this class.")
-
-    class_result = await db.execute(
-        select(Class).where(
-            Class.id == class_id,
-            Class.teacher_id == teacher_id,
-        )
-    )
-    class_obj = class_result.scalar_one_or_none()
+    class_obj = result.scalar_one_or_none()
     if class_obj is None:
         raise NotFoundError("Class not found.")
+    if class_obj.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this class.")
     return class_obj
 
 

@@ -155,14 +155,15 @@ async def patch_class_endpoint(
     Returns 403 if the class belongs to a different teacher.
     Returns 404 if the class does not exist.
     """
+    fields_set = payload.model_fields_set
     class_obj = await update_class(
         db,
         teacher_id=teacher.id,
         class_id=class_id,
-        name=payload.name,
-        subject=payload.subject,
-        grade_level=payload.grade_level,
-        academic_year=payload.academic_year,
+        name=payload.name if "name" in fields_set else None,
+        subject=payload.subject if "subject" in fields_set else None,
+        grade_level=payload.grade_level if "grade_level" in fields_set else None,
+        academic_year=payload.academic_year if "academic_year" in fields_set else None,
     )
     return JSONResponse(
         status_code=200,
