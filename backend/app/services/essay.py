@@ -17,6 +17,7 @@ No student PII is logged at any point — only entity IDs appear in log output.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import re
@@ -308,8 +309,11 @@ async def ingest_essay(
 
     # 5. Upload the raw file to S3 before any extraction attempt.
     #    This preserves the original even if extraction fails later.
+    #    upload_file is synchronous (boto3); run it in a thread-pool executor
+    #    so it does not block the event loop.
     s3_key = f"essays/{assignment.id}/{essay.id}/{filename}"
-    upload_file(s3_key, data, mime_type)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, upload_file, s3_key, data, mime_type)
     logger.info(
         "Essay file uploaded to S3",
         extra={"essay_id": str(essay.id), "assignment_id": str(assignment.id)},
