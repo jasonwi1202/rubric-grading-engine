@@ -513,3 +513,44 @@ class TestIngestEssay:
                 data=b"content",
                 student_id=student_id,
             )
+
+    @pytest.mark.asyncio
+    async def test_extraction_failure_triggers_s3_cleanup(self) -> None:
+        """When text extraction raises, delete_file must be called with the S3 key."""
+        from app.services.essay import ingest_essay
+
+        teacher_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+
+        db = self._make_db()
+        self._setup_ownership_query(db, assignment_id, teacher_id)
+
+        def _capture_add(obj: Any) -> None:
+            if hasattr(obj, "assignment_id"):
+                obj.id = uuid.uuid4()
+
+        db.add.side_effect = _capture_add
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch(
+                "app.services.essay.extract_text",
+                side_effect=RuntimeError("extraction failed"),
+            ),
+            patch("app.services.essay.delete_file") as mock_delete,
+            pytest.raises(RuntimeError, match="extraction failed"),
+        ):
+            await ingest_essay(
+                db=db,
+                teacher_id=teacher_id,
+                assignment_id=assignment_id,
+                filename="essay.txt",
+                data=b"content",
+            )
+
+        mock_delete.assert_called_once()
+        called_key = mock_delete.call_args[0][0]
+        assert called_key.startswith(f"essays/{assignment_id}/"), (
+            f"delete_file called with unexpected key: {called_key!r}"
+        )

@@ -8,6 +8,7 @@ Pipeline:
   2. Validate file size (``settings.max_essay_file_size_mb``)
   3. Upload raw bytes to S3 (before any extraction attempt)
   4. Extract text: PDF → pdfplumber, DOCX → python-docx, TXT → direct read
+     On failure the S3 object is deleted to avoid orphaned storage objects.
   5. Normalize extracted text (whitespace, Unicode, non-printable chars)
   6. Compute word count
   7. Create ``Essay`` + ``EssayVersion`` database records
@@ -35,7 +36,7 @@ from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.student import Student
-from app.storage.s3 import upload_file
+from app.storage.s3 import delete_file, upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -352,8 +353,10 @@ async def ingest_essay(
     Security notes:
         - MIME type is validated from magic bytes, **not** the file extension.
         - File size is checked before any extraction attempt.
-        - The raw file is uploaded to S3 **before** extraction, preserving the
-          original even if extraction fails.
+        - The raw file is uploaded to S3 **before** extraction so the original
+          bytes are preserved.  If extraction subsequently fails, the S3 object
+          is deleted to avoid leaving orphaned storage objects with no matching
+          DB record.
         - The client-supplied filename is sanitized (basename only, safe chars,
           length capped) before being embedded in the S3 key.
         - Extracted text is stored as a plain string — it is never executed.
@@ -394,14 +397,22 @@ async def ingest_essay(
         extra={"essay_id": str(essay.id), "assignment_id": str(assignment.id)},
     )
 
-    # 7. Extract text.  On failure the essay is still preserved in S3.
+    # 7. Extract text.  On failure, clean up the uploaded S3 object so we don't
+    #    leave orphaned objects with no matching DB record, then re-raise.
     try:
         raw_text = extract_text(data, mime_type)
     except Exception:
-        logger.error(
-            "Text extraction failed",
-            extra={"essay_id": str(essay.id)},
+        logger.exception(
+            "Text extraction failed; cleaning up S3 object",
+            extra={"essay_id": str(essay.id), "s3_key": s3_key},
         )
+        try:
+            await loop.run_in_executor(None, delete_file, s3_key)
+        except Exception:
+            logger.exception(
+                "S3 cleanup after extraction failure also failed",
+                extra={"essay_id": str(essay.id), "s3_key": s3_key},
+            )
         raise
 
     # 8. Normalize extracted text.
@@ -410,8 +421,8 @@ async def ingest_essay(
 
     if words < _MIN_WORD_COUNT_THRESHOLD:
         logger.warning(
-            "Extracted text is suspiciously short — may be an image-only PDF",
-            extra={"essay_id": str(essay.id), "word_count": words},
+            "Extracted text is suspiciously short",
+            extra={"essay_id": str(essay.id), "word_count": words, "mime_type": mime_type},
         )
 
     # 9. Create EssayVersion record (version 1 = original submission).

@@ -359,7 +359,7 @@ System templates are accessible to any authenticated teacher; personal templates
 - `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
 - `student_id`: optional — if provided, all uploaded essays are immediately assigned to this student; only one file may be uploaded when `student_id` is set
 
-MIME type is validated server-side from file magic bytes (not the file extension). File size limit is enforced before reading file content (`MAX_ESSAY_FILE_SIZE_MB`, default 10 MB). The raw file is uploaded to S3 before text extraction so the original is preserved even if extraction fails.
+MIME type is validated server-side from file magic bytes (not the file extension). File size limit is enforced before further processing (`MAX_ESSAY_FILE_SIZE_MB`, default 10 MB); the upload handler reads at most the configured limit plus one byte to detect oversize files without loading the entire upload into memory. The raw file is uploaded to S3 before text extraction so the original is preserved even if extraction fails.
 
 **POST /assignments/{id}/essays response (201):**
 ```json
