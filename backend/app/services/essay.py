@@ -29,7 +29,7 @@ import re
 import unicodedata
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -39,6 +39,8 @@ from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.student import Student
+from app.schemas.essay import AutoAssignStatus as AutoAssignStatusType
+from app.schemas.essay import EssayListItemResponse
 from app.services.student_matching import HEADER_CHAR_LIMIT, AutoAssignResult, match_student
 from app.storage.s3 import delete_file, upload_file
 
@@ -572,3 +574,197 @@ async def ingest_essay(
         },
     )
     return essay, version, auto_result
+
+
+# ---------------------------------------------------------------------------
+# Public service functions — list and manual assignment
+# ---------------------------------------------------------------------------
+
+
+async def _get_essay_for_teacher(
+    db: AsyncSession,
+    essay_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> Essay:
+    """Return the Essay if it exists and the parent assignment belongs to *teacher_id*.
+
+    Two-step ownership check: 404 when the essay is not found at all;
+    403 when it exists but belongs to a different teacher's assignment.
+
+    Raises:
+        NotFoundError: Essay does not exist.
+        ForbiddenError: Essay belongs to a different teacher's assignment.
+    """
+    check_result = await db.execute(
+        select(Essay.id, Class.teacher_id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(Essay.id == essay_id)
+    )
+    row = check_result.one_or_none()
+    if row is None:
+        raise NotFoundError("Essay not found.")
+    if row.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this essay.")
+
+    essay_result = await db.execute(select(Essay).where(Essay.id == essay_id))
+    return essay_result.scalar_one()
+
+
+async def list_essays_for_assignment(
+    db: AsyncSession,
+    assignment_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> list[EssayListItemResponse]:
+    """Return all essays for an assignment, scoped to *teacher_id*.
+
+    Each item includes the student name (if assigned) and an
+    ``auto_assign_status`` derived from whether a student is currently
+    assigned:
+
+    - ``"assigned"``   — ``student_id`` is not null.
+    - ``"unassigned"`` — ``student_id`` is null.
+
+    The original "ambiguous" state is not persisted after the upload
+    response; essays that were formerly ambiguous appear here as
+    ``"unassigned"`` until the teacher manually assigns them.
+
+    Raises:
+        NotFoundError:  Assignment does not exist.
+        ForbiddenError: Assignment belongs to a different teacher.
+
+    No student PII appears in any log output.
+    """
+    await _get_assignment_for_teacher(db, assignment_id, teacher_id)
+
+    # Subquery: latest version number per essay.
+    latest_ver_sq = (
+        select(
+            EssayVersion.essay_id,
+            func.max(EssayVersion.version_number).label("max_ver"),
+        )
+        .group_by(EssayVersion.essay_id)
+        .subquery("latest_ver_sq")
+    )
+
+    result = await db.execute(
+        select(
+            Essay.id.label("essay_id"),
+            Essay.assignment_id,
+            Essay.student_id,
+            Essay.status,
+            Essay.created_at,
+            EssayVersion.word_count,
+            EssayVersion.submitted_at,
+            Student.full_name.label("student_name"),
+        )
+        .join(latest_ver_sq, Essay.id == latest_ver_sq.c.essay_id)
+        .join(
+            EssayVersion,
+            (Essay.id == EssayVersion.essay_id)
+            & (EssayVersion.version_number == latest_ver_sq.c.max_ver),
+        )
+        .outerjoin(
+            Student,
+            (Essay.student_id == Student.id) & (Student.teacher_id == teacher_id),
+        )
+        .where(Essay.assignment_id == assignment_id)
+        .order_by(Essay.created_at)
+    )
+
+    items: list[EssayListItemResponse] = []
+    for row in result.all():
+        auto_assign_status: AutoAssignStatusType = (
+            "assigned" if row.student_id is not None else "unassigned"
+        )
+        items.append(
+            EssayListItemResponse(
+                essay_id=row.essay_id,
+                assignment_id=row.assignment_id,
+                student_id=row.student_id,
+                student_name=row.student_name,
+                status=row.status,
+                word_count=row.word_count,
+                submitted_at=row.submitted_at,
+                auto_assign_status=auto_assign_status,
+            )
+        )
+    return items
+
+
+async def assign_essay_to_student(
+    db: AsyncSession,
+    essay_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> EssayListItemResponse:
+    """Manually assign a student to an essay (manual-correction step).
+
+    Validates that *student_id* belongs to *teacher_id* and is actively
+    enrolled in the assignment's class.  Updates ``essay.student_id`` and
+    transitions the essay status from ``unassigned`` → ``queued`` when it
+    was previously unassigned.
+
+    Returns an :class:`~app.schemas.essay.EssayListItemResponse` reflecting
+    the updated state.
+
+    Raises:
+        NotFoundError:  Essay or student not found.
+        ForbiddenError: Essay belongs to a different teacher, or the student
+            is not enrolled in the assignment's class.
+
+    No student PII appears in any log output.
+    """
+    essay = await _get_essay_for_teacher(db, essay_id, teacher_id)
+
+    # Load the assignment to obtain class_id for enrollment validation.
+    assignment_result = await db.execute(
+        select(Assignment).where(Assignment.id == essay.assignment_id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    if assignment is None:
+        raise NotFoundError("Assignment not found.")  # FK constraint broken otherwise
+
+    await _validate_student_for_assignment(db, student_id, teacher_id, assignment.class_id)
+
+    # Fetch student name for the response (never logged).
+    student_result = await db.execute(select(Student.full_name).where(Student.id == student_id))
+    student_name: str | None = student_result.scalar_one_or_none()
+    # _validate_student_for_assignment already confirmed existence; this guards
+    # against a race condition where the student was deleted between validation
+    # and the name fetch.
+    if student_name is None:
+        raise NotFoundError("Student not found.")
+
+    essay.student_id = student_id
+    if essay.status == EssayStatus.unassigned:
+        essay.status = EssayStatus.queued
+
+    await db.flush()
+
+    # Fetch the latest essay version for word_count / submitted_at.
+    version_result = await db.execute(
+        select(EssayVersion)
+        .where(EssayVersion.essay_id == essay_id)
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    version = version_result.scalar_one()
+
+    await db.commit()
+
+    logger.info(
+        "Essay manually assigned to student",
+        extra={"essay_id": str(essay_id)},
+    )
+
+    return EssayListItemResponse(
+        essay_id=essay.id,
+        assignment_id=essay.assignment_id,
+        student_id=essay.student_id,
+        student_name=student_name,
+        status=essay.status,
+        word_count=version.word_count,
+        submitted_at=version.submitted_at,
+        auto_assign_status="assigned",
+    )
