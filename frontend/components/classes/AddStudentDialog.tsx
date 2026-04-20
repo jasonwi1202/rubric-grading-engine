@@ -28,8 +28,8 @@ const addStudentSchema = z.object({
   full_name: z
     .string()
     .min(1, "Student name is required")
-    .max(200, "Name is too long"),
-  external_id: z.string().max(100, "External ID is too long").optional(),
+    .max(255, "Name is too long"),
+  external_id: z.string().max(255, "External ID is too long").optional(),
 });
 
 type AddStudentFormValues = z.infer<typeof addStudentSchema>;
@@ -109,6 +109,7 @@ export function AddStudentDialog({
         aria-labelledby="add-student-title"
         className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
         onKeyDown={handleKeyDown}
+        tabIndex={-1}
       >
         <h2
           id="add-student-title"

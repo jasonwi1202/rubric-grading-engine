@@ -142,7 +142,7 @@ export function CsvImportDialog({
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
         setError(
-          "Invalid CSV file. Make sure it has a full_name column and fewer than 200 rows.",
+          "Invalid CSV file. Make sure it has a full_name column and 200 rows or fewer.",
         );
       } else {
         setError("Failed to read the CSV file. Please try again.");
@@ -200,6 +200,7 @@ export function CsvImportDialog({
         aria-labelledby="csv-import-title"
         className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl"
         onKeyDown={handleKeyDown}
+        tabIndex={-1}
       >
         <h2
           id="csv-import-title"

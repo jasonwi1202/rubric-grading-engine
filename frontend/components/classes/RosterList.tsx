@@ -56,6 +56,7 @@ export function RosterList({ classId }: RosterListProps) {
     mutationFn: (studentId: string) => removeStudent(classId, studentId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["students", classId] });
+      void queryClient.invalidateQueries({ queryKey: ["class", classId] });
       setPendingRemove(null);
     },
     onError: () => {

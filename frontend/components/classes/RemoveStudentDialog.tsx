@@ -44,6 +44,7 @@ export function RemoveStudentDialog({
         aria-describedby="remove-student-desc"
         className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
         onKeyDown={handleKeyDown}
+        tabIndex={-1}
       >
         <h2
           id="remove-student-title"

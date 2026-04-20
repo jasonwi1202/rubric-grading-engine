@@ -10,7 +10,7 @@
  * Security: no student PII is collected here.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -27,8 +27,8 @@ const classSchema = z.object({
   name: z
     .string()
     .min(1, "Class name is required")
-    .max(200, "Class name is too long"),
-  subject: z.string().min(1, "Subject is required").max(100, "Subject is too long"),
+    .max(255, "Class name is too long"),
+  subject: z.string().min(1, "Subject is required").max(255, "Subject is too long"),
   grade_level: z.string().min(1, "Grade level is required"),
   academic_year: z.string().min(1, "Academic year is required"),
 });
@@ -54,12 +54,6 @@ const GRADE_LEVELS = [
 ];
 
 // Computed once at module load time, not on every render.
-const CURRENT_YEAR = new Date().getFullYear();
-const ACADEMIC_YEARS = [
-  `${CURRENT_YEAR - 1}–${CURRENT_YEAR}`,
-  `${CURRENT_YEAR}–${CURRENT_YEAR + 1}`,
-  `${CURRENT_YEAR + 1}–${CURRENT_YEAR + 2}`,
-];
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -69,13 +63,24 @@ export default function NewClassPage() {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
 
+  // Compute academic years inside the component using UTC year to avoid
+  // SSR/client hydration mismatches around year boundaries.
+  const academicYears = useMemo(() => {
+    const year = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)).getUTCFullYear();
+    return [
+      `${year - 1}–${year}`,
+      `${year}–${year + 1}`,
+      `${year + 1}–${year + 2}`,
+    ];
+  }, []);
+
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<ClassFormValues>({
     resolver: zodResolver(classSchema),
-    defaultValues: { academic_year: ACADEMIC_YEARS[1] },
+    defaultValues: { academic_year: academicYears[1] },
   });
 
   const onSubmit = async (values: ClassFormValues) => {
@@ -222,7 +227,7 @@ export default function NewClassPage() {
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
               {...register("academic_year")}
             >
-              {ACADEMIC_YEARS.map((year) => (
+              {academicYears.map((year) => (
                 <option key={year} value={year}>
                   {year}
                 </option>

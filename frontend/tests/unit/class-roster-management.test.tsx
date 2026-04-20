@@ -86,7 +86,7 @@ describe("AddStudentDialog — validation", () => {
     expect(mockAddStudent).not.toHaveBeenCalled();
   });
 
-  it("shows length error when name exceeds 200 characters", async () => {
+  it("shows length error when name exceeds 255 characters", async () => {
     const user = userEvent.setup();
     render(
       <AddStudentDialog
@@ -97,7 +97,7 @@ describe("AddStudentDialog — validation", () => {
       />,
     );
 
-    const longName = "A".repeat(201);
+    const longName = "A".repeat(256);
     await user.type(screen.getByLabelText(/full name/i), longName);
     await user.click(screen.getByRole("button", { name: /add student/i }));
 

@@ -37,12 +37,18 @@ export function useFocusTrap({
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // On open: capture the previously focused element and move focus into the dialog.
+  // If no focusable child exists (e.g., pending state), focus the panel itself so
+  // Escape/Tab handling continues to work.
   // On unmount/close: restore focus to the captured element.
   useEffect(() => {
     if (!open) return;
     previousFocusRef.current = document.activeElement as HTMLElement;
     const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    firstFocusable?.focus();
+    if (firstFocusable) {
+      firstFocusable.focus();
+    } else {
+      dialogRef.current?.focus();
+    }
     return () => {
       previousFocusRef.current?.focus();
     };
