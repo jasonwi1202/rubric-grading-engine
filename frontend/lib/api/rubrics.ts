@@ -26,11 +26,13 @@ export interface RubricCriterionRequest {
 
 export interface CreateRubricRequest {
   name: string;
+  description?: string | null;
   criteria: RubricCriterionRequest[];
 }
 
 export interface UpdateRubricRequest {
   name?: string;
+  description?: string | null;
   criteria?: RubricCriterionRequest[];
 }
 

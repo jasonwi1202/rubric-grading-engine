@@ -1,7 +1,7 @@
 # Feature: Rubric Builder
 
 **Phase:** 1 — MVP
-**Status:** Implemented (M3 — backend CRUD in #80, builder UI in #81)
+**Status:** Partially Implemented (M3 — backend CRUD in #80, builder UI in #81; rubric templates, versioning, and multiple scale types are planned for future phases)
 
 ---
 

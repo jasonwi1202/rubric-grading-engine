@@ -21,7 +21,7 @@ export default function NewRubricPage() {
         name: values.name,
         criteria: values.criteria,
       });
-      router.push("/dashboard/rubrics");
+      router.push("/dashboard");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login?next=/dashboard/rubrics/new");
@@ -44,7 +44,7 @@ export default function NewRubricPage() {
       <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
         <RubricBuilderForm
           onSave={handleSave}
-          onCancel={() => router.push("/dashboard/rubrics")}
+          onCancel={() => router.push("/dashboard")}
           saveLabel="Create rubric"
         />
       </div>

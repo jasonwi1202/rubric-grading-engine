@@ -66,7 +66,7 @@ export const rubricFormSchema = z
     name: z
       .string()
       .min(1, "Rubric name is required")
-      .max(200, "Rubric name is too long"),
+      .max(255, "Rubric name is too long"),
     criteria: z
       .array(criterionSchema)
       .min(1, "At least one criterion is required")
@@ -554,16 +554,17 @@ export function RubricBuilderForm({
   const liveCriteria = useWatch({ control, name: "criteria" });
   const weightSum = computeWeightSum(liveCriteria ?? []);
 
-  // Track which criterion rows are expanded
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  // Track which criterion rows are expanded — keyed by stable field.id so
+  // reordering does not collapse/expand the wrong row.
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  const toggleExpand = useCallback((idx: number) => {
+  const toggleExpand = useCallback((id: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) {
-        next.delete(idx);
+      if (next.has(id)) {
+        next.delete(id);
       } else {
-        next.add(idx);
+        next.add(id);
       }
       return next;
     });
@@ -737,8 +738,8 @@ export function RubricBuilderForm({
                 index={idx}
                 total={fields.length}
                 isSubmitting={isSubmitting}
-                isExpanded={expandedRows.has(idx)}
-                onToggleExpand={() => toggleExpand(idx)}
+                isExpanded={expandedRows.has(field.id)}
+                onToggleExpand={() => toggleExpand(field.id)}
                 onMoveUp={() => move(idx, idx - 1)}
                 onMoveDown={() => move(idx, idx + 1)}
                 onRemove={() => remove(idx)}

@@ -35,7 +35,7 @@ test.describe("Rubric Builder — unauthenticated redirects", () => {
   test("visiting /dashboard/rubrics/:id/edit redirects to /login", async ({
     page,
   }) => {
-    await page.goto("/dashboard/rubrics/00000000-0000-0000-0000-000000000001/edit");
+    await page.goto("/dashboard/rubrics/test-rubric-id/edit");
     await expect(page).toHaveURL(/\/login/);
   });
 });

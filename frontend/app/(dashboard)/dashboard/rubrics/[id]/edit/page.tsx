@@ -40,7 +40,7 @@ export default function EditRubricPage() {
         if (err instanceof ApiError && err.status === 401) {
           router.replace(`/login?next=/dashboard/rubrics/${rubricId}/edit`);
         } else if (err instanceof ApiError && err.status === 403) {
-          router.replace("/dashboard/rubrics");
+          router.replace("/dashboard");
         } else {
           setLoadError("Could not load rubric. Please try again.");
         }
@@ -58,7 +58,7 @@ export default function EditRubricPage() {
         name: values.name,
         criteria: values.criteria,
       });
-      router.push("/dashboard/rubrics");
+      router.push("/dashboard");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace(`/login?next=/dashboard/rubrics/${rubricId}/edit`);
@@ -94,7 +94,7 @@ export default function EditRubricPage() {
         </p>
         <button
           type="button"
-          onClick={() => router.push("/dashboard/rubrics")}
+          onClick={() => router.push("/dashboard")}
           className="mt-4 text-sm text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
         >
           Back to rubrics
@@ -127,7 +127,7 @@ export default function EditRubricPage() {
         <RubricBuilderForm
           defaultValues={defaultValues}
           onSave={handleSave}
-          onCancel={() => router.push("/dashboard/rubrics")}
+          onCancel={() => router.push("/dashboard")}
           saveLabel="Save changes"
         />
       </div>
