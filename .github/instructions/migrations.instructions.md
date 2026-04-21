@@ -45,6 +45,10 @@ Reference: `docs/architecture/migrations.md#zero-downtime-migration-rules`
 - [ ] Column names are `snake_case`
 - [ ] `UNIQUE` constraints are intentional and reflect a domain requirement, not just DB convenience
 - [ ] `pgvector` columns (`embedding`) use the correct `Vector(N)` type and have an appropriate index (ivfflat or hnsw)
+- [ ] **ORM model indexes match the migration** — if a SQLAlchemy model column has `index=True`, a corresponding single-column index must exist in the migration. If the migration only creates a composite index, remove `index=True` from the ORM column to prevent Alembic autogenerate drift on subsequent runs.
+- [ ] **Postgres trigger functions have an explicit `RETURN` statement** — a `RETURNS trigger` function that never executes `RETURN` will raise a Postgres error at `CREATE FUNCTION` time. Row-level triggers must `RETURN NEW` (or `RETURN OLD` for DELETE triggers).
+- [ ] **Seed data uses `INSERT ... ON CONFLICT DO NOTHING`** — `op.bulk_insert` without conflict handling causes PK violations and migration failure if the migration is re-run after a partial upgrade.
+- [ ] **Dropping extensions in `downgrade()` is flagged** — dropping `CREATE EXTENSION` (e.g., `vector`, `pgcrypto`) in downgrade can break other schemas or pre-existing installations that depended on the extension. Document the risk in a comment; prefer leaving extensions installed.
 
 ## Audit Log Special Rules
 

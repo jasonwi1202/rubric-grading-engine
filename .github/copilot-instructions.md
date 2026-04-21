@@ -138,8 +138,11 @@ These rules are not suggestions. Do not deviate from them for any reason, includ
 ### Database
 
 - **All queries use `AsyncSession`.** No synchronous SQLAlchemy calls anywhere in the codebase.
+- **`db.add()` and `db.delete()` are synchronous — never `await` them.** Only `execute`, `flush`, `commit`, `refresh`, and `rollback` are awaitable on `AsyncSession`. Awaiting a synchronous method silently awaits `None` in production.
 - **No `SELECT *`.** Always specify columns or use mapped model attributes explicitly.
-- **Every tenant-scoped query includes `teacher_id`.** No exceptions. If a query touches classes, students, assignments, essays, grades, rubrics, or audit logs and does not filter by `teacher_id`, it is wrong.
+- **Every tenant-scoped query includes `teacher_id` — in the query itself, not only in a prior ownership check.** No exceptions. The pattern of doing an ownership check in one query and then fetching data in a second query without `teacher_id` is a tenant isolation gap. Both the check and the fetch must enforce `teacher_id`.
+- **`IntegrityError` must be caught at every `db.commit()` that can hit a uniqueness constraint.** Catch, rollback, and re-raise as `ConflictError`. An uncaught `IntegrityError` from a concurrent request returns 500.
+- **All endpoints return the `{"data": ...}` response envelope.** Never return a bare JSON object or list. The frontend `apiGet()` / `apiPost()` unwraps `json.data`; a bare response causes it to return `undefined` silently.
 - **Rubric snapshot, always.** Grading code always reads `assignment.rubric_snapshot`. It never queries the live `rubrics` or `rubric_criteria` tables during grading or grade validation.
 - **Audit log is INSERT-only.** No code path may UPDATE or DELETE from `audit_logs`. If you need to "undo" something, insert a new corrective entry.
 
@@ -154,13 +157,22 @@ These rules are not suggestions. Do not deviate from them for any reason, includ
 ### Authentication & Security
 
 - **`get_current_teacher` on every protected route.** No endpoint that reads or writes teacher data is missing this dependency.
+- **Missing or invalid credentials return 401, not 403 or 422.** The frontend silent-refresh cycle fires specifically on 401. A 403 or 422 for an expired/missing token strands the session without attempting token refresh.
 - **Cross-teacher access returns 403.** Do not return 404 in a way that reveals whether another teacher's resource exists.
 - **No student PII in logs.** `logger.*` calls use entity IDs (`essay_id`, `student_id`, `grade_id`). Never log student names, essay text, scores, or feedback content.
+- **S3 object keys are never logged or included in exception messages.** Keys are derived from user-supplied filenames and can contain student PII. Log only the operation type and entity ID.
+- **Error log calls use `error_type=type(exc).__name__`, never `str(exc)`.** Exception messages can carry student PII. Bind `error_type` only.
+- **Error responses never contain `str(exc)` verbatim.** Return a static, stable message string; do not pass the exception message to the client.
 - **Secrets come from `settings.*` only.** Never read environment variables directly with `os.environ.get()` or `os.getenv()` in application code. Use the `pydantic-settings` config object.
 
 ### Frontend
 
 - **All API calls go through `lib/api/client.ts`.** No raw `fetch()` or `axios` in components or hooks.
+- **Frontend TypeScript API types must match backend Pydantic schemas exactly.** Before writing or finalizing types in `lib/api/`, do a side-by-side check against the corresponding schema in `backend/app/schemas/`. Verify field names, nullability (`string | null` vs `string`), required vs optional, and nested shapes.
+- **Zod form validation constraints must match backend Pydantic constraints.** Field `max_length`, numeric `min`/`max`, and required/optional must be identical. Mismatches cause avoidable 422 errors or block valid user input.
+- **Every new modal/dialog must implement the full accessibility baseline**: focus moves in on open, focus is trapped while open (Tab/Shift-Tab cycle within), Escape closes it, focus returns to the trigger on close. Radix UI / shadcn `Dialog` handles this — do not override the default focus management behaviors.
+- **Do not wire UI to backend endpoints that do not yet exist.** Use `enabled: false` on queries or disable mutation triggers for unimplemented endpoints. A page that calls a non-existent endpoint errors on load in every environment.
+- **After mutations, invalidate all affected query keys — not just the directly mutated entity.** Adding/removing a student also invalidates class detail (for `student_count`); a status transition also invalidates assignment list queries.
 - **All server state uses React Query.** No `useEffect + fetch` for data that comes from the API.
 - **Locked grades are read-only.** When `grade.is_locked === true`, all score and feedback edit controls must be visually and functionally disabled — not just hidden.
 - **No student data in browser storage.** Nothing in `localStorage`, `sessionStorage`, or cookies that contains student names, essay content, scores, or feedback.
@@ -169,6 +181,7 @@ These rules are not suggestions. Do not deviate from them for any reason, includ
 
 - **No real OpenAI calls in tests.** The LLM client is always mocked. Any test that would make a real API call is wrong.
 - **No student PII in test fixtures.** Use `Faker` or factory helpers for all student-like data. No hardcoded names, essay excerpts, or realistic-looking grades.
+- **No credential-format strings in test fixtures.** Values like `"sk-test"` or `"AKIATEST"` trigger secret scanners even when fake. Use clearly synthetic strings like `"test-openai-key"`.
 - **Tenant isolation is explicitly tested.** Every new API endpoint that returns teacher-scoped data must have a test that verifies a second teacher cannot access the first teacher's resource.
 
 ---

@@ -125,9 +125,11 @@ def _score_filename(filename_stem: str, student_name: str) -> float:
     if not q or not n:
         return 0.0
     return (
-        max(
-            fuzz.ratio(q, n),
-            fuzz.token_sort_ratio(q, n),
+        float(
+            max(
+                fuzz.ratio(q, n),
+                fuzz.token_sort_ratio(q, n),
+            )
         )
         / 100.0
     )
@@ -143,9 +145,11 @@ def _score_author(author: str, student_name: str) -> float:
     if not q or not n:
         return 0.0
     return (
-        max(
-            fuzz.ratio(q, n),
-            fuzz.token_sort_ratio(q, n),
+        float(
+            max(
+                fuzz.ratio(q, n),
+                fuzz.token_sort_ratio(q, n),
+            )
         )
         / 100.0
     )
@@ -166,7 +170,7 @@ def _score_header(header: str, student_name: str) -> float:
     h = _normalize_name(header)
     if not h or not n:
         return 0.0
-    return fuzz.partial_ratio(n, h) / 100.0
+    return float(fuzz.partial_ratio(n, h)) / 100.0
 
 
 # ---------------------------------------------------------------------------

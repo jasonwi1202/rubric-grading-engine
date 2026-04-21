@@ -12,6 +12,9 @@ When reviewing a PR that touches `backend/**`, check every item below.
 - [ ] Request and response bodies match the Pydantic schemas in `backend/app/schemas/` exactly
 - [ ] Error responses use the structured format: `{"error": {"code": "...", "message": "...", "field": "..."}}`
 - [ ] New endpoints have corresponding entries reflected in `docs/architecture/api-design.md`
+- [ ] **All endpoints return the `{"data": ...}` response envelope** — never return a bare JSON object or bare list. A bare response causes `apiGet()` / `apiPost()` in the frontend client to silently return `undefined`. Use `JSONResponse(content={"data": ...})` or the project's `DataResponse` wrapper consistently.
+- [ ] **`IntegrityError` is caught at every `db.commit()` that could hit a uniqueness constraint** — wrap in try/except, rollback, and re-raise as `ConflictError`. An unhandled `IntegrityError` from a concurrent request returns a generic 500 to the client.
+- [ ] **Uploaded filenames are never embedded raw in S3 keys or error messages** — sanitize/normalize filenames before constructing S3 object keys, and never echo `upload.filename` in exception messages (FERPA: filenames can contain student PII).
 
 ## Authentication & Authorization
 
@@ -25,6 +28,7 @@ Every query touching classes, students, assignments, essays, grades, or rubrics 
 
 - [ ] All service functions accept `teacher_id` as an explicit parameter
 - [ ] Every database query includes `WHERE teacher_id = :teacher_id` or an equivalent join that enforces teacher ownership
+- [ ] **No two-query ownership pattern** — do NOT do a `teacher_id` check in one query and then fetch data in a second query that omits `teacher_id`. Both the ownership check and the data fetch must be in a single query, or the data fetch must independently include `teacher_id`. A check-then-fetch pattern without scoping the data query is a tenant isolation gap even if the check passes.
 - [ ] Celery tasks include `teacher_id` in their payload and validate ownership before loading any entity
 - [ ] Cross-teacher access attempts return `403` — do not return `404` in ways that leak existence
 - [ ] RLS policy on the table is set for all tenant-scoped entities (see `docs/architecture/security.md#2-multi-tenant-data-isolation`)
@@ -47,12 +51,15 @@ Reference: `docs/architecture/security.md#1-prompt-injection-defense`
 - [ ] Essay content is never logged at any level in production code paths
 - [ ] No student data is sent to third-party services not covered by a DPA
 - [ ] Student data is never used for LLM fine-tuning or model training
+- [ ] **S3 object keys are never logged or included in exception messages** — keys are often derived from user-supplied filenames which can contain student PII. Log only the operation type and entity ID. Raise `StorageError` with a generic message, chaining the original exception for debugging only.
 
 Reference: `docs/architecture/security.md#5-ferpa-compliance`
 
 ## Audit Log
 
 Every endpoint that changes grade state or performs a consequential access/admin action must write an audit log entry. See the full action catalog in `docs/architecture/data-model.md#auditlog`.
+
+- [ ] **Any new `action` value used in an audit log entry must be added to the action catalog** in `docs/architecture/data-model.md#auditlog`. Using an undocumented action code creates unhandled cases when the frontend or reports branch on `action`.
 
 **Grade events** (every change to grade state):
 - [ ] `score_override` on any criterion score change
@@ -85,6 +92,17 @@ Reference: `docs/architecture/data-model.md#auditlog`, `docs/architecture/securi
 
 Reference: `docs/architecture/data-model.md#key-design-decisions`
 
+## Structured Logging
+
+- [ ] **All error log calls include `error_type=type(exc).__name__`** — do NOT log `str(exc)` or pass `exc_info=exc` directly. Exception messages can contain user-controlled strings that may include student PII. Bind `error_type` only.
+- [ ] **Error responses never contain `str(exc)` verbatim** — exception messages from framework internals or upstream services can expose implementation details. Return a static, stable message string; do not pass the exception string to `_error_response()` or the `message` field.
+- [ ] **Unused injected dependencies are removed** — if a router injects `db: AsyncSession = Depends(get_db)` but never uses it, remove the parameter. An open DB connection is allocated per request regardless of usage.
+
+## Authentication Error Codes
+
+- [ ] **Missing or invalid credentials return HTTP 401, not 403 or 422** — the frontend silent-refresh cycle is triggered specifically on 401. Returning 403 (missing credentials) or 422 (expired token validation error) prevents the refresh-cookie reauth path from firing and strands the session.
+- [ ] `get_current_teacher` raises `UnauthorizedError` (mapped to 401) for missing, expired, or malformed tokens — not `ForbiddenError` (403) or `ValidationError` (422).
+
 ## Code Quality
 
 - [ ] All public functions have type annotations (`mypy` strict)
@@ -92,16 +110,22 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] `ruff format --check .` passes with zero "would reformat" files from `backend/`
 - [ ] No `# type: ignore` without an inline explanation
 - [ ] SQLAlchemy queries use `AsyncSession` — no synchronous DB calls in async endpoints
+- [ ] **`db.add()` and `db.delete()` are synchronous** — do NOT `await` them. Only `db.flush()`, `db.commit()`, `db.refresh()`, and `db.execute()` are awaitable. Awaiting a synchronous method silently awaits `None` in production and causes `AsyncMock` mismatches in tests.
+- [ ] **No blocking CPU or sync I/O inside `async def` functions** — `bcrypt.hashpw()` is CPU-bound and will stall the event loop. Use `anyio.to_thread.run_sync()` / `starlette.concurrency.run_in_threadpool()`. Redis calls must use `redis.asyncio.Redis`, not the synchronous `redis.Redis` client.
+- [ ] **`asyncio.get_event_loop()` is deprecated on Python 3.12+** — use `asyncio.get_running_loop()` in code that already runs inside an async context, or `asyncio.run()` to start a new event loop.
 - [ ] No `SELECT *` — always select specific columns
 - [ ] Services are not aware of HTTP — no `Request`, `Response`, or status code imports in `app/services/`
 - [ ] Routers contain no business logic — they validate input, call a service, and return a response
+- [ ] **Docstrings and inline comments must accurately describe the actual implementation** — a docstring that describes aspirational or draft behavior, references a function that doesn't exist, or documents a pipeline that has since changed is worse than no docstring. Before committing, read each docstring in modified files and verify it matches what the code actually does. Pay special attention to: step-by-step pipeline descriptions, "this function is idempotent" claims, and cross-references to other functions.
 
 ## Celery Tasks
 
 - [ ] New tasks are registered in `app/tasks/celery_app.py`
+- [ ] **Tasks accept only IDs, never full entity objects** — passing full data into a task payload means retries use stale data from the original enqueue, not the current state. Tasks must load their own data from the DB using the ID.
+- [ ] **Tasks use exponential backoff** — do not set a fixed `default_retry_delay`. Use `countdown=2 ** self.request.retries` or equivalent. A fixed delay defeats the retry strategy during outages.
 - [ ] Tasks are idempotent — safe to re-run if a worker crashes mid-execution
-- [ ] Tasks use exponential backoff retry — no infinite retries
-- [ ] Tasks accept IDs (not full objects) and load data themselves
+- [ ] **Scan/batch tasks must be truly idempotent** — if a scheduled task can be triggered twice in the same window (e.g., by a cron overlap), verify it does not produce duplicate side effects (e.g., duplicate emails). Document the invariant in a comment.
+- [ ] **Task configuration values come from `settings.*`** — do not hardcode `result_expires`, `task_soft_time_limit`, or queue names inline. Hardcoded values cause staging/prod drift.
 - [ ] Task failures write a visible error state to the affected entity — never silently drop
 
 ## Pre-Push Local CI Checklist
