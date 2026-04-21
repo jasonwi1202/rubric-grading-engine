@@ -176,6 +176,9 @@ describe("BatchGradingPanel — Progress bar", () => {
     const bar = await screen.findByRole("progressbar");
     expect(bar).toHaveAttribute("aria-valuenow", "50");
     expect(bar).toHaveAttribute("aria-valuemax", "100");
+    // Visible text showing counts
+    expect(screen.getByText(/4 of 10 complete/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 failed/i)).toBeInTheDocument();
   });
 
   it("shows 0% when total is 0", async () => {

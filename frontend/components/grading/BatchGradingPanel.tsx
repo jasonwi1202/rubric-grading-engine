@@ -211,20 +211,40 @@ export function BatchGradingPanel({
   const queryClient = useQueryClient();
 
   /**
-   * Whether we have triggered grading in this session and should start
-   * polling. Also starts polling if the assignment is already mid-grading
-   * when the page loads (polling begins as soon as a non-idle status arrives).
+   * Whether the grading status query is enabled. Starts as `false` to avoid
+   * polling on idle assignments. Becomes `true` when:
+   * - The teacher clicks "Grade now" (triggerMutation.onSuccess)
+   * - The initial one-shot status query returns a non-idle status, indicating
+   *   the assignment is already mid-grading from a previous session.
    */
-  const [pollingEnabled, setPollingEnabled] = useState(true);
+  const [pollingEnabled, setPollingEnabled] = useState(false);
+
+  // One-shot initial fetch to check if grading is already in progress
+  // (e.g. teacher navigates to the page after grading was triggered elsewhere).
+  const { data: initialStatus } = useQuery<GradingStatusResponse>({
+    queryKey: ["grading-status-initial", assignmentId],
+    queryFn: async () => {
+      const status = await getGradingStatus(assignmentId);
+      if (status.status !== "idle") {
+        setPollingEnabled(true);
+      }
+      return status;
+    },
+    enabled: !!assignmentId,
+    staleTime: Infinity,
+    retry: false,
+  });
+  void initialStatus; // consumed only for its side-effect above
 
   // ----- Grading status polling -----
   const {
     data: gradingStatus,
+    isLoading: statusLoading,
     isError: statusError,
   } = useQuery<GradingStatusResponse>({
     queryKey: ["grading-status", assignmentId],
     queryFn: () => getGradingStatus(assignmentId),
-    enabled: !!assignmentId && pollingEnabled,
+    enabled: pollingEnabled,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return POLL_INTERVAL_MS;
@@ -243,8 +263,10 @@ export function BatchGradingPanel({
   // When the batch reaches a terminal state, disable polling
   const isTerminal =
     gradingStatus != null && TERMINAL_STATUSES.has(gradingStatus.status);
+  // isIdle is true only when grading status is explicitly idle (not during loading)
   const isIdle =
-    gradingStatus == null || gradingStatus.status === "idle";
+    !statusLoading &&
+    (gradingStatus == null || gradingStatus.status === "idle");
 
   // ----- Trigger grading -----
   const triggerMutation = useMutation({
