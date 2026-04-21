@@ -12,7 +12,7 @@ Reference: `docs/architecture/testing-guide.md`
 
 - [ ] Overall backend test coverage ≥ 80% (`pytest-cov` enforced in CI)
 - [ ] LLM response parsers coverage ≥ 95% — `backend/app/llm/parsers.py` is fully deterministic and must be thoroughly tested
-- [ ] Every new public service function has at least one unit test
+- [ ] Every new public service function has at least one **direct unit test** — router-level tests that mock the service at the boundary do not substitute for service unit tests. Service error branches (e.g., `ForbiddenError`, `ConflictError`, soft-delete semantics) must be tested at the service layer.
 - [ ] Every new API endpoint has both a happy-path and at least one error-case integration test
 
 ## Test Structure
@@ -60,6 +60,11 @@ Reference: `docs/architecture/testing-guide.md#llm-mocking`
 - [ ] Meaningful assertion messages: `assert result == expected, f"Got {result}, expected {expected}"`
 - [ ] No `time.sleep()` in tests — use `freeze_time` for time-dependent logic
 - [ ] Database is clean before each test — use transaction rollback fixture or explicit TRUNCATE
+
+## SQLAlchemy Async Mock Correctness
+
+- [ ] **`db.add()` and `db.delete()` must be mocked as `MagicMock`, not `AsyncMock`** — these are synchronous methods on `AsyncSession`. Mocking them as `AsyncMock` makes tests pass against incorrect `await db.add(...)` / `await db.delete(...)` calls that would fail at runtime. If production code is fixed to not await these methods, tests that used `AsyncMock` will need to be updated too.
+- [ ] **Only awaitable `AsyncSession` methods use `AsyncMock`**: `execute`, `flush`, `commit`, `refresh`, `rollback`, `close`.
 
 ## Integration Test Error Assertions
 

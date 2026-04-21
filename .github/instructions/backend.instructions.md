@@ -12,6 +12,9 @@ When reviewing a PR that touches `backend/**`, check every item below.
 - [ ] Request and response bodies match the Pydantic schemas in `backend/app/schemas/` exactly
 - [ ] Error responses use the structured format: `{"error": {"code": "...", "message": "...", "field": "..."}}`
 - [ ] New endpoints have corresponding entries reflected in `docs/architecture/api-design.md`
+- [ ] **All endpoints return the `{"data": ...}` response envelope** — never return a bare JSON object or bare list. A bare response causes `apiGet()` / `apiPost()` in the frontend client to silently return `undefined`. Use `JSONResponse(content={"data": ...})` or the project's `DataResponse` wrapper consistently.
+- [ ] **`IntegrityError` is caught at every `db.commit()` that could hit a uniqueness constraint** — wrap in try/except, rollback, and re-raise as `ConflictError`. An unhandled `IntegrityError` from a concurrent request returns a generic 500 to the client.
+- [ ] **Uploaded filenames are never embedded raw in S3 keys or error messages** — sanitize/normalize filenames before constructing S3 object keys, and never echo `upload.filename` in exception messages (FERPA: filenames can contain student PII).
 
 ## Authentication & Authorization
 
@@ -25,6 +28,7 @@ Every query touching classes, students, assignments, essays, grades, or rubrics 
 
 - [ ] All service functions accept `teacher_id` as an explicit parameter
 - [ ] Every database query includes `WHERE teacher_id = :teacher_id` or an equivalent join that enforces teacher ownership
+- [ ] **No two-query ownership pattern** — do NOT do a `teacher_id` check in one query and then fetch data in a second query that omits `teacher_id`. Both the ownership check and the data fetch must be in a single query, or the data fetch must independently include `teacher_id`. A check-then-fetch pattern without scoping the data query is a tenant isolation gap even if the check passes.
 - [ ] Celery tasks include `teacher_id` in their payload and validate ownership before loading any entity
 - [ ] Cross-teacher access attempts return `403` — do not return `404` in ways that leak existence
 - [ ] RLS policy on the table is set for all tenant-scoped entities (see `docs/architecture/security.md#2-multi-tenant-data-isolation`)
@@ -92,6 +96,7 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] `ruff format --check .` passes with zero "would reformat" files from `backend/`
 - [ ] No `# type: ignore` without an inline explanation
 - [ ] SQLAlchemy queries use `AsyncSession` — no synchronous DB calls in async endpoints
+- [ ] **`db.add()` and `db.delete()` are synchronous** — do NOT `await` them. Only `db.flush()`, `db.commit()`, `db.refresh()`, and `db.execute()` are awaitable. Awaiting a synchronous method silently awaits `None` in production and causes `AsyncMock` mismatches in tests.
 - [ ] No `SELECT *` — always select specific columns
 - [ ] Services are not aware of HTTP — no `Request`, `Response`, or status code imports in `app/services/`
 - [ ] Routers contain no business logic — they validate input, call a service, and return a response
