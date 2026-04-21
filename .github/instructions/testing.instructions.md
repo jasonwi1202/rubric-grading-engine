@@ -52,6 +52,7 @@ Reference: `docs/architecture/testing-guide.md#llm-mocking`
 - [ ] No hardcoded UUIDs — generate with `uuid4()` or factory fixtures
 - [ ] No hardcoded timestamps — use `datetime.now(UTC)` or `freeze_time`
 - [ ] Factories defined in `backend/tests/factories.py` — inline dict construction is not permitted for model instances
+- [ ] **No credential-format strings in fixtures or `conftest.py`** — values like `"sk-test"` (OpenAI) or `"AKIATEST"` (AWS) trigger secret scanners (GitHub push protection, truffleHog) even when fake. Use clearly synthetic strings like `"test-openai-key"` or `"fake-aws-key-for-testing"` that no scanner will flag as a real credential format.
 
 ## Test Quality
 

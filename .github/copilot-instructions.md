@@ -157,8 +157,12 @@ These rules are not suggestions. Do not deviate from them for any reason, includ
 ### Authentication & Security
 
 - **`get_current_teacher` on every protected route.** No endpoint that reads or writes teacher data is missing this dependency.
+- **Missing or invalid credentials return 401, not 403 or 422.** The frontend silent-refresh cycle fires specifically on 401. A 403 or 422 for an expired/missing token strands the session without attempting token refresh.
 - **Cross-teacher access returns 403.** Do not return 404 in a way that reveals whether another teacher's resource exists.
 - **No student PII in logs.** `logger.*` calls use entity IDs (`essay_id`, `student_id`, `grade_id`). Never log student names, essay text, scores, or feedback content.
+- **S3 object keys are never logged or included in exception messages.** Keys are derived from user-supplied filenames and can contain student PII. Log only the operation type and entity ID.
+- **Error log calls use `error_type=type(exc).__name__`, never `str(exc)`.** Exception messages can carry student PII. Bind `error_type` only.
+- **Error responses never contain `str(exc)` verbatim.** Return a static, stable message string; do not pass the exception message to the client.
 - **Secrets come from `settings.*` only.** Never read environment variables directly with `os.environ.get()` or `os.getenv()` in application code. Use the `pydantic-settings` config object.
 
 ### Frontend
@@ -177,6 +181,7 @@ These rules are not suggestions. Do not deviate from them for any reason, includ
 
 - **No real OpenAI calls in tests.** The LLM client is always mocked. Any test that would make a real API call is wrong.
 - **No student PII in test fixtures.** Use `Faker` or factory helpers for all student-like data. No hardcoded names, essay excerpts, or realistic-looking grades.
+- **No credential-format strings in test fixtures.** Values like `"sk-test"` or `"AKIATEST"` trigger secret scanners even when fake. Use clearly synthetic strings like `"test-openai-key"`.
 - **Tenant isolation is explicitly tested.** Every new API endpoint that returns teacher-scoped data must have a test that verifies a second teacher cannot access the first teacher's resource.
 
 ---

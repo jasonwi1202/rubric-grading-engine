@@ -11,6 +11,7 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 - [ ] All API calls go through `lib/api/client.ts` and the typed resource wrappers in `lib/api/` — no raw `fetch()` in components or hooks
 - [ ] **API response types in `lib/api/` are verified against the actual Pydantic schemas in `backend/app/schemas/` before merge** — field names, nullability (`string | null` vs `string`), and shape must match exactly. Mismatched types cause runtime errors that TypeScript cannot catch because `apiGet()` returns `data` from the envelope.
 - [ ] **All new TypeScript API types are cross-checked against the backend** — run a quick side-by-side comparison of the `Response`/`Request` types here against the Pydantic `Response`/`Request` schemas. Pay specific attention to: optional vs required fields, `null` vs `undefined`, nested object shapes, and fields the backend returns that are not yet on the frontend type.
+- [ ] **API helper paths must be relative (no `/api/v1/` prefix)** — `NEXT_PUBLIC_API_URL` already includes `/api/v1`. Using a full path like `/api/v1/contact/inquiry` produces a double-prefix at runtime. All paths passed to `apiGet`/`apiPost` must be relative, e.g., `/contact/inquiry`.
 - [ ] No hardcoded API URLs — use `NEXT_PUBLIC_API_URL` environment variable
 - [ ] No API keys or secrets in any frontend file — all sensitive operations go through the backend
 
@@ -64,7 +65,7 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 ## Loading & Error States
 
 - [ ] Every data-fetching component handles `isLoading` → skeleton, `isError` → user-friendly message
-- [ ] Never render `error.message` directly to the user
+- [ ] **Never render `error.message` or server-supplied error text directly to users** — server error strings can be unstable, expose internal details, or include student PII. Map to a small set of safe UI strings based on `err.code` or HTTP status (e.g., `'invalid_credentials'` → "Email or password is incorrect", generic fallback otherwise).
 - [ ] Skeleton components use `shadcn/ui Skeleton` for consistency
 - [ ] Empty states (zero results) are explicitly handled and not left blank
 
@@ -78,7 +79,10 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 - [ ] Color is not the only means of conveying state (score badges, status indicators include text)
 - [ ] Real-time updates (grading progress) announced via `aria-live="polite"` region
 
-## Tests Required
+## Next.js Route Groups & Middleware
+
+- [ ] **Route group names (`(auth)`, `(dashboard)`, `(public)`) do not produce URL path segments** — `app/(dashboard)/page.tsx` is served at `/`, not `/dashboard`. Middleware `matcher` patterns must target the actual URL, not the folder name. Verify that `matcher` in `middleware.ts` fires for all routes that need protection.
+- [ ] When adding a new protected route, confirm the middleware matcher pattern covers it and test an unauthenticated request manually.
 
 - [ ] Vitest + React Testing Library test for every new component
 - [ ] Test covers: renders correctly, loading state, error state, key user interactions
