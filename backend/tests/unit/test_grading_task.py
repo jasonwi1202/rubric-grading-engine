@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.exceptions import LLMError
+from app.exceptions import ForbiddenError, LLMError
 from app.tasks.celery_app import celery
 from app.tasks.grading import _revert_essay_to_queued, _run_grade_essay, grade_essay
 
@@ -69,10 +69,13 @@ class TestRunGradeEssay:
         cm.__aenter__ = AsyncMock(return_value=db_mock)
         cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm), patch(
-            "app.services.grading.grade_essay",
-            new=AsyncMock(return_value=grade_mock),
-        ) as mock_svc:
+        with (
+            patch("app.tasks.grading.AsyncSessionLocal", return_value=cm),
+            patch(
+                "app.services.grading.grade_essay",
+                new=AsyncMock(return_value=grade_mock),
+            ) as mock_svc,
+        ):
             result = await _run_grade_essay(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
 
         assert result == str(grade_id)
@@ -86,10 +89,14 @@ class TestRunGradeEssay:
         cm.__aenter__ = AsyncMock(return_value=db_mock)
         cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm), patch(
-            "app.services.grading.grade_essay",
-            new=AsyncMock(side_effect=LLMError("LLM timed out")),
-        ), pytest.raises(LLMError):
+        with (
+            patch("app.tasks.grading.AsyncSessionLocal", return_value=cm),
+            patch(
+                "app.services.grading.grade_essay",
+                new=AsyncMock(side_effect=LLMError("LLM timed out")),
+            ),
+            pytest.raises(LLMError),
+        ):
             await _run_grade_essay(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
 
 
@@ -105,6 +112,7 @@ class TestRevertEssayToQueued:
         from app.models.essay import EssayStatus
 
         essay_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
         essay_mock = MagicMock()
         essay_mock.status = EssayStatus.grading
 
@@ -120,7 +128,7 @@ class TestRevertEssayToQueued:
         cm.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm):
-            await _revert_essay_to_queued(essay_id)
+            await _revert_essay_to_queued(essay_id, teacher_id)
 
         assert essay_mock.status == EssayStatus.queued
         db_mock.commit.assert_called_once()
@@ -129,6 +137,7 @@ class TestRevertEssayToQueued:
     async def test_no_error_when_essay_not_found(self) -> None:
         """_revert_essay_to_queued is a no-op when the essay doesn't exist."""
         essay_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
 
         db_mock = AsyncMock()
         result_mock = MagicMock()
@@ -141,7 +150,7 @@ class TestRevertEssayToQueued:
 
         with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm):
             # Should not raise
-            await _revert_essay_to_queued(essay_id)
+            await _revert_essay_to_queued(essay_id, teacher_id)
 
         db_mock.commit.assert_not_called()
 
@@ -186,7 +195,7 @@ class TestGradeEssayTask:
             ),
             patch(
                 "app.tasks.grading._revert_essay_to_queued",
-                new=AsyncMock(side_effect=lambda eid: revert_called.append(eid)),
+                new=AsyncMock(side_effect=lambda eid, tid: revert_called.append(eid)),
             ),
         ):
             result = grade_essay.apply(args=[essay_id, teacher_id, "balanced"])
@@ -209,7 +218,7 @@ class TestGradeEssayTask:
             ),
             patch(
                 "app.tasks.grading._revert_essay_to_queued",
-                new=AsyncMock(side_effect=lambda eid: revert_called.append(eid)),
+                new=AsyncMock(side_effect=lambda eid, tid: revert_called.append(eid)),
             ),
         ):
             result = grade_essay.apply(args=[essay_id, teacher_id, "balanced"])
@@ -231,10 +240,32 @@ class TestGradeEssayTask:
             ),
             patch(
                 "app.tasks.grading._revert_essay_to_queued",
-                new=AsyncMock(side_effect=lambda eid: revert_called.append(eid)),
+                new=AsyncMock(side_effect=lambda eid, tid: revert_called.append(eid)),
             ),
         ):
             result = grade_essay.apply(args=[essay_id, teacher_id, "balanced"])
 
         assert result.failed(), "Task should be in FAILURE state for non-LLM exceptions"
         assert revert_called, "Essay should be reverted on unrecoverable errors"
+
+    def test_forbidden_error_does_not_revert_essay(self) -> None:
+        """ForbiddenError does not trigger _revert_essay_to_queued (nothing to revert)."""
+        essay_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        revert_called: list[str] = []
+
+        with (
+            patch(
+                "app.tasks.grading._run_grade_essay",
+                new=AsyncMock(side_effect=ForbiddenError("Not your essay")),
+            ),
+            patch(
+                "app.tasks.grading._revert_essay_to_queued",
+                new=AsyncMock(side_effect=lambda eid, tid: revert_called.append(eid)),
+            ),
+        ):
+            result = grade_essay.apply(args=[essay_id, teacher_id, "balanced"])
+
+        assert result.failed(), "Task should fail with ForbiddenError"
+        assert len(revert_called) == 0, "Revert must not be called for ForbiddenError"

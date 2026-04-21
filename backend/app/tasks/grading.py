@@ -24,7 +24,7 @@ import logging
 import uuid
 
 from app.db.session import AsyncSessionLocal
-from app.exceptions import LLMError
+from app.exceptions import ForbiddenError, LLMError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
@@ -49,18 +49,32 @@ async def _run_grade_essay(essay_id: str, teacher_id: str, strictness: str) -> s
         return str(grade.id)
 
 
-async def _revert_essay_to_queued(essay_id: str) -> None:
+async def _revert_essay_to_queued(essay_id: str, teacher_id: str) -> None:
     """Set the essay status back to ``queued`` after exhausted retries.
+
+    The query is scoped to *teacher_id* (via Assignment → Class join) to
+    enforce tenant isolation — this helper must never mutate an essay owned
+    by a different teacher.
 
     This allows the teacher to trigger a re-grade instead of leaving the
     essay stuck in ``grading`` status.
     """
     from sqlalchemy import select  # noqa: PLC0415
 
+    from app.models.assignment import Assignment  # noqa: PLC0415
+    from app.models.class_ import Class  # noqa: PLC0415
     from app.models.essay import Essay, EssayStatus  # noqa: PLC0415
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Essay).where(Essay.id == uuid.UUID(essay_id)))
+        result = await db.execute(
+            select(Essay)
+            .join(Assignment, Essay.assignment_id == Assignment.id)
+            .join(Class, Assignment.class_id == Class.id)
+            .where(
+                Essay.id == uuid.UUID(essay_id),
+                Class.teacher_id == uuid.UUID(teacher_id),
+            )
+        )
         essay = result.scalar_one_or_none()
         if essay is not None:
             essay.status = EssayStatus.queued
@@ -99,6 +113,14 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
     """
     try:
         return asyncio.run(_run_grade_essay(essay_id, teacher_id, strictness))
+    except ForbiddenError:
+        # Essay does not belong to this teacher — nothing was written and the
+        # essay status was never changed, so there is nothing to revert.
+        logger.warning(
+            "Grading task forbidden — essay does not belong to teacher",
+            extra={"essay_id": essay_id},
+        )
+        raise
     except LLMError as exc:
         attempt = self.request.retries  # type: ignore[attr-defined]
         if attempt < self.max_retries:  # type: ignore[attr-defined]
@@ -117,7 +139,7 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
             "Grading task failed — retries exhausted, reverting essay to queued",
             extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
-        asyncio.run(_revert_essay_to_queued(essay_id))
+        asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
         raise
 
     except Exception as exc:
@@ -125,5 +147,5 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
             "Grading task failed with unrecoverable error",
             extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
-        asyncio.run(_revert_essay_to_queued(essay_id))
+        asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
         raise

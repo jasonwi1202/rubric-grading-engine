@@ -27,12 +27,14 @@ import json
 import logging
 import uuid
 from decimal import Decimal
+from typing import Any, cast
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.llm.client import CriterionInfo, call_grading
 from app.models.assignment import Assignment
 from app.models.audit_log import AuditLog
@@ -124,9 +126,11 @@ async def grade_essay(
     # ------------------------------------------------------------------
     # 4. Extract criteria from the immutable rubric snapshot.
     #    Grading NEVER reads the live rubric or rubric_criteria rows.
+    #    cast() narrows the JSONB column (typed as dict[str, object]) to
+    #    dict[str, Any] so downstream attribute access is type-safe.
     # ------------------------------------------------------------------
-    snapshot: dict[str, object] = assignment.rubric_snapshot
-    criteria_data: list[dict[str, object]] = snapshot.get("criteria", [])  # type: ignore[assignment]
+    snapshot = cast(dict[str, Any], assignment.rubric_snapshot)
+    criteria_data = cast(list[dict[str, Any]], snapshot.get("criteria", []))
 
     criteria: list[CriterionInfo] = [
         CriterionInfo(
@@ -167,9 +171,7 @@ async def grade_essay(
     total_score = Decimal(
         sum(cs.score if cs.score is not None else 0 for cs in grading_response.criterion_scores)
     )
-    max_possible_score = Decimal(
-        sum(int(str(c["max_score"])) for c in criteria_data)
-    )
+    max_possible_score = Decimal(sum(int(str(c["max_score"])) for c in criteria_data))
 
     # ------------------------------------------------------------------
     # 8. Write Grade record.
@@ -193,8 +195,15 @@ async def grade_essay(
     for cs in grading_response.criterion_scores:
         ai_score = cs.score if cs.score is not None else 0
         criterion_uuid = uuid.UUID(cs.criterion_id)
+        # Generate the CriterionScore PK client-side before construction so
+        # it can be used as entity_id in the audit log entry at the same time —
+        # SQLAlchemy's column default is applied during flush, not at object
+        # creation, so we cannot rely on criterion_score.id being populated
+        # until after the session is flushed.
+        criterion_score_id = uuid.uuid4()
 
         criterion_score = CriterionScore(
+            id=criterion_score_id,
             grade_id=grade.id,
             rubric_criterion_id=criterion_uuid,
             ai_score=ai_score,
@@ -208,14 +217,21 @@ async def grade_essay(
         if cs.score_clamped:
             # Log the clamping event to the audit log.
             # teacher_id is None — this is a system-generated event.
-            # Entity ID is the criterion UUID from the snapshot (not
-            # the criterion_score row, which is not yet committed).
+            # entity_id points at the CriterionScore row so audit queries
+            # can reliably join back to the exact score record.
+            # raw_score may be None when the LLM returned an unparseable
+            # value (e.g. a string that wasn't numeric); the JSONB column
+            # accepts null, and the absence of raw_score is itself
+            # informative.
             audit_entry = AuditLog(
                 teacher_id=None,
                 entity_type="criterion_score",
-                entity_id=criterion_uuid,
+                entity_id=criterion_score_id,
                 action="score_clamped",
-                before_value={"criterion_id": cs.criterion_id},
+                before_value={
+                    "criterion_id": cs.criterion_id,
+                    "raw_score": cs.raw_score,
+                },
                 after_value={
                     "criterion_id": cs.criterion_id,
                     "clamped_score": ai_score,
@@ -225,9 +241,17 @@ async def grade_essay(
 
     # ------------------------------------------------------------------
     # 10. Update essay status → graded and commit.
+    #     IntegrityError on commit means the essay version was already
+    #     graded (unique constraint on Grade.essay_version_id) — surface
+    #     as ConflictError so the task/caller gets a recoverable failure
+    #     instead of a generic 500.
     # ------------------------------------------------------------------
     essay.status = EssayStatus.graded
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError("This essay version has already been graded.") from exc
     await db.refresh(grade)
 
     logger.info(

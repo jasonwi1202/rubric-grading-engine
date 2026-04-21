@@ -330,6 +330,8 @@ class TestScoreClampedAuditLog:
             needs_review=True,
             confidence="low",
         )
+        # Simulate that the parser recorded the pre-clamp raw score.
+        grading_resp.criterion_scores[0].raw_score = 10
 
         added_objects: list[object] = []
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
@@ -338,6 +340,7 @@ class TestScoreClampedAuditLog:
             await grade_essay(db, essay.id, teacher_id, "balanced")
 
         from app.models.audit_log import AuditLog as AuditLogModel
+        from app.models.grade import CriterionScore as CriterionScoreModel
 
         audit_entries = [o for o in added_objects if isinstance(o, AuditLogModel)]
         assert len(audit_entries) == 1, "Expected one score_clamped audit entry"
@@ -345,6 +348,19 @@ class TestScoreClampedAuditLog:
         assert entry.action == "score_clamped"
         assert entry.entity_type == "criterion_score"
         assert entry.teacher_id is None  # System-generated event
+        # entity_id must point at the CriterionScore row, not the rubric criterion.
+        cs_objs = [o for o in added_objects if isinstance(o, CriterionScoreModel)]
+        assert len(cs_objs) == 1
+        assert entry.entity_id == cs_objs[0].id, (
+            "Audit entry entity_id must match CriterionScore.id"
+        )
+        # before_value stores the raw LLM score; after_value stores the clamped score.
+        assert entry.before_value is not None
+        assert "raw_score" in entry.before_value
+        assert entry.before_value["raw_score"] == 10
+        assert entry.after_value is not None
+        assert "clamped_score" in entry.after_value
+        assert entry.after_value["clamped_score"] == 1  # The clamped value
 
     @pytest.mark.asyncio
     async def test_no_audit_entry_when_score_not_clamped(self) -> None:
@@ -589,3 +605,36 @@ class TestGradeEssayMissingCriterion:
         grade_objs = [o for o in added_objects if isinstance(o, GradeModel)]
         assert len(grade_objs) == 1
         assert grade_objs[0].total_score == Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# Tests — IntegrityError → ConflictError
+# ---------------------------------------------------------------------------
+
+
+class TestGradeEssayIntegrityError:
+    @pytest.mark.asyncio
+    async def test_integrity_error_on_commit_raises_conflict_error(self) -> None:
+        """IntegrityError on commit (duplicate grade) is raised as ConflictError."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.exceptions import ConflictError
+
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        db.commit = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
+
+        grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
+
+        with (
+            patch("app.services.grading.call_grading", return_value=grading_resp),
+            pytest.raises(ConflictError),
+        ):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        db.rollback.assert_called_once()
