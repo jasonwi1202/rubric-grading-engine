@@ -26,6 +26,7 @@ import {
   STATUS_LABELS,
 } from "@/lib/api/assignments";
 import type { AssignmentStatus, SubmissionStatusItem } from "@/lib/api/assignments";
+import { BatchGradingPanel } from "@/components/grading/BatchGradingPanel";
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -216,6 +217,16 @@ export default function AssignmentOverviewPage() {
               </p>
             </div>
           )}
+
+          {/* Batch grading panel */}
+          <div className="mb-8">
+            <BatchGradingPanel
+              assignmentId={assignmentId}
+              canGrade={
+                assignment.status === "open" || assignment.status === "grading"
+              }
+            />
+          </div>
 
           {/* Submission status table */}
           <section aria-labelledby="submission-status-heading">
