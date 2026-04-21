@@ -819,7 +819,7 @@ class TestGradingV2PromptToneInjection:
     """Tests for tone injection in the grading-v2 prompt builder."""
 
     def test_build_messages_injects_tone_in_system_prompt(self) -> None:
-        """The system prompt contains the active tone value."""
+        """The system prompt contains the active tone value on the tone-injection line."""
         from app.llm.prompts.grading_v2 import build_messages  # noqa: PLC0415
 
         for tone in ("encouraging", "direct", "academic"):
@@ -830,10 +830,13 @@ class TestGradingV2PromptToneInjection:
                 tone=tone,
             )
             system_content = messages[0]["content"]
-            assert tone in system_content, f"Tone '{tone}' not found in system prompt"
+            tone_line = f"Tone for student-facing feedback and summary_feedback: {tone}"
+            assert tone_line in system_content, (
+                f"Expected injected tone line '{tone_line}' not found in system prompt"
+            )
 
     def test_build_messages_default_tone_is_direct(self) -> None:
-        """Omitting tone defaults to 'direct'."""
+        """Omitting tone defaults to 'direct' on the tone-injection line."""
         from app.llm.prompts.grading_v2 import build_messages  # noqa: PLC0415
 
         messages = build_messages(
@@ -842,7 +845,10 @@ class TestGradingV2PromptToneInjection:
             essay_text="Test essay.",
         )
         system_content = messages[0]["content"]
-        assert "direct" in system_content
+        tone_line = "Tone for student-facing feedback and summary_feedback: direct"
+        assert tone_line in system_content, (
+            f"Expected default tone line '{tone_line}' not found in system prompt"
+        )
 
     def test_essay_text_is_in_user_role_not_system(self) -> None:
         """Essay content must never appear in the system prompt (injection defense)."""

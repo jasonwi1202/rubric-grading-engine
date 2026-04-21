@@ -167,7 +167,8 @@ def _build_messages_with_tone(
 
     Passes ``tone`` only when the prompt module's ``build_messages`` (or
     ``build_retry_messages``) accepts it — grading-v2+.  Falls back to the
-    two-argument call for grading-v1 to preserve backwards compatibility.
+    three-argument call (``rubric_json``, ``strictness``, ``essay_text``) for
+    grading-v1 to preserve backwards compatibility.
 
     Args:
         module: The loaded prompt module (e.g. ``grading_v1`` or ``grading_v2``).
