@@ -134,7 +134,7 @@ const ASSIGNMENT_DRAFT = {
   id: "asgn-001",
   class_id: "cls-001",
   rubric_id: "rub-001",
-  rubric_name: "5-Paragraph Essay",
+  rubric_snapshot: { name: "5-Paragraph Essay" },
   title: "Unit 1 Essay",
   prompt: null,
   due_date: null,

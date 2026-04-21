@@ -161,9 +161,8 @@ export default function ClassDetailPage() {
                     <div>
                       <p className="font-semibold text-gray-900">{a.title}</p>
                       <p className="mt-0.5 text-xs text-gray-500">
-                        Rubric: {a.rubric_name}
                         {a.due_date
-                          ? ` · Due ${new Date(a.due_date).toLocaleDateString()}`
+                          ? `Due ${new Date(a.due_date).toLocaleDateString(undefined, { timeZone: "UTC" })}`
                           : ""}
                       </p>
                     </div>

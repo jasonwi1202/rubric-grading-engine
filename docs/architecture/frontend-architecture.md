@@ -34,25 +34,24 @@ frontend/
 │   │   ├── dashboard/page.tsx    # Dashboard home (worklist, recent activity)
 │   │   ├── assignments/
 │   │   │   └── [assignmentId]/
-│   │   │       └── page.tsx      # Assignment overview (submission status, status transitions)
+│   │   │       ├── page.tsx      # Assignment overview (submission status, status transitions)
+│   │   │       └── essays/
+│   │   │           └── page.tsx  # Essay upload and management
 │   │   ├── classes/
 │   │   │   ├── page.tsx          # Class list
+│   │   │   ├── new/
+│   │   │   │   └── page.tsx      # Create class
 │   │   │   └── [classId]/
 │   │   │       ├── page.tsx      # Class overview + assignment list
-│   │   │       ├── assignments/
-│   │   │       │   └── new/
-│   │   │       │       └── page.tsx  # Assignment creation form
-│   │   │       ├── students/
-│   │   │       │   └── [studentId]/page.tsx   # Student profile
 │   │   │       └── assignments/
-│   │   │           └── [assignmentId]/
-│   │   │               └── review/
-│   │   │                   └── [essayId]/page.tsx  # Essay review
-│   │   ├── rubrics/
-│   │   │   ├── page.tsx
-│   │   │   └── [rubricId]/page.tsx
-│   │   └── worklist/
-│   │       └── page.tsx
+│   │   │           └── new/
+│   │   │               └── page.tsx  # Assignment creation form
+│   │   └── rubrics/
+│   │       ├── new/
+│   │       │   └── page.tsx      # Create rubric
+│   │       └── [id]/
+│   │           └── edit/
+│   │               └── page.tsx  # Edit rubric
 │
 ├── components/
 │   ├── ui/                       # Base primitives (shadcn/ui wrappers) — populated in a future milestone

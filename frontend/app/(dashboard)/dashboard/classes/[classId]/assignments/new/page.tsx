@@ -83,6 +83,7 @@ export default function NewAssignmentPage() {
   const {
     data: selectedRubric,
     isLoading: rubricDetailLoading,
+    isError: rubricDetailError,
   } = useQuery({
     queryKey: ["rubric", selectedRubricId],
     queryFn: () => getRubric(selectedRubricId),
@@ -157,7 +158,7 @@ export default function NewAssignmentPage() {
               type="text"
               autoComplete="off"
               placeholder="e.g. Persuasive Essay — Unit 3"
-              disabled={isSubmitting}
+              disabled={isSubmitting || createMutation.isPending}
               aria-describedby={errors.title ? "title-error" : undefined}
               aria-invalid={!!errors.title}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
@@ -182,7 +183,7 @@ export default function NewAssignmentPage() {
             <textarea
               id="prompt"
               rows={4}
-              disabled={isSubmitting}
+              disabled={isSubmitting || createMutation.isPending}
               placeholder="Describe the writing task or instructions for students…"
               aria-describedby={errors.prompt ? "prompt-error" : undefined}
               aria-invalid={!!errors.prompt}
@@ -217,7 +218,7 @@ export default function NewAssignmentPage() {
             {!rubricsError && (
               <select
                 id="rubric_id"
-                disabled={isSubmitting || rubricsLoading}
+                disabled={isSubmitting || createMutation.isPending || rubricsLoading}
                 aria-describedby={errors.rubric_id ? "rubric-id-error" : undefined}
                 aria-invalid={!!errors.rubric_id}
                 aria-busy={rubricsLoading}
@@ -276,7 +277,12 @@ export default function NewAssignmentPage() {
                     ))}
                   </div>
                 )}
-                {!rubricDetailLoading && selectedRubric && (
+                {rubricDetailError && (
+                  <p className="text-sm text-red-600">
+                    Failed to load rubric criteria. Please try again.
+                  </p>
+                )}
+                {!rubricDetailLoading && !rubricDetailError && selectedRubric && (
                   <ul className="space-y-1.5" role="list">
                     {selectedRubric.criteria.map((c) => (
                       <li
@@ -307,7 +313,7 @@ export default function NewAssignmentPage() {
             <input
               id="due_date"
               type="date"
-              disabled={isSubmitting}
+              disabled={isSubmitting || createMutation.isPending}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
               {...register("due_date")}
             />

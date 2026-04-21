@@ -84,26 +84,39 @@ export interface SubmissionStatusItem {
   submitted_at: string | null;
 }
 
-/** Full assignment detail including per-student submission status. */
+/**
+ * Full assignment detail returned by GET /assignments/{id}.
+ *
+ * Matches backend `AssignmentResponse`. The rubric name is read from the
+ * immutable `rubric_snapshot` — never from a live rubric record.
+ *
+ * `submission_statuses` is not returned by the backend today; it is optional
+ * here so callers can attach it via a separate endpoint in a future milestone.
+ */
 export interface AssignmentDetailResponse {
   id: string;
   class_id: string;
   rubric_id: string;
-  rubric_name: string;
+  rubric_snapshot: { name: string; [key: string]: unknown };
   title: string;
   prompt: string | null;
   due_date: string | null;
   status: AssignmentStatus;
   created_at: string;
-  submission_statuses: SubmissionStatusItem[];
+  submission_statuses?: SubmissionStatusItem[];
 }
 
-/** Lightweight item returned by the list endpoint. */
+/**
+ * Lightweight item returned by GET /classes/{classId}/assignments.
+ *
+ * Note: the backend list endpoint (`AssignmentListItemResponse`) does not
+ * include a rubric name field. Callers that need the name should read it from
+ * `rubric_snapshot.name` on the detail endpoint.
+ */
 export interface AssignmentListItem {
   id: string;
   class_id: string;
   rubric_id: string;
-  rubric_name: string;
   title: string;
   prompt: string | null;
   due_date: string | null;

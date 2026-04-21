@@ -83,6 +83,9 @@ export default function AssignmentOverviewPage() {
       updateAssignment(assignmentId, { status: nextStatus }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["assignment", assignmentId], updated);
+      queryClient.invalidateQueries({
+        queryKey: ["assignments", updated.class_id],
+      });
     },
   });
 
@@ -161,9 +164,9 @@ export default function AssignmentOverviewPage() {
                 </span>
               </div>
               <p className="mt-1 text-sm text-gray-500">
-                Rubric: {assignment.rubric_name}
+                Rubric: {assignment.rubric_snapshot.name}
                 {assignment.due_date
-                  ? ` \u00b7 Due ${new Date(assignment.due_date).toLocaleDateString()}`
+                  ? ` \u00b7 Due ${new Date(assignment.due_date).toLocaleDateString(undefined, { timeZone: "UTC" })}`
                   : ""}
               </p>
             </div>
@@ -223,7 +226,7 @@ export default function AssignmentOverviewPage() {
               Student submissions
             </h2>
 
-            {assignment.submission_statuses.length === 0 ? (
+            {(assignment.submission_statuses ?? []).length === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-gray-200 p-10 text-center">
                 <p className="text-sm text-gray-500">
                   No students enrolled in this class yet.
@@ -258,7 +261,7 @@ export default function AssignmentOverviewPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {assignment.submission_statuses.map((item) => (
+                    {(assignment.submission_statuses ?? []).map((item) => (
                       <tr key={item.student_id} className="hover:bg-gray-50">
                         <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                           {item.student_name}
