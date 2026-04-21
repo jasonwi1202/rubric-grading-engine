@@ -32,15 +32,20 @@ frontend/
 │   ├── (dashboard)/              # Authenticated teacher area
 │   │   ├── layout.tsx            # Stub — sidebar, nav, session guard planned (future milestone)
 │   │   ├── dashboard/page.tsx    # Dashboard home (worklist, recent activity)
+│   │   ├── assignments/
+│   │   │   └── [assignmentId]/
+│   │   │       └── page.tsx      # Assignment overview (submission status, status transitions)
 │   │   ├── classes/
 │   │   │   ├── page.tsx          # Class list
 │   │   │   └── [classId]/
-│   │   │       ├── page.tsx      # Class overview
+│   │   │       ├── page.tsx      # Class overview + assignment list
+│   │   │       ├── assignments/
+│   │   │       │   └── new/
+│   │   │       │       └── page.tsx  # Assignment creation form
 │   │   │       ├── students/
 │   │   │       │   └── [studentId]/page.tsx   # Student profile
 │   │   │       └── assignments/
 │   │   │           └── [assignmentId]/
-│   │   │               ├── page.tsx           # Assignment overview
 │   │   │               └── review/
 │   │   │                   └── [essayId]/page.tsx  # Essay review
 │   │   ├── rubrics/
