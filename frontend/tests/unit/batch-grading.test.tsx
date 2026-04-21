@@ -430,9 +430,11 @@ describe("BatchGradingPanel — Retry action", () => {
     const retryButtons = screen.getAllByRole("button", { name: /retry/i });
     // Only one retry button — for the failed essay
     expect(retryButtons).toHaveLength(1);
+    // The component uses .slice(0, 8) for the aria-label prefix.
+    // "essay-jjj-010".slice(0, 8) === "essay-jj"
     expect(retryButtons[0]).toHaveAttribute(
       "aria-label",
-      expect.stringContaining("essay-jj"),
+      "Retry grading for essay essay-jj",
     );
   });
 

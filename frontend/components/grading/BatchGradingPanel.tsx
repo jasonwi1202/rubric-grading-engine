@@ -31,6 +31,7 @@ import type {
   EssayGradingEntry,
   EssayGradingStatus,
 } from "@/lib/api/grading";
+import { ApiError } from "@/lib/api/errors";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -76,6 +77,26 @@ const ERROR_TYPE_LABELS: Record<string, string> = {
 function errorLabel(code: string | null | undefined): string {
   if (!code) return "Unknown error";
   return ERROR_TYPE_LABELS[code] ?? "Grading error";
+}
+
+/**
+ * Map API error codes from the retry endpoint to teacher-facing messages.
+ * Never shows raw exception text or internal server details.
+ */
+function retryErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "NOT_FOUND":
+        return "Essay not found. Please refresh the page.";
+      case "FORBIDDEN":
+        return "You do not have permission to retry this essay.";
+      case "CONFLICT":
+        return "This essay is already being graded.";
+      default:
+        return "Retry failed. Please try again.";
+    }
+  }
+  return "Retry failed. Please try again.";
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +288,7 @@ export function BatchGradingPanel({
             queryKey: ["grading-status", assignmentId],
           });
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           setRetryingIds((prev) => {
             const next = new Set(prev);
             next.delete(essayId);
@@ -275,7 +296,7 @@ export function BatchGradingPanel({
           });
           setRetryErrors((prev) => ({
             ...prev,
-            [essayId]: "Retry failed. Please try again.",
+            [essayId]: retryErrorMessage(err),
           }));
         });
     },
