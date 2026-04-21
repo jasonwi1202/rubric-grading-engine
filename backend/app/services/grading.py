@@ -125,14 +125,14 @@ async def grade_essay(
     # 4. Extract criteria from the immutable rubric snapshot.
     #    Grading NEVER reads the live rubric or rubric_criteria rows.
     # ------------------------------------------------------------------
-    snapshot: dict[str, object] = assignment.rubric_snapshot  # type: ignore[assignment]
+    snapshot: dict[str, object] = assignment.rubric_snapshot
     criteria_data: list[dict[str, object]] = snapshot.get("criteria", [])  # type: ignore[assignment]
 
     criteria: list[CriterionInfo] = [
         CriterionInfo(
             criterion_id=str(c["id"]),
-            min_score=int(c["min_score"]),  # type: ignore[arg-type]
-            max_score=int(c["max_score"]),  # type: ignore[arg-type]
+            min_score=int(str(c["min_score"])),
+            max_score=int(str(c["max_score"])),
         )
         for c in criteria_data
     ]
@@ -168,7 +168,7 @@ async def grade_essay(
         sum(cs.score if cs.score is not None else 0 for cs in grading_response.criterion_scores)
     )
     max_possible_score = Decimal(
-        sum(int(c["max_score"]) for c in criteria_data)  # type: ignore[arg-type]
+        sum(int(str(c["max_score"])) for c in criteria_data)
     )
 
     # ------------------------------------------------------------------
