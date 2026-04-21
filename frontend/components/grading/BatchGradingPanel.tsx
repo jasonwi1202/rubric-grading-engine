@@ -216,6 +216,7 @@ export function BatchGradingPanel({
   // returns `false` when status is idle or terminal, preventing unnecessary requests.
   const {
     data: gradingStatus,
+    isLoading: statusLoading,
     isError: statusError,
   } = useQuery<GradingStatusResponse>({
     queryKey: ["grading-status", assignmentId],
@@ -311,6 +312,27 @@ export function BatchGradingPanel({
     }
     return null;
   })();
+
+  // ----- Loading state -----
+  if (statusLoading) {
+    return (
+      <section aria-labelledby="batch-grading-heading" className="space-y-4">
+        <h2
+          id="batch-grading-heading"
+          className="text-base font-semibold text-gray-900"
+        >
+          Batch grading
+        </h2>
+        <div
+          aria-live="polite"
+          aria-busy="true"
+          className="py-8 text-center text-sm text-gray-500"
+        >
+          Loading grading progress…
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section aria-labelledby="batch-grading-heading" className="space-y-4">

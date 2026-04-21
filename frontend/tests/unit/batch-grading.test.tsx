@@ -534,3 +534,23 @@ describe("BatchGradingPanel — Retry action", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("BatchGradingPanel — Loading state", () => {
+  it("shows a loading message while the initial status fetch is in flight", () => {
+    // Never resolve — keeps the query in loading state
+    mockGetGradingStatus.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <BatchGradingPanel assignmentId={ASSIGNMENT_ID} canGrade={true} />,
+      { wrapper },
+    );
+
+    expect(
+      screen.getByText(/loading grading progress/i),
+    ).toBeInTheDocument();
+    // Grade now button must not appear during loading
+    expect(
+      screen.queryByRole("button", { name: /grade now/i }),
+    ).not.toBeInTheDocument();
+  });
+});
