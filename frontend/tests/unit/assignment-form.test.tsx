@@ -21,7 +21,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -246,7 +246,6 @@ describe("NewAssignmentPage — form validation", () => {
   it("shows error when prompt exceeds 5000 characters", async () => {
     // Use fireEvent.change to set a long value directly — avoids the 5-second
     // per-character typing overhead of userEvent.type.
-    const { fireEvent: fe } = await import("@testing-library/react");
     render(wrapper({ children: <NewAssignmentPage /> }));
 
     await waitFor(() => {
@@ -254,11 +253,11 @@ describe("NewAssignmentPage — form validation", () => {
     });
 
     const longPrompt = "B".repeat(5001);
-    fe.change(screen.getByLabelText(/writing prompt/i), {
+    fireEvent.change(screen.getByLabelText(/writing prompt/i), {
       target: { value: longPrompt },
     });
 
-    fe.click(screen.getByRole("button", { name: /create assignment/i }));
+    fireEvent.click(screen.getByRole("button", { name: /create assignment/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/prompt is too long/i)).toBeInTheDocument();
@@ -335,7 +334,6 @@ describe("NewAssignmentPage — submission", () => {
   it("calls createAssignment and redirects on success", async () => {
     mockCreateAssignment.mockResolvedValueOnce(ASSIGNMENT_DRAFT);
     const user = userEvent.setup();
-    const { fireEvent: fe } = await import("@testing-library/react");
     render(wrapper({ children: <NewAssignmentPage /> }));
 
     // Wait for rubric options to load
@@ -346,7 +344,7 @@ describe("NewAssignmentPage — submission", () => {
     });
 
     // Use fireEvent.change for the title to avoid re-render timing issues
-    fe.change(screen.getByLabelText(/title/i), {
+    fireEvent.change(screen.getByLabelText(/title/i), {
       target: { value: "Unit 1 Essay" },
     });
     await user.selectOptions(
@@ -371,7 +369,6 @@ describe("NewAssignmentPage — submission", () => {
       new ApiError(500, { code: "INTERNAL_ERROR", message: "Internal server error" }),
     );
     const user = userEvent.setup();
-    const { fireEvent: fe } = await import("@testing-library/react");
     render(wrapper({ children: <NewAssignmentPage /> }));
 
     // Wait for rubric options to load
@@ -381,7 +378,7 @@ describe("NewAssignmentPage — submission", () => {
       ).toBeInTheDocument();
     });
 
-    fe.change(screen.getByLabelText(/title/i), {
+    fireEvent.change(screen.getByLabelText(/title/i), {
       target: { value: "Unit 1 Essay" },
     });
     await user.selectOptions(
