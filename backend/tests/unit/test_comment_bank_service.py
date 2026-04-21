@@ -155,8 +155,18 @@ class TestDeleteComment:
         teacher_id = uuid.uuid4()
         comment_id = uuid.uuid4()
         entry = _make_entry(teacher_id=teacher_id, comment_id=comment_id)
-        db = _make_db([entry])
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+        entry_result = MagicMock()
+        entry_result.scalar_one.return_value = entry
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, entry_result])
         db.delete = MagicMock()
+        db.commit = AsyncMock()
 
         await delete_comment(db, teacher_id, comment_id)
 
@@ -165,8 +175,11 @@ class TestDeleteComment:
 
     @pytest.mark.asyncio
     async def test_not_found(self) -> None:
-        db = _make_db([None])
-        db.execute.return_value.scalar_one_or_none.return_value = None
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = None
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=ownership_result)
 
         with pytest.raises(NotFoundError):
             await delete_comment(db, uuid.uuid4(), uuid.uuid4())
@@ -176,11 +189,14 @@ class TestDeleteComment:
         owner_id = uuid.uuid4()
         other_teacher_id = uuid.uuid4()
         comment_id = uuid.uuid4()
-        entry = _make_entry(teacher_id=owner_id, comment_id=comment_id)
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = owner_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
         db = AsyncMock()
-        result = MagicMock()
-        result.scalar_one_or_none.return_value = entry
-        db.execute = AsyncMock(return_value=result)
+        db.execute = AsyncMock(return_value=ownership_result)
 
         with pytest.raises(ForbiddenError):
             await delete_comment(db, other_teacher_id, comment_id)
@@ -191,11 +207,17 @@ class TestDeleteComment:
         teacher_id = uuid.uuid4()
         comment_id = uuid.uuid4()
         entry = _make_entry(teacher_id=teacher_id, comment_id=comment_id)
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+        entry_result = MagicMock()
+        entry_result.scalar_one.return_value = entry
+
         db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, entry_result])
         db.delete = MagicMock()
-        result = MagicMock()
-        result.scalar_one_or_none.return_value = entry
-        db.execute = AsyncMock(return_value=result)
         db.commit = AsyncMock()
 
         await delete_comment(db, teacher_id, comment_id)

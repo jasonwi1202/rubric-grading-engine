@@ -1,6 +1,8 @@
 """Pydantic schemas for the comment bank endpoints.
 
-No student PII is collected, processed, or stored here.
+These schemas model reusable teacher comments.  Because ``text`` is free-form
+user input, it may contain student-related information entered by a teacher.
+Treat ``text`` as sensitive data and never log it.
 """
 
 from __future__ import annotations

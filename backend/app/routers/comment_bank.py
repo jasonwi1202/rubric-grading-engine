@@ -1,7 +1,9 @@
 """Comment bank router — reusable feedback comment CRUD endpoints.
 
 All endpoints require a valid JWT (``get_current_teacher`` dependency).
-No student PII is collected or processed here.
+Comment ``text`` is free-form user input and must be treated as potentially
+sensitive, including possible student PII.  Do not log or echo comment text
+beyond the intended authenticated API response.
 
 Endpoints:
   GET    /comment-bank              — list teacher's saved comments

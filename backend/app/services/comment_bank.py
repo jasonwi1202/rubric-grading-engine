@@ -11,7 +11,7 @@ Fuzzy matching uses ``rapidfuzz.fuzz.partial_ratio`` (0–100 scale, converted
 to a 0.0–1.0 score).  Only entries scoring above ``_SUGGESTION_THRESHOLD``
 are returned, ordered by descending score.
 
-No student PII is collected or processed here.
+Do not log comment text; treat it as potentially containing student PII.
 """
 
 from __future__ import annotations
@@ -82,14 +82,25 @@ async def delete_comment(
         NotFoundError: If the comment does not exist.
         ForbiddenError: If the comment belongs to a different teacher.
     """
-    result = await db.execute(select(CommentBankEntry).where(CommentBankEntry.id == comment_id))
-    entry = result.scalar_one_or_none()
+    ownership_result = await db.execute(
+        select(CommentBankEntry.id, CommentBankEntry.teacher_id).where(
+            CommentBankEntry.id == comment_id
+        )
+    )
+    ownership = ownership_result.one_or_none()
 
-    if entry is None:
+    if ownership is None:
         raise NotFoundError("Comment not found.")
-    if entry.teacher_id != teacher_id:
+    if ownership.teacher_id != teacher_id:
         raise ForbiddenError("You do not have access to this comment.")
 
+    delete_result = await db.execute(
+        select(CommentBankEntry).where(
+            CommentBankEntry.id == comment_id,
+            CommentBankEntry.teacher_id == teacher_id,
+        )
+    )
+    entry = delete_result.scalar_one()
     db.delete(entry)  # type: ignore[unused-coroutine]  # db.delete is sync on AsyncSession; SQLAlchemy stubs incorrectly type it as a coroutine
     await db.commit()
 

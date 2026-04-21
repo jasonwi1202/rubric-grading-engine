@@ -293,7 +293,7 @@ System templates are accessible to any authenticated teacher; personal templates
 |---|---|---|
 | GET | `/comment-bank` | List the authenticated teacher's saved comments |
 | POST | `/comment-bank` | Save a new feedback comment snippet |
-| DELETE | `/comment-bank/{id}` | Remove a saved comment |
+| DELETE | `/comment-bank/{comment_id}` | Remove a saved comment |
 | GET | `/comment-bank/suggestions` | Fuzzy-match suggestions for a query string |
 
 **GET /comment-bank response (200):**

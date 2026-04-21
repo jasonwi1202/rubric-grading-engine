@@ -3,7 +3,8 @@
 A reusable feedback comment snippet saved by a teacher for reuse during
 grading.  Each entry is scoped to its owning teacher via ``teacher_id``.
 
-No student PII is stored on this model.
+The ``text`` field contains arbitrary teacher-entered content and may include
+sensitive information, including student identifiers.  Do not log this field.
 """
 
 import uuid
