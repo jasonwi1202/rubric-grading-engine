@@ -15,7 +15,6 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
@@ -265,8 +264,7 @@ class TestSuggestions:
         resp = client.get("/api/v1/comment-bank/suggestions", params={"q": "evidence"})
         assert resp.status_code == 401
 
-    @pytest.mark.parametrize("teacher_id_fixture", [None])
-    def test_tenant_isolation_suggestions_scoped_to_teacher(self, teacher_id_fixture: None) -> None:
+    def test_tenant_isolation_suggestions_scoped_to_teacher(self) -> None:
         """Suggestions endpoint passes the authenticated teacher's ID, not a client-supplied one."""
         teacher_a = _make_teacher()
         entry_a = _make_entry(teacher_id=teacher_a.id, text="Strong argument with evidence.")
