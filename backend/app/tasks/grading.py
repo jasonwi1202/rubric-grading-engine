@@ -135,7 +135,6 @@ async def _transition_assignment_to_review(
     update; subsequent calls are silent no-ops.
     """
     from sqlalchemy import select  # noqa: PLC0415
-    from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415
 
     from app.models.assignment import Assignment, AssignmentStatus  # noqa: PLC0415
     from app.models.class_ import Class  # noqa: PLC0415
@@ -155,19 +154,7 @@ async def _transition_assignment_to_review(
             # Already transitioned or not found — no-op.
             return
         assignment.status = AssignmentStatus.review
-        try:
-            await db.commit()
-        except SQLAlchemyError:
-            # Race condition: another task completed the transition first, or a
-            # transient DB error occurred.  Roll back and log — this is non-fatal.
-            await db.rollback()
-            logger.warning(
-                "Could not transition assignment to review",
-                extra={
-                    "assignment_id": str(assignment_id),
-                    "error_type": "SQLAlchemyError",
-                },
-            )
+        await db.commit()
 
 
 async def _revert_essay_to_queued(essay_id: str, teacher_id: str) -> None:

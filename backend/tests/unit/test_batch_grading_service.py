@@ -171,7 +171,7 @@ class TestTriggerBatchGrading:
 
     @pytest.mark.asyncio
     async def test_already_grading_state_accepted(self) -> None:
-        """An assignment already in grading state is still accepted."""
+        """An assignment already in grading state is accepted: no DB commit, but tasks enqueued."""
         assignment_id = uuid.uuid4()
         teacher_id = uuid.uuid4()
         assignment = _make_assignment(assignment_id=assignment_id, status=AssignmentStatus.grading)
@@ -184,15 +184,19 @@ class TestTriggerBatchGrading:
         result_mock.all = MagicMock(return_value=[(essay, None)])
         db.execute = AsyncMock(return_value=result_mock)
 
+        enqueue_calls: list[str] = []
+
         mock_task = MagicMock()
-        mock_task.delay = MagicMock()
+        mock_task.delay = MagicMock(side_effect=lambda eid, *a: enqueue_calls.append(eid))
+
+        init_progress = AsyncMock()
 
         with (
             patch(
                 "app.services.batch_grading.get_assignment",
                 new=AsyncMock(return_value=assignment),
             ),
-            patch("app.services.batch_grading.initialize_progress", new=AsyncMock()),
+            patch("app.services.batch_grading.initialize_progress", init_progress),
             patch("app.tasks.grading.grade_essay", mock_task),
         ):
             from app.services.batch_grading import trigger_batch_grading
@@ -202,8 +206,13 @@ class TestTriggerBatchGrading:
             )
 
         assert count == 1
-        # No status transition should have happened (already grading)
+        # No status transition should happen (already grading)
         db.commit.assert_not_called()
+        # Redis progress IS re-initialized (overwrites previous state for re-trigger)
+        init_progress.assert_called_once()
+        # The essay task IS enqueued
+        assert len(enqueue_calls) == 1
+        assert enqueue_calls[0] == str(essay.id)
 
     @pytest.mark.asyncio
     async def test_raises_when_assignment_not_gradeable(self) -> None:

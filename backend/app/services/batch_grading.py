@@ -290,7 +290,9 @@ async def retry_essay_grading(
         raise ConflictError("This essay is already being graded.")
 
     if essay.status != EssayStatus.queued:
-        raise ConflictError(f"Only queued essays can be retried. Current status: '{essay.status}'.")
+        raise ConflictError(
+            f"Only queued essays can be retried. Current status: '{essay.status.value}'."
+        )
 
     assignment_id = essay.assignment_id
 
