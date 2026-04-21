@@ -264,7 +264,7 @@ async def update_rubric(
         # Delete all existing criteria and replace with the new set.
         existing = await _get_criteria_for_rubric(db, rubric.id)
         for c in existing:
-            db.delete(c)
+            db.delete(c)  # type: ignore[unused-coroutine]  # db.delete is sync on AsyncSession; SQLAlchemy stubs incorrectly type it as a coroutine
         await db.flush()
 
         new_criteria = _build_criteria_orm(rubric.id, criteria_requests)
