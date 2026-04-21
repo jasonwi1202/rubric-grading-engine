@@ -104,7 +104,7 @@ def parse_grading_response(
 ) -> ParsedGradingResponse:
     """Parse and validate a raw LLM grading response string.
 
-    Applies the following normalisation in order:
+    Applies the following normalization in order:
     1.  JSON decode — raises ``LLMParseError`` on failure.
     2.  Top-level structure check — must be an object with
         ``criterion_scores`` (list) and ``summary_feedback`` (str).

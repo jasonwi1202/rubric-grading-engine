@@ -79,13 +79,13 @@ def build_messages(
 ) -> list[dict[str, str]]:
     """Return the OpenAI messages list for a grading request.
 
-    Essay text is placed in the ``user`` role only.  The system prompt never
+    Essay text is placed in the ``user`` role only. The system prompt never
     contains essay content — that is the primary prompt injection defence.
 
     Args:
         rubric_json: JSON-encoded rubric snapshot (criteria + score ranges).
         strictness: One of ``"lenient"``, ``"balanced"``, ``"strict"``.
-        essay_text: Raw student essay text.  Wrapped in delimiters.
+        essay_text: Raw student essay text. Wrapped in delimiters.
 
     Returns:
         Messages list suitable for

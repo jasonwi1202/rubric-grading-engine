@@ -1,6 +1,6 @@
 """LLM client for the Rubric Grading Engine.
 
-All calls to the OpenAI API go through this module.  Direct use of
+All calls to the OpenAI API go through this module. Direct use of
 ``openai.chat.completions.create()`` elsewhere in the codebase is not
 permitted.
 

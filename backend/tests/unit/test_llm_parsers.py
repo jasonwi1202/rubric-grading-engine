@@ -1,6 +1,6 @@
 """Unit tests for app/llm/parsers.py.
 
-Coverage target: ≥ 95 % (parsers are fully deterministic pure functions).
+Coverage target: ≥ 95% (parsers are fully deterministic pure functions).
 
 Tests verify:
     - parse_grading_response: happy path, JSON errors, missing fields,
