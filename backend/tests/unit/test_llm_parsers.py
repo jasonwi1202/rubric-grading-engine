@@ -208,13 +208,14 @@ class TestParseGradingResponseJsonErrors:
 
     def test_raises_on_missing_criterion_scores_field(self) -> None:
         payload = json.dumps({"summary_feedback": "ok"})
-        with pytest.raises(LLMParseError, match="missing required fields"):
+        with pytest.raises(LLMParseError, match="missing required field"):
             parse_grading_response(payload, [_crit("c1")])
 
-    def test_raises_on_missing_summary_feedback_field(self) -> None:
+    def test_missing_summary_feedback_field_falls_back(self) -> None:
+        """summary_feedback is optional — missing value falls back to FALLBACK_SUMMARY."""
         payload = json.dumps({"criterion_scores": []})
-        with pytest.raises(LLMParseError, match="missing required fields"):
-            parse_grading_response(payload, [_crit("c1")])
+        result = parse_grading_response(payload, [])
+        assert result.summary_feedback == FALLBACK_SUMMARY
 
     def test_raises_on_criterion_scores_not_list(self) -> None:
         payload = json.dumps({"criterion_scores": "bad", "summary_feedback": "ok"})

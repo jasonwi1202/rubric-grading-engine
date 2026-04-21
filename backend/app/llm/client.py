@@ -119,6 +119,13 @@ async def _chat_with_retry(
             await asyncio.sleep(wait)
 
         try:
+            # type: ignore[call-overload] explanation: the SDK stubs define
+            # separate overloads keyed on `stream`; passing a plain dict for
+            # `response_format` (instead of a typed `ResponseFormat`) does not
+            # match any single overload at the type-checker level, but the
+            # runtime behaviour is correct.  Switching to the fully-typed SDK
+            # parameter objects would require importing private SDK types that
+            # change across minor releases, so the ignore is the stable choice.
             response = await client.chat.completions.create(  # type: ignore[call-overload]
                 model=model,
                 messages=messages,

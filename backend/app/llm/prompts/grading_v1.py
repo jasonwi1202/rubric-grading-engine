@@ -30,7 +30,7 @@ You will receive:
 
 Your task:
 - Score the essay on each criterion using ONLY the scores defined in the rubric
-- Write a specific, evidence-grounded justification for each score (minimum 20 words)
+- Write a specific, evidence-grounded justification for each score (at least 20 characters)
 - Assign a confidence level for each score: "high", "medium", or "low"
 - Write a 2\u20133 sentence summary of the essay's overall strengths and areas for growth
 

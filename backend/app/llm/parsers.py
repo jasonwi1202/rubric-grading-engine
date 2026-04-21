@@ -106,8 +106,8 @@ def parse_grading_response(
 
     Applies the following normalization in order:
     1.  JSON decode — raises ``LLMParseError`` on failure.
-    2.  Top-level structure check — must be an object with
-        ``criterion_scores`` (list) and ``summary_feedback`` (str).
+    2.  Top-level structure check — must be an object with a
+        ``criterion_scores`` list.  ``summary_feedback`` is optional.
     3.  For each criterion expected by the rubric snapshot:
         - Missing from response → ``score=None``, ``confidence="low"``,
           ``needs_review=True``.
@@ -131,7 +131,7 @@ def parse_grading_response(
 
     Raises:
         LLMParseError: If ``raw_content`` is not valid JSON or is missing
-            the required top-level fields.
+            the required ``criterion_scores`` field.
     """
     try:
         data = json.loads(raw_content)
@@ -141,10 +141,8 @@ def parse_grading_response(
     if not isinstance(data, dict):
         raise LLMParseError("LLM response must be a JSON object")
 
-    if "criterion_scores" not in data or "summary_feedback" not in data:
-        raise LLMParseError(
-            "LLM response missing required fields: criterion_scores, summary_feedback"
-        )
+    if "criterion_scores" not in data:
+        raise LLMParseError("LLM response missing required field: criterion_scores")
 
     if not isinstance(data["criterion_scores"], list):
         raise LLMParseError("criterion_scores must be a JSON array")
@@ -179,12 +177,15 @@ def parse_grading_response(
             continue
 
         # --- Score validation / clamping ---
-        raw_score = item.get("score")
         score_clamped = False
         needs_review = False
 
         try:
-            score: int = int(raw_score)  # type: ignore[call-overload]
+            raw_score = item.get("score")
+            if isinstance(raw_score, (int, float, str)):
+                score: int = int(raw_score)
+            else:
+                raise TypeError("non-numeric score type")
         except (TypeError, ValueError):
             # Unparse-able score — clamp to minimum.
             score = info.min_score
