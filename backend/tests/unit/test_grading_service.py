@@ -582,3 +582,10 @@ class TestGradeEssayMissingCriterion:
         assert len(cs_objs) == 1
         assert cs_objs[0].ai_score == 0
         assert cs_objs[0].final_score == 0
+
+        # Verify that total_score includes the 0 contribution from the missing criterion.
+        from app.models.grade import Grade as GradeModel
+
+        grade_objs = [o for o in added_objects if isinstance(o, GradeModel)]
+        assert len(grade_objs) == 1
+        assert grade_objs[0].total_score == Decimal("0")

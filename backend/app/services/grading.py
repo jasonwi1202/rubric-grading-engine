@@ -161,9 +161,12 @@ async def grade_essay(
 
     # ------------------------------------------------------------------
     # 7. Compute aggregate scores.
+    #    Criteria with score=None (missing criterion) contribute 0 to
+    #    total_score, consistent with ai_score=0 written for those rows.
     # ------------------------------------------------------------------
-    non_null_scores = [cs.score for cs in grading_response.criterion_scores if cs.score is not None]
-    total_score = Decimal(sum(non_null_scores))
+    total_score = Decimal(
+        sum(cs.score if cs.score is not None else 0 for cs in grading_response.criterion_scores)
+    )
     max_possible_score = Decimal(
         sum(int(c["max_score"]) for c in criteria_data)  # type: ignore[arg-type]
     )

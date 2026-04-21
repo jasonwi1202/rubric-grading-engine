@@ -23,7 +23,7 @@ import pytest
 
 from app.exceptions import LLMError
 from app.tasks.celery_app import celery
-from app.tasks.grading import _revert_essay_to_queued, grade_essay
+from app.tasks.grading import _revert_essay_to_queued, _run_grade_essay, grade_essay
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,24 +59,38 @@ class TestGradeEssayTaskRegistration:
 
 class TestRunGradeEssay:
     @pytest.mark.asyncio
-    async def test_returns_grade_id_string(self) -> None:
-        """Returns string UUID of the created Grade on success."""
+    async def test_calls_grade_essay_service_and_returns_grade_id(self) -> None:
+        """_run_grade_essay calls the grading service and returns a grade ID string."""
         grade_id = uuid.uuid4()
-        expected = str(grade_id)
+        grade_mock = _make_grade_mock(grade_id)
 
-        # Directly test the helper by patching _run_grade_essay at the module level
-        with patch("app.tasks.grading._run_grade_essay", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = expected
-            result = await mock_run(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
-            assert result == expected
+        db_mock = AsyncMock()
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm), patch(
+            "app.services.grading.grade_essay",
+            new=AsyncMock(return_value=grade_mock),
+        ) as mock_svc:
+            result = await _run_grade_essay(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
+
+        assert result == str(grade_id)
+        mock_svc.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_llm_error_propagates_from_run(self) -> None:
+    async def test_llm_error_propagates_from_service(self) -> None:
         """LLMError raised by the grading service propagates from _run_grade_essay."""
-        with patch("app.tasks.grading._run_grade_essay", new_callable=AsyncMock) as mock_run:
-            mock_run.side_effect = LLMError("LLM timed out")
-            with pytest.raises(LLMError):
-                await mock_run(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
+        db_mock = AsyncMock()
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm), patch(
+            "app.services.grading.grade_essay",
+            new=AsyncMock(side_effect=LLMError("LLM timed out")),
+        ), pytest.raises(LLMError):
+            await _run_grade_essay(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
 
 
 # ---------------------------------------------------------------------------
