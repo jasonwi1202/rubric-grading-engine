@@ -385,7 +385,7 @@ MIME type is validated server-side from file magic bytes (not the file extension
 
 Errors: `404 NOT_FOUND` (assignment not found, or student not found for this teacher), `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled in the class), `422 VALIDATION_ERROR` (no files, more than one file with `student_id`, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED`, `FILE_TOO_LARGE`, or `VALIDATION_ERROR` as appropriate).
 
-**POST /essays/{id}/grade/retry body:**
+**POST /essays/{essayId}/grade/retry body:**
 ```json
 {
   "strictness": "balanced"  // optional; "lenient" | "balanced" | "strict"

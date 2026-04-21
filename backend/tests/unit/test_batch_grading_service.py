@@ -68,6 +68,8 @@ def _make_redis_mock() -> MagicMock:
     pipe.execute = AsyncMock(return_value=[])
     redis.pipeline.return_value = pipe
     redis.hgetall = AsyncMock(return_value={})
+    # mark_essay_complete / mark_essay_failed / reset_essay_for_retry use Lua eval
+    redis.eval = AsyncMock(return_value=[None, None, None])
     return redis
 
 

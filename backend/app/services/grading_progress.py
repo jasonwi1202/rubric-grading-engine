@@ -105,19 +105,37 @@ async def mark_essay_complete(
 ) -> dict[str, int]:
     """Mark an essay as successfully graded; return updated batch counters.
 
+    Idempotent: if the essay was already marked ``complete`` (e.g. due to a
+    Celery at-least-once re-delivery), the ``complete`` counter is **not**
+    incremented a second time.
+
     Returns:
         Dict with ``total``, ``complete``, ``failed`` as integers.
         All values are 0 if the key has expired.
     """
+    _MARK_COMPLETE_SCRIPT = """
+local prev = redis.call('HGET', KEYS[1], ARGV[1])
+if prev == 'complete' then
+    -- Already terminal; counter must not be inflated on re-delivery.
+else
+    redis.call('HSET', KEYS[1], ARGV[1], 'complete')
+    if prev ~= false then
+        -- Field exists with a different value: safe to increment.
+        redis.call('HINCRBY', KEYS[1], 'complete', 1)
+    end
+end
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+return redis.call('HMGET', KEYS[1], 'total', 'complete', 'failed')
+"""
     key = grading_progress_key(assignment_id)
-    pipe = redis.pipeline()
-    pipe.hset(key, f"s:{essay_id}", "complete")
-    pipe.hincrby(key, "complete", 1)
-    pipe.hmget(key, "total", "complete", "failed")
-    pipe.expire(key, settings.redis_grading_ttl_seconds)
-    results = await pipe.execute()
-    # results[2] is the HMGET list: [total_str, complete_str, failed_str]
-    total_str, complete_str, failed_str = results[2]
+    result = await redis.eval(  # type: ignore[no-untyped-call]
+        _MARK_COMPLETE_SCRIPT,
+        1,
+        key,
+        f"s:{essay_id}",
+        str(settings.redis_grading_ttl_seconds),
+    )
+    total_str, complete_str, failed_str = result
     return {
         "total": int(total_str or 0),
         "complete": int(complete_str or 0),
@@ -133,20 +151,40 @@ async def mark_essay_failed(
 ) -> dict[str, int]:
     """Mark an essay as permanently failed; return updated batch counters.
 
+    Idempotent: if the essay was already marked ``failed`` (e.g. due to a
+    Celery at-least-once re-delivery), the ``failed`` counter is **not**
+    incremented a second time.
+
     Returns:
         Dict with ``total``, ``complete``, ``failed`` as integers.
         All values are 0 if the key has expired.
     """
+    _MARK_FAILED_SCRIPT = """
+local prev = redis.call('HGET', KEYS[1], ARGV[1])
+if prev == 'failed' then
+    -- Already terminal; counter must not be inflated on re-delivery.
+else
+    redis.call('HSET', KEYS[1], ARGV[1], 'failed')
+    redis.call('HSET', KEYS[1], ARGV[2], ARGV[3])
+    if prev ~= false then
+        -- Field exists with a different value: safe to increment.
+        redis.call('HINCRBY', KEYS[1], 'failed', 1)
+    end
+end
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
+return redis.call('HMGET', KEYS[1], 'total', 'complete', 'failed')
+"""
     key = grading_progress_key(assignment_id)
-    pipe = redis.pipeline()
-    pipe.hset(key, f"s:{essay_id}", "failed")
-    pipe.hset(key, f"e:{essay_id}", error_code)
-    pipe.hincrby(key, "failed", 1)
-    pipe.hmget(key, "total", "complete", "failed")
-    pipe.expire(key, settings.redis_grading_ttl_seconds)
-    results = await pipe.execute()
-    # results[3] is the HMGET list
-    total_str, complete_str, failed_str = results[3]
+    result = await redis.eval(  # type: ignore[no-untyped-call]
+        _MARK_FAILED_SCRIPT,
+        1,
+        key,
+        f"s:{essay_id}",
+        f"e:{essay_id}",
+        error_code,
+        str(settings.redis_grading_ttl_seconds),
+    )
+    total_str, complete_str, failed_str = result
     return {
         "total": int(total_str or 0),
         "complete": int(complete_str or 0),
@@ -161,17 +199,33 @@ async def reset_essay_for_retry(
 ) -> None:
     """Reset a failed essay to ``queued`` for retry.
 
-    Decrements the failed counter and clears the error code so that the
+    Decrements the ``failed`` counter and clears the error code so that the
     progress snapshot is accurate after the teacher re-enqueues a single
-    essay via ``POST /essays/{id}/grade/retry``.
+    essay via ``POST /essays/{essayId}/grade/retry``.
+
+    Guard: the decrement only happens when ``s:{essay_id}`` is currently
+    ``"failed"``.  If the key is missing or the essay is in any other state
+    the operation is a no-op, preventing the counter from going negative.
     """
+    _RESET_RETRY_SCRIPT = """
+local prev = redis.call('HGET', KEYS[1], ARGV[1])
+if prev == 'failed' then
+    redis.call('HSET', KEYS[1], ARGV[1], 'queued')
+    redis.call('HSET', KEYS[1], ARGV[2], '')
+    redis.call('HINCRBY', KEYS[1], 'failed', -1)
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
+end
+return 1
+"""
     key = grading_progress_key(assignment_id)
-    pipe = redis.pipeline()
-    pipe.hset(key, f"s:{essay_id}", "queued")
-    pipe.hset(key, f"e:{essay_id}", "")
-    pipe.hincrby(key, "failed", -1)
-    pipe.expire(key, settings.redis_grading_ttl_seconds)
-    await pipe.execute()
+    await redis.eval(  # type: ignore[no-untyped-call]
+        _RESET_RETRY_SCRIPT,
+        1,
+        key,
+        f"s:{essay_id}",
+        f"e:{essay_id}",
+        str(settings.redis_grading_ttl_seconds),
+    )
 
 
 # ---------------------------------------------------------------------------

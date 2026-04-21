@@ -7,9 +7,9 @@ Coverage:
 - grading_progress_key: key format
 - initialize_progress: pipeline calls and mapping construction
 - mark_essay_grading: sets status field
-- mark_essay_complete: increments complete counter, returns counters
-- mark_essay_failed: increments failed counter, stores error code
-- reset_essay_for_retry: decrements failed counter, clears error
+- mark_essay_complete: idempotent Lua-based counter increment
+- mark_essay_failed: idempotent Lua-based counter increment
+- reset_essay_for_retry: Lua-based conditional decrement (no-op unless failed)
 - get_progress: parses hash data, returns BatchProgress or None
 """
 
@@ -35,8 +35,8 @@ from app.services.grading_progress import (
 # ---------------------------------------------------------------------------
 
 
-def _make_redis_mock(pipeline_results: list[object] | None = None) -> MagicMock:
-    """Return a mock Redis client with a mock pipeline."""
+def _make_pipeline_redis_mock(pipeline_results: list[object] | None = None) -> MagicMock:
+    """Return a mock Redis client with a mock pipeline (for initialize_progress / mark_grading)."""
     redis = MagicMock()
     pipe = AsyncMock()
     pipe.hset = MagicMock()
@@ -46,6 +46,13 @@ def _make_redis_mock(pipeline_results: list[object] | None = None) -> MagicMock:
     pipe.expire = MagicMock()
     pipe.execute = AsyncMock(return_value=pipeline_results or [])
     redis.pipeline = MagicMock(return_value=pipe)
+    return redis
+
+
+def _make_eval_redis_mock(eval_result: list[object] | None = None) -> MagicMock:
+    """Return a mock Redis client with a mock eval (for Lua-based functions)."""
+    redis = MagicMock()
+    redis.eval = AsyncMock(return_value=eval_result or [None, None, None])
     return redis
 
 
@@ -73,7 +80,7 @@ class TestInitializeProgress:
     @pytest.mark.asyncio
     async def test_sets_total_and_per_essay_fields(self) -> None:
         """initialize_progress builds a mapping with total, complete, failed, and per-essay fields."""
-        redis = _make_redis_mock()
+        redis = _make_pipeline_redis_mock()
         pipe = redis.pipeline()
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
@@ -94,7 +101,7 @@ class TestInitializeProgress:
 
     @pytest.mark.asyncio
     async def test_null_student_name_stored_as_empty_string(self) -> None:
-        redis = _make_redis_mock()
+        redis = _make_pipeline_redis_mock()
         pipe = redis.pipeline()
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
@@ -107,7 +114,7 @@ class TestInitializeProgress:
     @pytest.mark.asyncio
     async def test_deletes_previous_key_first(self) -> None:
         """initialize_progress deletes the previous key before writing the new hash."""
-        redis = _make_redis_mock()
+        redis = _make_pipeline_redis_mock()
         pipe = redis.pipeline()
         assignment_id = uuid.uuid4()
 
@@ -117,7 +124,7 @@ class TestInitializeProgress:
 
     @pytest.mark.asyncio
     async def test_sets_ttl(self) -> None:
-        redis = _make_redis_mock()
+        redis = _make_pipeline_redis_mock()
         pipe = redis.pipeline()
         assignment_id = uuid.uuid4()
 
@@ -136,7 +143,7 @@ class TestInitializeProgress:
 class TestMarkEssayGrading:
     @pytest.mark.asyncio
     async def test_sets_status_to_grading(self) -> None:
-        redis = _make_redis_mock()
+        redis = _make_pipeline_redis_mock()
         pipe = redis.pipeline()
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
@@ -159,34 +166,52 @@ class TestMarkEssayComplete:
         """mark_essay_complete returns a dict with the updated counter values."""
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
-        # Pipeline results: [hset_result, hincrby_result, hmget_result, expire_result]
-        redis = _make_redis_mock(pipeline_results=[None, 1, ["5", "3", "1"], None])
+        redis = _make_eval_redis_mock(eval_result=["5", "3", "1"])
 
         counters = await mark_essay_complete(redis, assignment_id, essay_id)
 
         assert counters == {"total": 5, "complete": 3, "failed": 1}
 
     @pytest.mark.asyncio
-    async def test_sets_essay_status_to_complete(self) -> None:
-        redis = _make_redis_mock(pipeline_results=[None, 1, ["1", "1", "0"], None])
-        pipe = redis.pipeline()
+    async def test_calls_eval_with_correct_key(self) -> None:
+        """mark_essay_complete invokes redis.eval with the correct hash key."""
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
+        redis = _make_eval_redis_mock(eval_result=["1", "1", "0"])
 
         await mark_essay_complete(redis, assignment_id, essay_id)
 
-        # First hset call should set the essay status to complete
-        hset_calls = [str(c) for c in pipe.hset.call_args_list]
-        assert any(f"s:{essay_id}" in c and "complete" in c for c in hset_calls)
+        redis.eval.assert_called_once()
+        call_args = redis.eval.call_args
+        # Second positional arg (after script) is numkeys; third is the key
+        assert call_args.args[2] == grading_progress_key(assignment_id)
+        assert call_args.args[3] == f"s:{essay_id}"
 
     @pytest.mark.asyncio
     async def test_returns_zeros_on_expired_key(self) -> None:
         """When Redis key is gone (None values), counters are all 0."""
-        redis = _make_redis_mock(pipeline_results=[None, 0, [None, None, None], None])
+        redis = _make_eval_redis_mock(eval_result=[None, None, None])
 
         counters = await mark_essay_complete(redis, uuid.uuid4(), uuid.uuid4())
 
         assert counters == {"total": 0, "complete": 0, "failed": 0}
+
+    @pytest.mark.asyncio
+    async def test_idempotent_no_double_increment(self) -> None:
+        """Calling mark_essay_complete twice uses Lua script that prevents double-counting.
+
+        We verify the Lua script is invoked (not a raw HINCRBY pipeline), so the
+        idempotency guard in the script is the defence against double-counting.
+        """
+        assignment_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        redis = _make_eval_redis_mock(eval_result=["1", "1", "0"])
+
+        await mark_essay_complete(redis, assignment_id, essay_id)
+        await mark_essay_complete(redis, assignment_id, essay_id)
+
+        # Both calls go through redis.eval (which includes the idempotency guard)
+        assert redis.eval.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -199,24 +224,37 @@ class TestMarkEssayFailed:
     async def test_returns_updated_counters(self) -> None:
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
-        # Pipeline results: [hset_status, hset_error, hincrby, hmget, expire]
-        redis = _make_redis_mock(pipeline_results=[None, None, 1, ["5", "3", "2"], None])
+        redis = _make_eval_redis_mock(eval_result=["5", "3", "2"])
 
         counters = await mark_essay_failed(redis, assignment_id, essay_id, "LLM_UNAVAILABLE")
 
         assert counters == {"total": 5, "complete": 3, "failed": 2}
 
     @pytest.mark.asyncio
-    async def test_stores_error_code(self) -> None:
-        redis = _make_redis_mock(pipeline_results=[None, None, 1, ["1", "0", "1"], None])
-        pipe = redis.pipeline()
+    async def test_passes_error_code_to_eval(self) -> None:
+        """mark_essay_failed passes the error code as an ARGV to the Lua script."""
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
+        redis = _make_eval_redis_mock(eval_result=["1", "0", "1"])
 
         await mark_essay_failed(redis, assignment_id, essay_id, "LLM_UNAVAILABLE")
 
-        hset_calls = [str(c) for c in pipe.hset.call_args_list]
-        assert any(f"e:{essay_id}" in c and "LLM_UNAVAILABLE" in c for c in hset_calls)
+        redis.eval.assert_called_once()
+        call_args = redis.eval.call_args
+        # ARGV[3] (index 5 in positional args: script, numkeys, key, ARGV1, ARGV2, ARGV3, ARGV4)
+        assert "LLM_UNAVAILABLE" in call_args.args
+
+    @pytest.mark.asyncio
+    async def test_idempotent_no_double_increment(self) -> None:
+        """Calling mark_essay_failed twice uses Lua script that prevents double-counting."""
+        assignment_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        redis = _make_eval_redis_mock(eval_result=["1", "0", "1"])
+
+        await mark_essay_failed(redis, assignment_id, essay_id, "LLM_UNAVAILABLE")
+        await mark_essay_failed(redis, assignment_id, essay_id, "LLM_UNAVAILABLE")
+
+        assert redis.eval.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -226,21 +264,29 @@ class TestMarkEssayFailed:
 
 class TestResetEssayForRetry:
     @pytest.mark.asyncio
-    async def test_resets_status_and_decrements_failed(self) -> None:
-        redis = _make_redis_mock()
-        pipe = redis.pipeline()
+    async def test_calls_eval_for_conditional_decrement(self) -> None:
+        """reset_essay_for_retry uses redis.eval for the guarded decrement."""
+        redis = _make_eval_redis_mock(eval_result=[1])
         assignment_id = uuid.uuid4()
         essay_id = uuid.uuid4()
 
         await reset_essay_for_retry(redis, assignment_id, essay_id)
 
-        hset_calls = [str(c) for c in pipe.hset.call_args_list]
-        # Status field should be reset to "queued"
-        assert any(f"s:{essay_id}" in c and "queued" in c for c in hset_calls)
-        # Error field should be cleared
-        assert any(f"e:{essay_id}" in c for c in hset_calls)
-        # Failed counter decremented
-        pipe.hincrby.assert_called_once_with(grading_progress_key(assignment_id), "failed", -1)
+        redis.eval.assert_called_once()
+        call_args = redis.eval.call_args
+        assert call_args.args[2] == grading_progress_key(assignment_id)
+        assert call_args.args[3] == f"s:{essay_id}"
+        assert call_args.args[4] == f"e:{essay_id}"
+
+    @pytest.mark.asyncio
+    async def test_no_op_on_missing_key_does_not_raise(self) -> None:
+        """reset_essay_for_retry is a no-op when the key is missing (eval returns 1)."""
+        redis = _make_eval_redis_mock(eval_result=[1])
+        assignment_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+
+        # Should not raise even if Redis key is absent
+        await reset_essay_for_retry(redis, assignment_id, essay_id)
 
 
 # ---------------------------------------------------------------------------

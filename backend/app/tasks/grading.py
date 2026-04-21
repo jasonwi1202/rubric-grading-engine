@@ -38,6 +38,23 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+async def _mark_essay_grading_in_redis(
+    essay_id: str,
+    assignment_id: str,
+) -> None:
+    """Best-effort: set the per-essay status to ``grading`` in Redis."""
+    from redis.asyncio import Redis  # noqa: PLC0415
+
+    from app.config import settings  # noqa: PLC0415
+    from app.services.grading_progress import mark_essay_grading  # noqa: PLC0415
+
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
+    try:
+        await mark_essay_grading(redis, uuid.UUID(assignment_id), uuid.UUID(essay_id))
+    finally:
+        await redis.aclose()  # type: ignore[attr-defined]
+
+
 async def _run_grade_essay(
     essay_id: str,
     teacher_id: str,
@@ -53,6 +70,18 @@ async def _run_grade_essay(
         grade_essay,  # noqa: PLC0415 — lazy import to avoid circular deps at module load
     )
 
+    # Mark essay as grading at task start so the frontend sees an accurate
+    # in-progress indicator.  This is best-effort: a Redis outage must not
+    # prevent the grading run from proceeding.
+    if assignment_id:
+        try:
+            await _mark_essay_grading_in_redis(essay_id, assignment_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to mark essay as grading in Redis — continuing",
+                extra={"essay_id": essay_id, "error_type": type(exc).__name__},
+            )
+
     async with AsyncSessionLocal() as db:
         grade = await grade_essay(
             db=db,
@@ -62,8 +91,15 @@ async def _run_grade_essay(
         )
 
     # Update Redis progress if this essay belongs to a batch-grading run.
+    # Non-fatal: a Redis outage must not fail a grade that was already written.
     if assignment_id:
-        await _update_redis_on_success(essay_id, assignment_id, teacher_id)
+        try:
+            await _update_redis_on_success(essay_id, assignment_id, teacher_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to update Redis progress after grading success",
+                extra={"essay_id": essay_id, "error_type": type(exc).__name__},
+            )
 
     return str(grade.id)
 
@@ -275,9 +311,17 @@ def grade_essay(
         )
         asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
         if assignment_id:
-            asyncio.run(
-                _update_redis_on_failure(essay_id, assignment_id, teacher_id, "LLM_UNAVAILABLE")
-            )
+            try:
+                asyncio.run(
+                    _update_redis_on_failure(
+                        essay_id, assignment_id, teacher_id, "LLM_UNAVAILABLE"
+                    )
+                )
+            except Exception as redis_exc:
+                logger.warning(
+                    "Failed to update Redis progress after LLM failure",
+                    extra={"essay_id": essay_id, "error_type": type(redis_exc).__name__},
+                )
         raise
 
     except Exception as exc:
@@ -287,7 +331,15 @@ def grade_essay(
         )
         asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
         if assignment_id:
-            asyncio.run(
-                _update_redis_on_failure(essay_id, assignment_id, teacher_id, "INTERNAL_ERROR")
-            )
+            try:
+                asyncio.run(
+                    _update_redis_on_failure(
+                        essay_id, assignment_id, teacher_id, "INTERNAL_ERROR"
+                    )
+                )
+            except Exception as redis_exc:
+                logger.warning(
+                    "Failed to update Redis progress after unrecoverable error",
+                    extra={"essay_id": essay_id, "error_type": type(redis_exc).__name__},
+                )
         raise
