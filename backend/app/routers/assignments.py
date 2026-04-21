@@ -150,13 +150,7 @@ async def get_grading_status_endpoint(
         assignment_id=assignment_id,
         teacher_id=teacher.id,
     )
-    response = GradingStatusResponse(
-        status=status_data["status"],  # type: ignore[arg-type]
-        total=status_data["total"],  # type: ignore[arg-type]
-        complete=status_data["complete"],  # type: ignore[arg-type]
-        failed=status_data["failed"],  # type: ignore[arg-type]
-        essays=status_data["essays"],  # type: ignore[arg-type]
-    )
+    response = GradingStatusResponse.model_validate(status_data)
     return JSONResponse(
         status_code=200,
         content={"data": response.model_dump(mode="json")},

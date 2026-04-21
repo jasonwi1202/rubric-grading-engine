@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import TypedDict
 
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -44,6 +45,25 @@ from app.services.grading_progress import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class EssayProgressItem(TypedDict):
+    """Per-essay progress item returned by :func:`get_grading_status`."""
+
+    id: str
+    status: str
+    student_name: str | None
+    error: str | None
+
+
+class GradingStatusData(TypedDict):
+    """Return type of :func:`get_grading_status`."""
+
+    status: str
+    total: int
+    complete: int
+    failed: int
+    essays: list[EssayProgressItem]
 
 
 # ---------------------------------------------------------------------------
@@ -169,13 +189,14 @@ async def get_grading_status(
     redis: Redis,  # type: ignore[type-arg]
     assignment_id: uuid.UUID,
     teacher_id: uuid.UUID,
-) -> dict[str, object]:
+) -> GradingStatusData:
     """Read batch progress from Redis.
 
     Validates assignment ownership (one lightweight DB query), then reads
     all progress data from Redis — zero Postgres essay-scan queries.
 
-    Returns a dict suitable for serialisation to :class:`GradingStatusResponse`.
+    Returns a :class:`GradingStatusData` dict suitable for validation by
+    :class:`~app.schemas.batch_grading.GradingStatusResponse`.
 
     Raises:
         NotFoundError: Assignment does not exist.
@@ -189,29 +210,29 @@ async def get_grading_status(
 
     if progress is None:
         # Batch not yet started or Redis key expired.
-        return {
-            "status": "idle",
-            "total": 0,
-            "complete": 0,
-            "failed": 0,
-            "essays": [],
-        }
+        return GradingStatusData(
+            status="idle",
+            total=0,
+            complete=0,
+            failed=0,
+            essays=[],
+        )
 
-    return {
-        "status": _derive_batch_status(progress),
-        "total": progress.total,
-        "complete": progress.complete,
-        "failed": progress.failed,
-        "essays": [
-            {
-                "id": str(ep.essay_id),
-                "status": ep.status,
-                "student_name": ep.student_name,
-                "error": ep.error,
-            }
+    return GradingStatusData(
+        status=_derive_batch_status(progress),
+        total=progress.total,
+        complete=progress.complete,
+        failed=progress.failed,
+        essays=[
+            EssayProgressItem(
+                id=str(ep.essay_id),
+                status=ep.status,
+                student_name=ep.student_name,
+                error=ep.error,
+            )
             for ep in progress.essays
         ],
-    }
+    )
 
 
 # ---------------------------------------------------------------------------

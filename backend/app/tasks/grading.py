@@ -86,9 +86,7 @@ async def _update_redis_on_success(
             uuid.UUID(assignment_id),
             uuid.UUID(essay_id),
         )
-        if counters["total"] > 0 and (
-            counters["complete"] + counters["failed"] >= counters["total"]
-        ):
+        if _is_batch_complete(counters):
             await _transition_assignment_to_review(uuid.UUID(assignment_id), uuid.UUID(teacher_id))
     finally:
         await redis.aclose()
@@ -114,12 +112,16 @@ async def _update_redis_on_failure(
             uuid.UUID(essay_id),
             error_code,
         )
-        if counters["total"] > 0 and (
-            counters["complete"] + counters["failed"] >= counters["total"]
-        ):
+        if _is_batch_complete(counters):
             await _transition_assignment_to_review(uuid.UUID(assignment_id), uuid.UUID(teacher_id))
     finally:
         await redis.aclose()
+
+
+def _is_batch_complete(counters: dict[str, int]) -> bool:
+    """Return True when every essay in the batch has a terminal outcome."""
+    total = counters["total"]
+    return total > 0 and (counters["complete"] + counters["failed"]) >= total
 
 
 async def _transition_assignment_to_review(
@@ -133,6 +135,7 @@ async def _transition_assignment_to_review(
     update; subsequent calls are silent no-ops.
     """
     from sqlalchemy import select  # noqa: PLC0415
+    from sqlalchemy.exc import SQLAlchemyError  # noqa: PLC0415
 
     from app.models.assignment import Assignment, AssignmentStatus  # noqa: PLC0415
     from app.models.class_ import Class  # noqa: PLC0415
@@ -154,9 +157,17 @@ async def _transition_assignment_to_review(
         assignment.status = AssignmentStatus.review
         try:
             await db.commit()
-        except Exception:
-            # Race condition: another task completed the transition first.
+        except SQLAlchemyError:
+            # Race condition: another task completed the transition first, or a
+            # transient DB error occurred.  Roll back and log — this is non-fatal.
             await db.rollback()
+            logger.warning(
+                "Could not transition assignment to review",
+                extra={
+                    "assignment_id": str(assignment_id),
+                    "error_type": "SQLAlchemyError",
+                },
+            )
 
 
 async def _revert_essay_to_queued(essay_id: str, teacher_id: str) -> None:
