@@ -135,13 +135,13 @@ function ProgressBar({
         <span>{pct}%</span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-        <div
-          role="progressbar"
+        <progress
+          value={pct}
+          max={100}
           aria-valuenow={pct}
           aria-valuemin={0}
           aria-valuemax={100}
-          className="h-full rounded-full bg-blue-500 transition-all duration-500"
-          style={{ width: `${pct}%` }}
+          className="h-full w-full accent-blue-500"
         />
       </div>
     </div>

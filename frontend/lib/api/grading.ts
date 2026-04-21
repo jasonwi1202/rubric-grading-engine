@@ -89,9 +89,15 @@ export interface TriggerGradingResponse {
   assignment_id: string;
 }
 
-/** Response from POST /essays/{essayId}/grade/retry. */
+/**
+ * Response from POST /essays/{essayId}/grade/retry.
+ * Matches the backend retry grading response schema exactly.
+ */
 export interface RetryGradingResponse {
-  message: string;
+  /** UUID of the essay that was re-enqueued for grading. */
+  essay_id: string;
+  /** Retry endpoint always re-queues the essay for asynchronous grading. */
+  status: "queued";
 }
 
 // ---------------------------------------------------------------------------

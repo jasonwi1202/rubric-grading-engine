@@ -344,8 +344,8 @@ System templates are accessible to any authenticated teacher; personal templates
     "complete": 12,
     "failed": 1,
     "essays": [
-      { "id": "uuid", "status": "complete", "student_name": "Alice Chen", "error": null },
-      { "id": "uuid", "status": "failed", "student_name": "Bob Smith", "error": "LLM_TIMEOUT" }
+      { "id": "uuid", "status": "complete", "student_name": "Student A", "error": null },
+      { "id": "uuid", "status": "failed", "student_name": "Student B", "error": "LLM_TIMEOUT" }
     ]
   }
 }

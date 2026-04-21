@@ -13,9 +13,9 @@
  * - In-app notification shown on "complete"
  * - In-app notification shown on "partial"
  * - In-app notification shown on "failed"
- * - Per-essay status badges render for queued/grading/graded/failed
+ * - Per-essay status badges render for queued/grading/complete/failed
  * - Retry button shown only for failed essays
- * - Retry button hidden for queued/grading/graded essays
+ * - Retry button hidden for queued/grading/complete essays
  * - Clicking retry calls retryEssayGrading with correct essay ID
  * - Retry API error shows generic message (no PII)
  * - POLL_INTERVAL_MS export is 3000
@@ -26,7 +26,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -357,7 +357,7 @@ describe("BatchGradingPanel — Completion notifications", () => {
 });
 
 describe("BatchGradingPanel — Per-essay status", () => {
-  it("renders status badges for queued, grading, graded, and failed essays", async () => {
+  it("renders status badges for queued, grading, complete, and failed essays", async () => {
     mockGetGradingStatus.mockResolvedValue(
       makeStatus({
         status: "processing",
