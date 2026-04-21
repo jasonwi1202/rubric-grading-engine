@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * /dashboard/classes/[classId] — class detail and roster management.
+ * /dashboard/classes/[classId] — class detail, assignment list, and roster management.
  *
- * Displays class metadata and the full student roster. Teachers can add
- * students manually, import via CSV, or soft-remove a student from the roster.
+ * Displays class metadata, assignments list, and the full student roster.
+ * Teachers can create assignments, add students manually, import via CSV,
+ * or soft-remove a student from the roster.
  *
  * All server state via React Query. No useEffect+fetch.
  * Security: no student PII in logs or query keys beyond entity IDs.
@@ -14,7 +15,18 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getClass } from "@/lib/api/classes";
+import { listAssignments, STATUS_LABELS } from "@/lib/api/assignments";
+import type { AssignmentStatus } from "@/lib/api/assignments";
 import { RosterList } from "@/components/classes/RosterList";
+
+const STATUS_COLORS: Record<AssignmentStatus, string> = {
+  draft: "bg-gray-100 text-gray-600",
+  open: "bg-blue-100 text-blue-700",
+  grading: "bg-yellow-100 text-yellow-700",
+  review: "bg-orange-100 text-orange-700",
+  complete: "bg-green-100 text-green-700",
+  returned: "bg-purple-100 text-purple-700",
+};
 
 export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
@@ -26,6 +38,16 @@ export default function ClassDetailPage() {
   } = useQuery({
     queryKey: ["class", classId],
     queryFn: () => getClass(classId),
+    enabled: !!classId,
+  });
+
+  const {
+    data: assignments,
+    isLoading: assignmentsLoading,
+    isError: assignmentsError,
+  } = useQuery({
+    queryKey: ["assignments", classId],
+    queryFn: () => listAssignments(classId),
     enabled: !!classId,
   });
 
@@ -71,6 +93,90 @@ export default function ClassDetailPage() {
           </p>
         </div>
       )}
+
+      {/* Assignments section */}
+      <section aria-labelledby="assignments-heading" className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2
+            id="assignments-heading"
+            className="text-base font-semibold text-gray-900"
+          >
+            Assignments
+          </h2>
+          {classId && (
+            <Link
+              href={`/dashboard/classes/${classId}/assignments/new`}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              New assignment
+            </Link>
+          )}
+        </div>
+
+        {assignmentsLoading && (
+          <div aria-live="polite" aria-busy="true" className="space-y-2">
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-14 animate-pulse rounded-lg bg-gray-200"
+              />
+            ))}
+          </div>
+        )}
+
+        {assignmentsError && (
+          <p
+            role="alert"
+            className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            Failed to load assignments. Please refresh the page.
+          </p>
+        )}
+
+        {!assignmentsLoading && !assignmentsError && assignments?.length === 0 && (
+          <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
+            <p className="text-sm text-gray-500">
+              No assignments yet.{" "}
+              <Link
+                href={`/dashboard/classes/${classId}/assignments/new`}
+                className="font-medium text-blue-600 underline hover:text-blue-800"
+              >
+                Create the first one
+              </Link>
+            </p>
+          </div>
+        )}
+
+        {!assignmentsLoading &&
+          !assignmentsError &&
+          assignments &&
+          assignments.length > 0 && (
+            <ul className="space-y-2" role="list">
+              {assignments.map((a) => (
+                <li key={a.id}>
+                  <Link
+                    href={`/dashboard/assignments/${a.id}`}
+                    className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                  >
+                    <div>
+                      <p className="font-semibold text-gray-900">{a.title}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {a.due_date
+                          ? `Due ${new Date(a.due_date).toLocaleDateString(undefined, { timeZone: "UTC" })}`
+                          : ""}
+                      </p>
+                    </div>
+                    <span
+                      className={`ml-4 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[a.status]}`}
+                    >
+                      {STATUS_LABELS[a.status]}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+      </section>
 
       {/* Roster */}
       {classId && <RosterList classId={classId} />}
