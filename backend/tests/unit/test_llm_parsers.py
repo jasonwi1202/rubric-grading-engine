@@ -845,7 +845,7 @@ class TestGradingV2PromptToneInjection:
         assert "direct" in system_content
 
     def test_essay_text_is_in_user_role_not_system(self) -> None:
-        """Essay content must never appear in the system prompt (injection defence)."""
+        """Essay content must never appear in the system prompt (injection defense)."""
         from app.llm.prompts.grading_v2 import build_messages  # noqa: PLC0415
 
         essay = "SENTINEL_ESSAY_TEXT_DO_NOT_INJECT"
@@ -872,7 +872,7 @@ class TestGradingV2PromptToneInjection:
         assert "<ESSAY_START>" in user_content
         assert "<ESSAY_END>" in user_content
 
-    def test_injection_defence_phrase_in_system_prompt(self) -> None:
+    def test_injection_defense_phrase_in_system_prompt(self) -> None:
         """The system prompt instructs the model to ignore directives in the essay."""
         from app.llm.prompts.grading_v2 import build_messages  # noqa: PLC0415
 

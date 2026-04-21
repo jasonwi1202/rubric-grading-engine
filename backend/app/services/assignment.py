@@ -22,7 +22,12 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, InvalidStateTransitionError, NotFoundError
+from app.exceptions import (
+    ForbiddenError,
+    InvalidStateTransitionError,
+    NotFoundError,
+    ValidationError,
+)
 from app.models.assignment import Assignment, AssignmentStatus
 from app.models.class_ import Class
 from app.models.rubric import Rubric, RubricCriterion
@@ -243,7 +248,11 @@ async def create_assignment(
     try:
         tone_enum = FeedbackTone(feedback_tone)
     except ValueError:
-        tone_enum = FeedbackTone.direct
+        raise ValidationError(
+            f"Invalid feedback_tone '{feedback_tone}'. "
+            "Must be one of: encouraging, direct, academic.",
+            field="feedback_tone",
+        ) from None
 
     assignment = Assignment(
         class_id=class_id,
@@ -332,7 +341,11 @@ async def update_assignment(
         try:
             assignment.feedback_tone = FeedbackTone(feedback_tone)
         except ValueError:
-            assignment.feedback_tone = FeedbackTone.direct
+            raise ValidationError(
+                f"Invalid feedback_tone '{feedback_tone}'. "
+                "Must be one of: encouraging, direct, academic.",
+                field="feedback_tone",
+            ) from None
 
     await db.commit()
     await db.refresh(assignment)

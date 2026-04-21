@@ -154,6 +154,42 @@ async def _chat_with_retry(
 # ---------------------------------------------------------------------------
 
 
+def _build_messages_with_tone(
+    module: object,
+    rubric_json: str,
+    strictness: str,
+    essay_text: str,
+    tone: str,
+    *,
+    retry: bool = False,
+) -> list[dict[str, str]]:
+    """Build the messages list for a grading request, optionally with tone.
+
+    Passes ``tone`` only when the prompt module's ``build_messages`` (or
+    ``build_retry_messages``) accepts it — grading-v2+.  Falls back to the
+    two-argument call for grading-v1 to preserve backwards compatibility.
+
+    Args:
+        module: The loaded prompt module (e.g. ``grading_v1`` or ``grading_v2``).
+        rubric_json: JSON-encoded rubric snapshot.
+        strictness: Grading strictness level.
+        essay_text: Raw student essay text.
+        tone: Feedback tone string.
+        retry: When ``True``, calls ``build_retry_messages`` instead of
+            ``build_messages``.
+
+    Returns:
+        Messages list suitable for OpenAI chat completions.
+    """
+    import inspect  # noqa: PLC0415
+
+    builder = module.build_retry_messages if retry else module.build_messages  # type: ignore[union-attr]
+    sig = inspect.signature(builder)
+    if "tone" in sig.parameters:
+        return builder(rubric_json, strictness, essay_text, tone)
+    return builder(rubric_json, strictness, essay_text)
+
+
 async def call_grading(
     *,
     rubric_json: str,
@@ -189,24 +225,13 @@ async def call_grading(
             retry.
         LLMError: On timeout or unrecoverable API failure.
     """
-    import inspect  # noqa: PLC0415
 
     version = prompt_version or settings.grading_prompt_version
     module = _load_prompt_module("grading", version)
     client = _get_openai_client()
     model = settings.openai_grading_model
 
-    # Pass ``tone`` only when the prompt module's build_messages accepts it
-    # (grading-v2+).  This keeps backwards compatibility with grading-v1 tests
-    # and deployments that still use the v1 module.
-    sig = inspect.signature(module.build_messages)
-    if "tone" in sig.parameters:
-        messages: list[dict[str, str]] = module.build_messages(
-            rubric_json, strictness, essay_text, tone
-        )
-    else:
-        messages = module.build_messages(rubric_json, strictness, essay_text)
-
+    messages = _build_messages_with_tone(module, rubric_json, strictness, essay_text, tone)
     raw = await _chat_with_retry(client, model, messages)
 
     try:
@@ -215,12 +240,9 @@ async def call_grading(
         logger.warning(
             "LLM grading parse failed on first attempt; retrying with corrective prompt",
         )
-        if "tone" in sig.parameters:
-            retry_messages: list[dict[str, str]] = module.build_retry_messages(
-                rubric_json, strictness, essay_text, tone
-            )
-        else:
-            retry_messages = module.build_retry_messages(rubric_json, strictness, essay_text)
+        retry_messages = _build_messages_with_tone(
+            module, rubric_json, strictness, essay_text, tone, retry=True
+        )
         retry_raw = await _chat_with_retry(client, model, retry_messages)
         # Let LLMParseError propagate on the second failure.
         return parse_grading_response(retry_raw, criteria)
