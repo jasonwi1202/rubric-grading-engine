@@ -248,9 +248,12 @@ def parse_grading_response(
         # use its value or fall back to the placeholder.  When the key is
         # absent entirely (grading-v1 responses), keep an empty string so
         # callers can distinguish "no feedback requested" from "empty feedback".
-        feedback_raw = item.get("feedback")
-        if feedback_raw is not None:
-            ai_feedback = str(feedback_raw).strip()
+        # Use an explicit key-presence check so that `"feedback": null` in a v2
+        # response is treated as a missing/blank value (→ FALLBACK_FEEDBACK)
+        # rather than as a v1 "field absent" response (→ "").
+        if "feedback" in item:
+            feedback_raw = item["feedback"]
+            ai_feedback = str(feedback_raw).strip() if feedback_raw else ""
             if not ai_feedback:
                 ai_feedback = FALLBACK_FEEDBACK
         else:

@@ -740,6 +740,37 @@ class TestParseGradingResponseFeedbackField:
         cs = result.criterion_scores[0]
         assert cs.ai_feedback == FALLBACK_FEEDBACK
 
+    def test_explicit_null_feedback_field_falls_back_to_placeholder(self) -> None:
+        """feedback key present with null value (explicit v2 null) → FALLBACK_FEEDBACK.
+
+        Regression: ``item.get("feedback")`` returns ``None`` for both a missing
+        key (v1) and an explicit ``"feedback": null`` (v2).  The parser uses an
+        explicit ``"feedback" in item`` check so the two cases are handled
+        differently.
+        """
+        from app.llm.parsers import FALLBACK_FEEDBACK  # noqa: PLC0415
+
+        criteria = [_crit("crit-1")]
+        payload = json.dumps(
+            {
+                "criterion_scores": [
+                    {
+                        "criterion_id": "crit-1",
+                        "score": 3,
+                        "justification": "A sufficiently long justification text.",
+                        "feedback": None,
+                        "confidence": "high",
+                    }
+                ],
+                "summary_feedback": "Good.",
+            }
+        )
+        result = parse_grading_response(payload, criteria)
+        cs = result.criterion_scores[0]
+        assert cs.ai_feedback == FALLBACK_FEEDBACK, (
+            "Explicit null feedback in v2 response should fall back to FALLBACK_FEEDBACK"
+        )
+
     def test_whitespace_only_feedback_falls_back_to_placeholder(self) -> None:
         """feedback key present with whitespace only → ai_feedback is FALLBACK_FEEDBACK."""
         from app.llm.parsers import FALLBACK_FEEDBACK  # noqa: PLC0415

@@ -191,8 +191,8 @@ async def grade_essay(
     # ------------------------------------------------------------------
     prompt_version = settings.grading_prompt_version
     # Read the feedback tone from the assignment config.  The column has a
-    # NOT NULL server_default of "direct", so it is always set for new rows.
-    # For older rows (pre-migration) the ORM default also applies.
+    # NOT NULL server_default of "direct", so existing rows were backfilled by
+    # the migration and new rows always have a value.
     tone = assignment.feedback_tone if assignment.feedback_tone else "direct"
     grading_response = await call_grading(
         rubric_json=rubric_json,
