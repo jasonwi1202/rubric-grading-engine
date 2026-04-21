@@ -9,6 +9,8 @@ Endpoints:
   GET    /classes/{classId}                             — get class detail
   PATCH  /classes/{classId}                             — update class name, subject, grade level, academic year
   POST   /classes/{classId}/archive                     — archive the class (soft)
+  GET    /classes/{classId}/assignments                 — list assignments for a class
+  POST   /classes/{classId}/assignments                 — create a new assignment
   GET    /classes/{classId}/students                    — list enrolled students
   POST   /classes/{classId}/students                    — enroll a new or existing student
   POST   /classes/{classId}/students/import             — parse CSV and return import diff
@@ -27,6 +29,11 @@ from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
 from app.exceptions import ValidationError as DomainValidationError
 from app.models.user import User
+from app.schemas.assignment import (
+    AssignmentListItemResponse,
+    AssignmentResponse,
+    CreateAssignmentRequest,
+)
 from app.schemas.class_ import ClassResponse, CreateClassRequest, PatchClassRequest
 from app.schemas.roster_import import (
     DiffRowResponse,
@@ -36,6 +43,10 @@ from app.schemas.roster_import import (
     ImportRowStatus,
 )
 from app.schemas.student import EnrolledStudentResponse, EnrollStudentRequest, StudentResponse
+from app.services.assignment import (
+    create_assignment,
+    list_assignments,
+)
 from app.services.class_ import (
     archive_class,
     create_class,
@@ -222,6 +233,71 @@ async def archive_class_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": _class_response(class_obj).model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /classes/{classId}/assignments
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{class_id}/assignments",
+    summary="List assignments for a class",
+)
+async def list_assignments_endpoint(
+    class_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return all assignments for the given class.
+
+    Returns 404 if the class does not exist.
+    Returns 403 if the class belongs to a different teacher.
+    """
+    assignments = await list_assignments(db, teacher_id=teacher.id, class_id=class_id)
+    items = [
+        AssignmentListItemResponse.model_validate(a).model_dump(mode="json") for a in assignments
+    ]
+    return JSONResponse(status_code=200, content={"data": items})
+
+
+# ---------------------------------------------------------------------------
+# POST /classes/{classId}/assignments
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{class_id}/assignments",
+    status_code=201,
+    summary="Create a new assignment for a class",
+)
+async def create_assignment_endpoint(
+    class_id: uuid.UUID,
+    payload: CreateAssignmentRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Create an assignment owned by the given class.
+
+    The rubric is snapshotted at creation time — editing the rubric later has
+    no effect on this assignment or its grades.
+
+    Returns 404 if the class or rubric does not exist.
+    Returns 403 if the class or rubric belongs to a different teacher.
+    """
+    assignment = await create_assignment(
+        db,
+        teacher_id=teacher.id,
+        class_id=class_id,
+        rubric_id=payload.rubric_id,
+        title=payload.title,
+        prompt=payload.prompt,
+        due_date=payload.due_date,
+    )
+    return JSONResponse(
+        status_code=201,
+        content={"data": AssignmentResponse.model_validate(assignment).model_dump(mode="json")},
     )
 
 

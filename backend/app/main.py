@@ -192,6 +192,7 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
 def _register_routers(application: FastAPI) -> None:
     from app.routers.account import router as account_router
+    from app.routers.assignments import router as assignments_router
     from app.routers.auth import router as auth_router
     from app.routers.classes import router as classes_router
     from app.routers.contact import router as contact_router
@@ -214,6 +215,7 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(students_router, prefix="/api/v1")
     application.include_router(essays_router, prefix="/api/v1")
     application.include_router(essay_router, prefix="/api/v1")
+    application.include_router(assignments_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

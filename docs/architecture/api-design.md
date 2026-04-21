@@ -311,7 +311,7 @@ System templates are accessible to any authenticated teacher; personal templates
 | GET | `/classes/{classId}/assignments` | List assignments for a class |
 | POST | `/classes/{classId}/assignments` | Create assignment |
 | GET | `/assignments/{assignmentId}` | Get assignment detail + submission status |
-| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, rubric (draft only) |
+| PATCH | `/assignments/{assignmentId}` | Update title, prompt, or due date (draft only) |
 | POST | `/assignments/{assignmentId}/grade` | Trigger grading for all queued essays |
 | GET | `/assignments/{assignmentId}/grading-status` | Batch grading progress (polled by frontend) |
 | POST | `/assignments/{assignmentId}/export` | Enqueue export job |
