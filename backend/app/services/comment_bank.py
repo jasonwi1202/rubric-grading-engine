@@ -4,7 +4,7 @@ Business logic for comment bank CRUD operations and fuzzy-match suggestions:
 
 - ``list_comments``     — list all saved comments for a teacher.
 - ``create_comment``    — save a new feedback snippet.
-- ``delete_comment``    — remove a saved comment (tenant-scoped).
+- ``delete_comment``    — soft-delete a saved comment (tenant-scoped).
 - ``suggest_comments``  — return saved comments whose text fuzzy-matches a query.
 
 Fuzzy matching uses ``rapidfuzz.fuzz.partial_ratio`` (0–100 scale, converted
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from rapidfuzz import fuzz
 from sqlalchemy import select
@@ -41,10 +42,13 @@ async def list_comments(
     db: AsyncSession,
     teacher_id: uuid.UUID,
 ) -> list[CommentBankEntry]:
-    """Return all saved comments for a teacher, newest first."""
+    """Return all active (non-deleted) saved comments for a teacher, newest first."""
     result = await db.execute(
         select(CommentBankEntry)
-        .where(CommentBankEntry.teacher_id == teacher_id)
+        .where(
+            CommentBankEntry.teacher_id == teacher_id,
+            CommentBankEntry.deleted_at.is_(None),
+        )
         .order_by(CommentBankEntry.created_at.desc())
     )
     return list(result.scalars().all())
@@ -76,15 +80,16 @@ async def delete_comment(
     teacher_id: uuid.UUID,
     comment_id: uuid.UUID,
 ) -> None:
-    """Delete a saved comment.
+    """Soft-delete a saved comment by setting ``deleted_at`` to now.
 
     Raises:
-        NotFoundError: If the comment does not exist.
+        NotFoundError: If the comment does not exist or is already deleted.
         ForbiddenError: If the comment belongs to a different teacher.
     """
     ownership_result = await db.execute(
         select(CommentBankEntry.id, CommentBankEntry.teacher_id).where(
-            CommentBankEntry.id == comment_id
+            CommentBankEntry.id == comment_id,
+            CommentBankEntry.deleted_at.is_(None),
         )
     )
     ownership = ownership_result.one_or_none()
@@ -94,18 +99,22 @@ async def delete_comment(
     if ownership.teacher_id != teacher_id:
         raise ForbiddenError("You do not have access to this comment.")
 
-    delete_result = await db.execute(
+    entry_result = await db.execute(
         select(CommentBankEntry).where(
             CommentBankEntry.id == comment_id,
             CommentBankEntry.teacher_id == teacher_id,
+            CommentBankEntry.deleted_at.is_(None),
         )
     )
-    entry = delete_result.scalar_one()
-    db.delete(entry)  # type: ignore[unused-coroutine]  # db.delete is sync on AsyncSession; SQLAlchemy stubs incorrectly type it as a coroutine
+    entry = entry_result.scalar_one_or_none()
+    if entry is None:
+        raise NotFoundError("Comment not found.")
+
+    entry.deleted_at = datetime.now(UTC)
     await db.commit()
 
     logger.info(
-        "Comment bank entry deleted",
+        "Comment bank entry soft-deleted",
         extra={"comment_id": str(comment_id), "teacher_id": str(teacher_id)},
     )
 

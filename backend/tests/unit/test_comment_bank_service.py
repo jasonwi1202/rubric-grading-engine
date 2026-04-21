@@ -155,22 +155,22 @@ class TestDeleteComment:
         teacher_id = uuid.uuid4()
         comment_id = uuid.uuid4()
         entry = _make_entry(teacher_id=teacher_id, comment_id=comment_id)
+        entry.deleted_at = None
 
         ownership_row = MagicMock()
         ownership_row.teacher_id = teacher_id
         ownership_result = MagicMock()
         ownership_result.one_or_none.return_value = ownership_row
         entry_result = MagicMock()
-        entry_result.scalar_one.return_value = entry
+        entry_result.scalar_one_or_none.return_value = entry
 
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=[ownership_result, entry_result])
-        db.delete = MagicMock()
         db.commit = AsyncMock()
 
         await delete_comment(db, teacher_id, comment_id)
 
-        db.delete.assert_called_once_with(entry)
+        assert entry.deleted_at is not None
         db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -202,27 +202,49 @@ class TestDeleteComment:
             await delete_comment(db, other_teacher_id, comment_id)
 
     @pytest.mark.asyncio
-    async def test_db_delete_is_not_awaited(self) -> None:
-        """db.delete() must be called synchronously — never awaited."""
+    async def test_toctou_second_query_returns_none(self) -> None:
+        """If row disappears between ownership check and fetch, raise NotFoundError."""
         teacher_id = uuid.uuid4()
         comment_id = uuid.uuid4()
-        entry = _make_entry(teacher_id=teacher_id, comment_id=comment_id)
 
         ownership_row = MagicMock()
         ownership_row.teacher_id = teacher_id
         ownership_result = MagicMock()
         ownership_result.one_or_none.return_value = ownership_row
         entry_result = MagicMock()
-        entry_result.scalar_one.return_value = entry
+        entry_result.scalar_one_or_none.return_value = None
 
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=[ownership_result, entry_result])
-        db.delete = MagicMock()
+        db.commit = AsyncMock()
+
+        with pytest.raises(NotFoundError):
+            await delete_comment(db, teacher_id, comment_id)
+
+    @pytest.mark.asyncio
+    async def test_sets_deleted_at(self) -> None:
+        """delete_comment must set entry.deleted_at, not call db.delete()."""
+        teacher_id = uuid.uuid4()
+        comment_id = uuid.uuid4()
+        entry = _make_entry(teacher_id=teacher_id, comment_id=comment_id)
+        entry.deleted_at = None
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+        entry_result = MagicMock()
+        entry_result.scalar_one_or_none.return_value = entry
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, entry_result])
         db.commit = AsyncMock()
 
         await delete_comment(db, teacher_id, comment_id)
 
-        assert isinstance(db.delete, MagicMock)
+        # Soft delete: deleted_at must be set; db.delete must NOT be called.
+        assert entry.deleted_at is not None
+        db.delete.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

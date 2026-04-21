@@ -40,3 +40,9 @@ class CommentBankEntry(Base):
         server_default=func.now(),
         nullable=False,
     )
+    # Soft-delete timestamp.  NULL means the entry is active.
+    # Set to the deletion timestamp when the teacher deletes the entry.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
