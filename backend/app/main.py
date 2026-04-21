@@ -195,6 +195,7 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.assignments import router as assignments_router
     from app.routers.auth import router as auth_router
     from app.routers.classes import router as classes_router
+    from app.routers.comment_bank import router as comment_bank_router
     from app.routers.contact import router as contact_router
     from app.routers.essays import essay_router
     from app.routers.essays import router as essays_router
@@ -216,6 +217,7 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(essays_router, prefix="/api/v1")
     application.include_router(essay_router, prefix="/api/v1")
     application.include_router(assignments_router, prefix="/api/v1")
+    application.include_router(comment_bank_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------
