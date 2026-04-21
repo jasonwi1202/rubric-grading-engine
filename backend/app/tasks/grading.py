@@ -10,6 +10,9 @@ Behaviour:
 - On exhausted retries, reverts the essay status to ``queued`` so the
   teacher can trigger a re-grade, and re-raises so Celery marks the task
   as ``FAILURE``.
+- When *assignment_id* is provided (batch-grading flow), updates the Redis
+  progress hash after every outcome and transitions the assignment status to
+  ``review`` when all essays have finished.
 
 Security invariants:
 - No essay content is logged at any level.
@@ -30,8 +33,19 @@ from app.tasks.celery_app import celery
 logger = logging.getLogger(__name__)
 
 
-async def _run_grade_essay(essay_id: str, teacher_id: str, strictness: str) -> str:
-    """Async wrapper: opens a session and calls the grading service.
+# ---------------------------------------------------------------------------
+# Async helpers — called via asyncio.run() from the sync Celery task
+# ---------------------------------------------------------------------------
+
+
+async def _run_grade_essay(
+    essay_id: str,
+    teacher_id: str,
+    strictness: str,
+    assignment_id: str = "",
+) -> str:
+    """Async wrapper: opens a session, calls the grading service, and on
+    success updates the Redis progress hash.
 
     Returns the string UUID of the created :class:`Grade` record.
     """
@@ -46,7 +60,103 @@ async def _run_grade_essay(essay_id: str, teacher_id: str, strictness: str) -> s
             teacher_id=uuid.UUID(teacher_id),
             strictness=strictness,
         )
-        return str(grade.id)
+
+    # Update Redis progress if this essay belongs to a batch-grading run.
+    if assignment_id:
+        await _update_redis_on_success(essay_id, assignment_id, teacher_id)
+
+    return str(grade.id)
+
+
+async def _update_redis_on_success(
+    essay_id: str,
+    assignment_id: str,
+    teacher_id: str,
+) -> None:
+    """Mark the essay as complete in Redis and transition assignment if done."""
+    from redis.asyncio import Redis  # noqa: PLC0415
+
+    from app.config import settings  # noqa: PLC0415
+    from app.services.grading_progress import mark_essay_complete  # noqa: PLC0415
+
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        counters = await mark_essay_complete(
+            redis,
+            uuid.UUID(assignment_id),
+            uuid.UUID(essay_id),
+        )
+        if counters["total"] > 0 and (
+            counters["complete"] + counters["failed"] >= counters["total"]
+        ):
+            await _transition_assignment_to_review(uuid.UUID(assignment_id), uuid.UUID(teacher_id))
+    finally:
+        await redis.aclose()
+
+
+async def _update_redis_on_failure(
+    essay_id: str,
+    assignment_id: str,
+    teacher_id: str,
+    error_code: str,
+) -> None:
+    """Mark the essay as failed in Redis and transition assignment if done."""
+    from redis.asyncio import Redis  # noqa: PLC0415
+
+    from app.config import settings  # noqa: PLC0415
+    from app.services.grading_progress import mark_essay_failed  # noqa: PLC0415
+
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        counters = await mark_essay_failed(
+            redis,
+            uuid.UUID(assignment_id),
+            uuid.UUID(essay_id),
+            error_code,
+        )
+        if counters["total"] > 0 and (
+            counters["complete"] + counters["failed"] >= counters["total"]
+        ):
+            await _transition_assignment_to_review(uuid.UUID(assignment_id), uuid.UUID(teacher_id))
+    finally:
+        await redis.aclose()
+
+
+async def _transition_assignment_to_review(
+    assignment_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> None:
+    """Transition assignment from ``grading`` to ``review`` when batch is done.
+
+    Uses a conditional query (WHERE status = 'grading') so that concurrent
+    task completions are idempotent — only the first one will find a row to
+    update; subsequent calls are silent no-ops.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.models.assignment import Assignment, AssignmentStatus  # noqa: PLC0415
+    from app.models.class_ import Class  # noqa: PLC0415
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Assignment)
+            .join(Class, Assignment.class_id == Class.id)
+            .where(
+                Assignment.id == assignment_id,
+                Class.teacher_id == teacher_id,
+                Assignment.status == AssignmentStatus.grading,
+            )
+        )
+        assignment = result.scalar_one_or_none()
+        if assignment is None:
+            # Already transitioned or not found — no-op.
+            return
+        assignment.status = AssignmentStatus.review
+        try:
+            await db.commit()
+        except Exception:
+            # Race condition: another task completed the transition first.
+            await db.rollback()
 
 
 async def _revert_essay_to_queued(essay_id: str, teacher_id: str) -> None:
@@ -88,7 +198,13 @@ async def _revert_essay_to_queued(essay_id: str, teacher_id: str) -> None:
     bind=True,
     max_retries=3,
 )
-def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -> str:
+def grade_essay(
+    self: object,
+    essay_id: str,
+    teacher_id: str,
+    strictness: str,
+    assignment_id: str = "",
+) -> str:
     """Grade a single essay against its assignment's rubric snapshot.
 
     Loads essay data from the database, calls the LLM grading pipeline,
@@ -103,6 +219,11 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
         teacher_id: UUID string of the owning teacher.  Used for tenant
             isolation inside the grading service.
         strictness: One of ``"lenient"``, ``"balanced"``, ``"strict"``.
+        assignment_id: UUID string of the parent assignment.  When provided,
+            the task updates the Redis batch-progress hash on completion or
+            failure and transitions the assignment to ``review`` when all
+            essays have finished.  Pass an empty string (the default) when
+            calling outside the batch-grading flow.
 
     Returns:
         String UUID of the created :class:`~app.models.grade.Grade` record.
@@ -114,7 +235,7 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
             task as ``FAILURE``.
     """
     try:
-        return asyncio.run(_run_grade_essay(essay_id, teacher_id, strictness))
+        return asyncio.run(_run_grade_essay(essay_id, teacher_id, strictness, assignment_id))
     except ForbiddenError:
         # Essay does not belong to this teacher — nothing was written and the
         # essay status was never changed, so there is nothing to revert.
@@ -155,6 +276,10 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
             extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
         asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
+        if assignment_id:
+            asyncio.run(
+                _update_redis_on_failure(essay_id, assignment_id, teacher_id, "LLM_UNAVAILABLE")
+            )
         raise
 
     except Exception as exc:
@@ -163,4 +288,8 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
             extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
         asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
+        if assignment_id:
+            asyncio.run(
+                _update_redis_on_failure(essay_id, assignment_id, teacher_id, "INTERNAL_ERROR")
+            )
         raise
