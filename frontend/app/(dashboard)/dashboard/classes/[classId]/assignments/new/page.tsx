@@ -35,9 +35,9 @@ const assignmentSchema = z.object({
     .string()
     .min(1, "Title is required")
     .max(255, "Title is too long"),
-  prompt: z.string().max(5000, "Prompt is too long").optional().or(z.literal("")),
+  prompt: z.string().max(5000, "Prompt is too long"),
   rubric_id: z.string().min(1, "Please select a rubric"),
-  due_date: z.string().optional().or(z.literal("")),
+  due_date: z.string(),
 });
 
 type AssignmentFormValues = z.infer<typeof assignmentSchema>;
