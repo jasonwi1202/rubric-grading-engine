@@ -155,7 +155,7 @@ async def _chat_with_retry(
 
 
 def _build_messages_with_tone(
-    module: object,
+    module: types.ModuleType,
     rubric_json: str,
     strictness: str,
     essay_text: str,
@@ -183,11 +183,11 @@ def _build_messages_with_tone(
     """
     import inspect  # noqa: PLC0415
 
-    builder = module.build_retry_messages if retry else module.build_messages  # type: ignore[union-attr]
+    builder = module.build_retry_messages if retry else module.build_messages
     sig = inspect.signature(builder)
     if "tone" in sig.parameters:
-        return builder(rubric_json, strictness, essay_text, tone)
-    return builder(rubric_json, strictness, essay_text)
+        return builder(rubric_json, strictness, essay_text, tone)  # type: ignore[no-any-return]
+    return builder(rubric_json, strictness, essay_text)  # type: ignore[no-any-return]
 
 
 async def call_grading(
