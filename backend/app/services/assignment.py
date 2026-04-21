@@ -207,7 +207,14 @@ async def create_assignment(
         raise ForbiddenError("You do not have access to this rubric.")
 
     # Load the full rubric and its criteria to build the snapshot.
-    rubric_result = await db.execute(select(Rubric).where(Rubric.id == rubric_id))
+    # Repeat the ownership + deleted_at predicates to avoid TOCTOU races.
+    rubric_result = await db.execute(
+        select(Rubric).where(
+            Rubric.id == rubric_id,
+            Rubric.teacher_id == teacher_id,
+            Rubric.deleted_at.is_(None),
+        )
+    )
     rubric = rubric_result.scalar_one()
 
     criteria_result = await db.execute(

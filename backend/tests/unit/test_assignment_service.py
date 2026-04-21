@@ -101,6 +101,20 @@ def _make_criterion_orm(rubric_id: uuid.UUID) -> MagicMock:
     return c
 
 
+def _make_db() -> AsyncMock:
+    """Return an AsyncMock shaped like an AsyncSession.
+
+    SQLAlchemy's ``add``/``delete`` are synchronous; ``execute``, ``commit``,
+    and ``refresh`` are async.  Using plain ``AsyncMock()`` for the session
+    makes ``add`` an ``AsyncMock`` too, which produces un-awaited-coroutine
+    warnings and misrepresents the real API.  This helper corrects that.
+    """
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.delete = MagicMock()
+    return db
+
+
 # ---------------------------------------------------------------------------
 # _validate_transition
 # ---------------------------------------------------------------------------
@@ -160,7 +174,7 @@ class TestCreateAssignment:
         rubric = _make_rubric_orm(teacher_id)
         criterion = _make_criterion_orm(rubric.id)
 
-        db = AsyncMock()
+        db = _make_db()
 
         # Class ownership query
         class_ownership_result = MagicMock()
@@ -245,7 +259,7 @@ class TestCreateAssignment:
         class_id = uuid.uuid4()
         rubric_id = uuid.uuid4()
 
-        db = AsyncMock()
+        db = _make_db()
 
         class_ownership_result = MagicMock()
         class_ownership_result.one_or_none.return_value = _make_ownership_row(teacher_id, class_id)
@@ -280,7 +294,7 @@ class TestCreateAssignment:
 
     @pytest.mark.asyncio
     async def test_class_not_found_raises_404(self) -> None:
-        db = AsyncMock()
+        db = _make_db()
         result = MagicMock()
         result.one_or_none.return_value = None
         db.execute.return_value = result
@@ -302,7 +316,7 @@ class TestCreateAssignment:
         other_teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
 
-        db = AsyncMock()
+        db = _make_db()
         result = MagicMock()
         row = MagicMock()
         row.teacher_id = other_teacher_id
@@ -332,7 +346,7 @@ class TestGetAssignment:
         teacher_id = _make_teacher_id()
         assignment = _make_assignment_orm()
 
-        db = AsyncMock()
+        db = _make_db()
         ownership_result = MagicMock()
         ownership_result.one_or_none.return_value = _make_assignment_ownership_row(
             teacher_id, assignment.id
@@ -346,7 +360,7 @@ class TestGetAssignment:
 
     @pytest.mark.asyncio
     async def test_not_found_raises_404(self) -> None:
-        db = AsyncMock()
+        db = _make_db()
         result = MagicMock()
         result.one_or_none.return_value = None
         db.execute.return_value = result
@@ -360,7 +374,7 @@ class TestGetAssignment:
         other_teacher_id = uuid.uuid4()
         assignment_id = uuid.uuid4()
 
-        db = AsyncMock()
+        db = _make_db()
         result = MagicMock()
         row = MagicMock()
         row.teacher_id = other_teacher_id
@@ -378,7 +392,7 @@ class TestGetAssignment:
 
 class TestUpdateAssignment:
     def _make_db_with_assignment(self, teacher_id: uuid.UUID, assignment: MagicMock) -> AsyncMock:
-        db = AsyncMock()
+        db = _make_db()
         ownership_result = MagicMock()
         ownership_result.one_or_none.return_value = _make_assignment_ownership_row(
             teacher_id, assignment.id
@@ -471,7 +485,7 @@ class TestUpdateAssignment:
         other_teacher_id = uuid.uuid4()
         assignment_id = uuid.uuid4()
 
-        db = AsyncMock()
+        db = _make_db()
         result = MagicMock()
         row = MagicMock()
         row.teacher_id = other_teacher_id
@@ -505,7 +519,7 @@ class TestListAssignments:
         a1 = _make_assignment_orm(class_id=class_id)
         a2 = _make_assignment_orm(class_id=class_id)
 
-        db = AsyncMock()
+        db = _make_db()
         # Class ownership
         class_ownership_result = MagicMock()
         class_ownership_result.one_or_none.return_value = _make_ownership_row(teacher_id, class_id)
@@ -532,7 +546,7 @@ class TestListAssignments:
         other_teacher_id = uuid.uuid4()
         class_id = uuid.uuid4()
 
-        db = AsyncMock()
+        db = _make_db()
         result = MagicMock()
         row = MagicMock()
         row.teacher_id = other_teacher_id
