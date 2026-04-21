@@ -222,6 +222,9 @@ async def patch_assignment_endpoint(
         due_date=payload.due_date if "due_date" in fields_set else None,
         update_due_date="due_date" in fields_set,
         status=payload.status if "status" in fields_set else None,
+        feedback_tone=payload.feedback_tone.value
+        if "feedback_tone" in fields_set and payload.feedback_tone is not None
+        else None,
     )
     return JSONResponse(
         status_code=200,

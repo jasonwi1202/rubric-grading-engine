@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.assignment import AssignmentStatus
+from app.models.assignment import AssignmentStatus, FeedbackTone
 
 
 class CreateAssignmentRequest(BaseModel):
@@ -21,6 +21,7 @@ class CreateAssignmentRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     prompt: str | None = None
     due_date: date | None = None
+    feedback_tone: FeedbackTone = FeedbackTone.direct
 
 
 class PatchAssignmentRequest(BaseModel):
@@ -37,6 +38,7 @@ class PatchAssignmentRequest(BaseModel):
     prompt: str | None = None
     due_date: date | None = None
     status: AssignmentStatus | None = None
+    feedback_tone: FeedbackTone | None = None
 
 
 class AssignmentResponse(BaseModel):
@@ -50,6 +52,7 @@ class AssignmentResponse(BaseModel):
     prompt: str | None
     due_date: date | None
     status: AssignmentStatus
+    feedback_tone: FeedbackTone
     resubmission_enabled: bool
     resubmission_limit: int | None
     created_at: datetime
@@ -67,6 +70,7 @@ class AssignmentListItemResponse(BaseModel):
     prompt: str | None
     due_date: date | None
     status: AssignmentStatus
+    feedback_tone: FeedbackTone
     resubmission_enabled: bool
     resubmission_limit: int | None
     created_at: datetime

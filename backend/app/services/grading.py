@@ -190,11 +190,16 @@ async def grade_essay(
     #    which places it in the user role — NEVER in the system prompt.
     # ------------------------------------------------------------------
     prompt_version = settings.grading_prompt_version
+    # Read the feedback tone from the assignment config.  The column has a
+    # NOT NULL server_default of "direct", so it is always set for new rows.
+    # For older rows (pre-migration) the ORM default also applies.
+    tone = str(assignment.feedback_tone) if assignment.feedback_tone else "direct"
     grading_response = await call_grading(
         rubric_json=rubric_json,
         strictness=strictness,
         essay_text=essay_version.content,
         criteria=criteria,
+        tone=tone,
         prompt_version=prompt_version,
     )
 
@@ -260,6 +265,9 @@ async def grade_essay(
             teacher_score=None,
             final_score=ai_score,
             ai_justification=cs.justification,
+            # ai_feedback is an empty string for v1 responses (field absent)
+            # and a non-empty string or fallback for v2+ responses.
+            ai_feedback=cs.ai_feedback if cs.ai_feedback else None,
             confidence=ConfidenceLevel(cs.confidence),
         )
         db.add(criterion_score)

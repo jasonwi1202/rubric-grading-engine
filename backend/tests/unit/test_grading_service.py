@@ -61,10 +61,12 @@ def _make_essay_version(
 def _make_assignment(
     assignment_id: uuid.UUID | None = None,
     rubric_snapshot: dict | None = None,
+    feedback_tone: str = "direct",
 ) -> MagicMock:
     crit_id = str(_make_uuid())
     a = MagicMock()
     a.id = assignment_id or _make_uuid()
+    a.feedback_tone = feedback_tone
     a.rubric_snapshot = rubric_snapshot or {
         "id": str(_make_uuid()),
         "name": "Test Rubric",
@@ -90,6 +92,7 @@ def _make_grading_response(
     score_clamped: bool = False,
     needs_review: bool = False,
     confidence: str = "high",
+    ai_feedback: str = "Good work on this criterion.",
 ) -> ParsedGradingResponse:
     return ParsedGradingResponse(
         criterion_scores=[
@@ -98,6 +101,7 @@ def _make_grading_response(
                 score=score,
                 justification="A sufficiently long justification string for testing purposes.",
                 confidence=confidence,
+                ai_feedback=ai_feedback,
                 score_clamped=score_clamped,
                 needs_review=needs_review,
             )
@@ -773,3 +777,105 @@ class TestGradeEssayStatusGuard:
             await grade_essay(db, essay.id, teacher_id, "balanced")
 
         db.commit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests — tone and ai_feedback (M3.18)
+# ---------------------------------------------------------------------------
+
+
+class TestGradeEssayFeedbackTone:
+    """Tests that feedback_tone from the assignment is passed to call_grading
+    and that ai_feedback is stored on the CriterionScore record."""
+
+    @pytest.mark.asyncio
+    async def test_tone_from_assignment_passed_to_call_grading(self) -> None:
+        """The feedback_tone on the assignment is forwarded as 'tone' to call_grading."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(
+            assignment_id=essay.assignment_id, feedback_tone="encouraging"
+        )
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        grading_resp = _make_grading_response(criterion_id=criterion_id)
+
+        with patch("app.services.grading.call_grading", return_value=grading_resp) as mock_call:
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        _, call_kwargs = mock_call.call_args
+        assert call_kwargs.get("tone") == "encouraging", (
+            f"Expected tone='encouraging', got {call_kwargs.get('tone')!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tone_defaults_to_direct_when_feedback_tone_none(self) -> None:
+        """When feedback_tone is falsy on the assignment, tone defaults to 'direct'."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        assignment.feedback_tone = None  # Simulate pre-migration row
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        grading_resp = _make_grading_response(criterion_id=criterion_id)
+
+        with patch("app.services.grading.call_grading", return_value=grading_resp) as mock_call:
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        _, call_kwargs = mock_call.call_args
+        assert call_kwargs.get("tone") == "direct"
+
+    @pytest.mark.asyncio
+    async def test_ai_feedback_stored_on_criterion_score(self) -> None:
+        """ai_feedback from the grading response is stored on the CriterionScore record."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        grading_resp = _make_grading_response(
+            criterion_id=criterion_id,
+            ai_feedback="Your thesis is clear, but expand your evidence.",
+        )
+
+        added_objects: list[object] = []
+        db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        with patch("app.services.grading.call_grading", return_value=grading_resp):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        from app.models.grade import CriterionScore as CriterionScoreModel
+
+        cs_objs = [o for o in added_objects if isinstance(o, CriterionScoreModel)]
+        assert len(cs_objs) == 1
+        assert cs_objs[0].ai_feedback == "Your thesis is clear, but expand your evidence."
+
+    @pytest.mark.asyncio
+    async def test_empty_ai_feedback_stored_as_none(self) -> None:
+        """When ai_feedback from the parser is empty (v1 response), None is stored in the DB."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        grading_resp = _make_grading_response(criterion_id=criterion_id, ai_feedback="")
+
+        added_objects: list[object] = []
+        db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        with patch("app.services.grading.call_grading", return_value=grading_resp):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        from app.models.grade import CriterionScore as CriterionScoreModel
+
+        cs_objs = [o for o in added_objects if isinstance(o, CriterionScoreModel)]
+        assert len(cs_objs) == 1
+        assert cs_objs[0].ai_feedback is None

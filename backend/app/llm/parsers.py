@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 MIN_JUSTIFICATION_LENGTH: int = 20
 FALLBACK_JUSTIFICATION: str = "No justification provided."
 FALLBACK_SUMMARY: str = "No summary feedback provided."
+FALLBACK_FEEDBACK: str = "No feedback note provided."
 VALID_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low"})
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,8 @@ class ParsedCriterionScore:
             criterion entirely.
         justification: Non-empty justification string (may be the fallback).
         confidence: One of ``"high"``, ``"medium"``, ``"low"``.
+        ai_feedback: Per-criterion student-facing feedback note.  Empty string
+            when the LLM response did not include the field (e.g. v1 responses).
         score_clamped: ``True`` when the raw LLM score was outside the valid
             range and was clamped.
         needs_review: ``True`` when any anomaly was detected — the teacher
@@ -86,6 +89,7 @@ class ParsedCriterionScore:
     score: int | None
     justification: str
     confidence: str
+    ai_feedback: str = ""
     score_clamped: bool = False
     needs_review: bool = False
     raw_score: int | None = None
@@ -177,6 +181,7 @@ def parse_grading_response(
                     score=None,
                     justification=FALLBACK_JUSTIFICATION,
                     confidence="low",
+                    ai_feedback="",
                     needs_review=True,
                 )
             )
@@ -238,12 +243,26 @@ def parse_grading_response(
         if score_clamped:
             confidence = "low"
 
+        # --- Per-criterion feedback note (v2+) ---
+        # When the ``feedback`` key is present in the response (grading-v2),
+        # use its value or fall back to the placeholder.  When the key is
+        # absent entirely (grading-v1 responses), keep an empty string so
+        # callers can distinguish "no feedback requested" from "empty feedback".
+        feedback_raw = item.get("feedback")
+        if feedback_raw is not None:
+            ai_feedback = str(feedback_raw).strip()
+            if not ai_feedback:
+                ai_feedback = FALLBACK_FEEDBACK
+        else:
+            ai_feedback = ""
+
         parsed_scores.append(
             ParsedCriterionScore(
                 criterion_id=info.criterion_id,
                 score=score,
                 justification=justification,
                 confidence=confidence,
+                ai_feedback=ai_feedback,
                 score_clamped=score_clamped,
                 needs_review=needs_review,
                 raw_score=pre_clamp_score,

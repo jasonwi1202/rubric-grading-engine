@@ -107,6 +107,8 @@ class CriterionScore(Base):
     # COALESCE(teacher_score, ai_score) — always kept in sync by the application.
     final_score: Mapped[int] = mapped_column(Integer, nullable=False)
     ai_justification: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable — AI-generated per-criterion student-facing feedback note.
+    ai_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Nullable — teacher-written criterion-level feedback.
     teacher_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[ConfidenceLevel] = mapped_column(
