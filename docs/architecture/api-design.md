@@ -354,6 +354,7 @@ System templates are accessible to any authenticated teacher; personal templates
 | POST | `/essays/{essayId}/resubmit` | Submit a new version (resubmission) |
 | GET | `/essays/{essayId}/versions` | List all versions with grades |
 | GET | `/essays/{essayId}/integrity` | Get integrity report |
+| POST | `/essays/{essayId}/grade/retry` | Re-enqueue a single failed essay for grading |
 
 **POST /assignments/{id}/essays** — multipart form:
 - `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
@@ -383,6 +384,17 @@ MIME type is validated server-side from file magic bytes (not the file extension
 `auto_assign_status` reflects the outcome of the auto-assignment attempt: `"assigned"` (essay matched to exactly one student with confidence ≥ 0.85), `"ambiguous"` (multiple students matched — held for manual review), or `"unassigned"` (no match found). When `student_id` is explicitly provided in the request this field is `null` (no roster search is performed).
 
 Errors: `404 NOT_FOUND` (assignment not found, or student not found for this teacher), `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled in the class), `422 VALIDATION_ERROR` (no files, more than one file with `student_id`, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED`, `FILE_TOO_LARGE`, or `VALIDATION_ERROR` as appropriate).
+
+**POST /essays/{id}/grade/retry body:**
+```json
+{
+  "strictness": "balanced"  // optional; "lenient" | "balanced" | "strict"
+}
+```
+
+Re-enqueues a single essay for grading. Only available when the essay has `status=queued` (essays fail and are reverted to `queued` after exhausting retries). Returns `202` immediately.
+
+Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (essay not found), `409 CONFLICT` (essay is currently being graded or has already been completed).
 
 ---
 

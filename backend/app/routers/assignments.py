@@ -76,7 +76,7 @@ async def trigger_grading_endpoint(
     payload: TriggerGradingRequest,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-    redis_client: Redis = Depends(_get_redis),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
 ) -> JSONResponse:
     """Enqueue one grading task per queued essay and return 202 immediately.
 
@@ -119,7 +119,7 @@ async def get_grading_status_endpoint(
     assignment_id: uuid.UUID,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-    redis_client: Redis = Depends(_get_redis),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
 ) -> JSONResponse:
     """Return the current batch grading progress for an assignment.
 

@@ -68,7 +68,7 @@ async def initialize_progress(
             ``None`` for *student_name* when the essay has no student.
     """
     key = grading_progress_key(assignment_id)
-    mapping: dict[str, str] = {
+    mapping: dict[str, str | bytes | float | int] = {
         "total": str(len(essays)),
         "complete": "0",
         "failed": "0",
@@ -80,7 +80,7 @@ async def initialize_progress(
 
     pipe = redis.pipeline()
     pipe.delete(key)
-    pipe.hset(key, mapping=mapping)
+    pipe.hset(key, mapping=mapping)  # type: ignore[arg-type]
     pipe.expire(key, settings.redis_grading_ttl_seconds)
     await pipe.execute()
 

@@ -79,7 +79,7 @@ async def _update_redis_on_success(
     from app.config import settings  # noqa: PLC0415
     from app.services.grading_progress import mark_essay_complete  # noqa: PLC0415
 
-    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
     try:
         counters = await mark_essay_complete(
             redis,
@@ -89,7 +89,7 @@ async def _update_redis_on_success(
         if _is_batch_complete(counters):
             await _transition_assignment_to_review(uuid.UUID(assignment_id), uuid.UUID(teacher_id))
     finally:
-        await redis.aclose()
+        await redis.aclose()  # type: ignore[attr-defined]
 
 
 async def _update_redis_on_failure(
@@ -104,7 +104,7 @@ async def _update_redis_on_failure(
     from app.config import settings  # noqa: PLC0415
     from app.services.grading_progress import mark_essay_failed  # noqa: PLC0415
 
-    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
     try:
         counters = await mark_essay_failed(
             redis,
@@ -115,7 +115,7 @@ async def _update_redis_on_failure(
         if _is_batch_complete(counters):
             await _transition_assignment_to_review(uuid.UUID(assignment_id), uuid.UUID(teacher_id))
     finally:
-        await redis.aclose()
+        await redis.aclose()  # type: ignore[attr-defined]
 
 
 def _is_batch_complete(counters: dict[str, int]) -> bool:

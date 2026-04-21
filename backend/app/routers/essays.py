@@ -241,7 +241,7 @@ async def retry_essay_grading_endpoint(
     payload: RetryGradingRequest,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-    redis_client: Redis = Depends(_get_redis),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
 ) -> JSONResponse:
     """Re-enqueue grading for a single failed (reverted-to-queued) essay.
 
