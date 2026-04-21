@@ -7,7 +7,7 @@ Core AI grading pipeline for a single essay:
 2. Load the latest EssayVersion (the text to grade)
 3. Load the Assignment and read the immutable ``rubric_snapshot``
 4. Extract ``CriterionInfo`` objects from the snapshot
-5. Update essay status → ``grading`` and commit (externally visible)
+5. Guard status transition (queued → grading only); commit
 6. Call the LLM via :func:`app.llm.client.call_grading`
 7. Write :class:`Grade` and :class:`CriterionScore` records
 8. Log ``score_clamped`` audit entries for any clamped scores
@@ -35,7 +35,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from app.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    GradingInProgressError,
+    NotFoundError,
+    ValidationError,
+)
 from app.llm.client import CriterionInfo, call_grading
 from app.models.assignment import Assignment
 from app.models.audit_log import AuditLog
@@ -74,6 +80,9 @@ async def grade_essay(
         NotFoundError: Essay, essay version, or assignment not found.
         ForbiddenError: Essay belongs to a different teacher.
         ValidationError: ``strictness`` is not a recognised value.
+        GradingInProgressError: Essay is already being graded.
+        ConflictError: Essay is in a non-gradeable status, or a duplicate
+            grade was detected.
         LLMError: LLM call failed after all retries.
         LLMParseError: LLM response could not be parsed after retries.
     """
@@ -160,10 +169,14 @@ async def grade_essay(
     rubric_json: str = json.dumps(snapshot)
 
     # ------------------------------------------------------------------
-    # 5. Update essay status → grading and persist it before the LLM
-    #    call so other transactions can observe the in-progress state
-    #    and duplicate enqueues can be detected early.
+    # 5. Guard status transition — only queued → grading is allowed.
+    #    Raise early for essays that are already in-progress or done so
+    #    we never overwrite a completed grade with a fresh grading run.
     # ------------------------------------------------------------------
+    if essay.status == EssayStatus.grading:
+        raise GradingInProgressError("This essay is already being graded.")
+    if essay.status != EssayStatus.queued:
+        raise ConflictError(f"Essay cannot be graded in current status '{essay.status}'.")
     essay.status = EssayStatus.grading
     try:
         await db.commit()
@@ -209,7 +222,22 @@ async def grade_essay(
         is_locked=False,
     )
     db.add(grade)
-    await db.flush()  # Populate grade.id before writing criterion scores.
+    try:
+        await db.flush()  # Populate grade.id before writing criterion scores.
+    except IntegrityError as exc:
+        await db.rollback()
+        # The grading status was committed earlier — revert it to queued so
+        # the teacher can re-trigger grading rather than being stuck.
+        essay.status = EssayStatus.queued
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            logger.warning(
+                "Could not revert essay status after duplicate-grade flush error",
+                extra={"essay_id": str(essay_id)},
+            )
+        raise ConflictError("A grade already exists for this essay version.") from exc
 
     # ------------------------------------------------------------------
     # 9. Write CriterionScore records; audit-log score_clamped events.

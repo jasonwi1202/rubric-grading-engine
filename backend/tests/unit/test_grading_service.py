@@ -640,6 +640,55 @@ class TestGradeEssayIntegrityError:
 
         db.rollback.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_flush_integrity_error_raises_conflict_and_reverts_essay_to_queued(
+        self,
+    ) -> None:
+        """IntegrityError on db.flush (duplicate essay_version_id) rolls back and reverts
+        the essay status to queued so the teacher can re-trigger grading."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.exceptions import ConflictError
+
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        # Build a db mock that has 4 execute() results:
+        # 1. essay (tenant-scoped join)
+        # 2. essay version
+        # 3. assignment
+        # (no 4th needed — flush raises before any UPDATE is issued)
+        db = AsyncMock()
+        db.add = MagicMock()
+        r1 = MagicMock()
+        r1.scalar_one_or_none = MagicMock(return_value=essay)
+        r2 = MagicMock()
+        r2.scalar_one_or_none = MagicMock(return_value=essay_version)
+        r3 = MagicMock()
+        r3.scalar_one_or_none = MagicMock(return_value=assignment)
+        db.execute = AsyncMock(side_effect=[r1, r2, r3])
+
+        # First commit (grading status) succeeds; flush raises IntegrityError;
+        # second commit (revert to queued) succeeds.
+        db.commit = AsyncMock(side_effect=[None, None])
+        db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
+
+        grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
+
+        with (
+            patch("app.services.grading.call_grading", return_value=grading_resp),
+            pytest.raises(ConflictError),
+        ):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        db.rollback.assert_called_once()
+        # After rollback, service should revert essay status to queued and commit.
+        assert essay.status == EssayStatus.queued
+        assert db.commit.call_count == 2
+
 
 # ---------------------------------------------------------------------------
 # Tests — strictness validation
@@ -670,14 +719,57 @@ class TestGradeEssayStrictnessValidation:
     async def test_valid_strictness_values_accepted(self) -> None:
         """All three valid strictness values are accepted without error."""
         teacher_id = _make_uuid()
-        essay = _make_essay()
-        essay_version = _make_essay_version(essay.id)
-        assignment = _make_assignment(assignment_id=essay.assignment_id)
-        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
 
         for strictness in ("lenient", "balanced", "strict"):
+            # Create a fresh essay per iteration so status doesn't carry over.
+            essay = _make_essay()
+            essay_version = _make_essay_version(essay.id)
+            assignment = _make_assignment(assignment_id=essay.assignment_id)
+            criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
             db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
             grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
             with patch("app.services.grading.call_grading", return_value=grading_resp):
                 grade = await grade_essay(db, essay.id, teacher_id, strictness)
             assert grade is not None, f"Expected grade for strictness={strictness!r}"
+
+
+# ---------------------------------------------------------------------------
+# Tests — status transition guard
+# ---------------------------------------------------------------------------
+
+
+class TestGradeEssayStatusGuard:
+    @pytest.mark.asyncio
+    async def test_already_grading_raises_grading_in_progress_error(self) -> None:
+        """Essay in grading status raises GradingInProgressError before any commit."""
+        from app.exceptions import GradingInProgressError
+
+        teacher_id = _make_uuid()
+        essay = _make_essay(status=EssayStatus.grading)
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+
+        with pytest.raises(GradingInProgressError):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        db.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_already_graded_raises_conflict_error(self) -> None:
+        """Essay in graded status raises ConflictError before any commit."""
+        from app.exceptions import ConflictError
+
+        teacher_id = _make_uuid()
+        essay = _make_essay(status=EssayStatus.graded)
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+
+        with pytest.raises(ConflictError):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        db.commit.assert_not_called()
