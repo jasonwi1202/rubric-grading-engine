@@ -2,15 +2,16 @@
 
 Core AI grading pipeline for a single essay:
 
+0. Validate ``strictness`` — raise ``ValidationError`` if invalid
 1. Load the Essay and verify tenant ownership (teacher_id)
 2. Load the latest EssayVersion (the text to grade)
 3. Load the Assignment and read the immutable ``rubric_snapshot``
 4. Extract ``CriterionInfo`` objects from the snapshot
-5. Update essay status → ``grading``
+5. Update essay status → ``grading`` and commit (externally visible)
 6. Call the LLM via :func:`app.llm.client.call_grading`
 7. Write :class:`Grade` and :class:`CriterionScore` records
 8. Log ``score_clamped`` audit entries for any clamped scores
-9. Update essay status → ``graded``
+9. Update essay status → ``graded`` and commit
 
 Security invariants:
 - Essay content is NEVER logged at any level.
@@ -34,7 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.llm.client import CriterionInfo, call_grading
 from app.models.assignment import Assignment
 from app.models.audit_log import AuditLog
@@ -72,9 +73,24 @@ async def grade_essay(
     Raises:
         NotFoundError: Essay, essay version, or assignment not found.
         ForbiddenError: Essay belongs to a different teacher.
+        ValidationError: ``strictness`` is not a recognised value.
         LLMError: LLM call failed after all retries.
         LLMParseError: LLM response could not be parsed after retries.
     """
+    # ------------------------------------------------------------------
+    # 0. Validate strictness early — raise a structured domain error
+    #    rather than letting StrictnessLevel(strictness) raise a bare
+    #    ValueError that would surface as an unhandled 500.
+    # ------------------------------------------------------------------
+    try:
+        strictness_level = StrictnessLevel(strictness)
+    except ValueError as exc:
+        valid = ", ".join(f'"{v.value}"' for v in StrictnessLevel)
+        raise ValidationError(
+            f"Invalid strictness value: {strictness!r}. Must be one of: {valid}",
+            field="strictness",
+        ) from exc
+
     # ------------------------------------------------------------------
     # 1. Load Essay — single tenant-scoped query.
     # ------------------------------------------------------------------
@@ -144,10 +160,16 @@ async def grade_essay(
     rubric_json: str = json.dumps(snapshot)
 
     # ------------------------------------------------------------------
-    # 5. Update essay status → grading.
+    # 5. Update essay status → grading and persist it before the LLM
+    #    call so other transactions can observe the in-progress state
+    #    and duplicate enqueues can be detected early.
     # ------------------------------------------------------------------
     essay.status = EssayStatus.grading
-    await db.flush()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError("Could not update essay grading status.") from exc
 
     # ------------------------------------------------------------------
     # 6. Call the LLM.
@@ -181,7 +203,7 @@ async def grade_essay(
         total_score=total_score,
         max_possible_score=max_possible_score,
         summary_feedback=grading_response.summary_feedback,
-        strictness=StrictnessLevel(strictness),
+        strictness=strictness_level,
         ai_model=settings.openai_grading_model,
         prompt_version=f"grading-{prompt_version}",
         is_locked=False,

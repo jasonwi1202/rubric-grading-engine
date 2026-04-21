@@ -373,7 +373,7 @@ class TestParseGradingResponseRawScore:
         assert cs.raw_score is None  # No pre-clamp integer available
 
     def test_raw_score_not_set_when_score_in_range(self) -> None:
-        """raw_score remains None when no clamping occurs."""
+        """raw_score equals the parsed LLM integer when no clamping occurs."""
         criteria = [_crit("c1", min_score=1, max_score=5)]
         payload = _grading_payload(criterion_id="c1", score=3)
         result = parse_grading_response(payload, criteria)

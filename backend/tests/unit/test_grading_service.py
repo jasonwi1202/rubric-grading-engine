@@ -615,7 +615,7 @@ class TestGradeEssayMissingCriterion:
 class TestGradeEssayIntegrityError:
     @pytest.mark.asyncio
     async def test_integrity_error_on_commit_raises_conflict_error(self) -> None:
-        """IntegrityError on commit (duplicate grade) is raised as ConflictError."""
+        """IntegrityError on the final commit (duplicate grade) raises ConflictError."""
         from sqlalchemy.exc import IntegrityError
 
         from app.exceptions import ConflictError
@@ -627,7 +627,8 @@ class TestGradeEssayIntegrityError:
         criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
 
         db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
-        db.commit = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
+        # First commit (grading status) succeeds; second commit (grade write) fails.
+        db.commit = AsyncMock(side_effect=[None, IntegrityError("duplicate", {}, None)])
 
         grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
 
@@ -638,3 +639,45 @@ class TestGradeEssayIntegrityError:
             await grade_essay(db, essay.id, teacher_id, "balanced")
 
         db.rollback.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests — strictness validation
+# ---------------------------------------------------------------------------
+
+
+class TestGradeEssayStrictnessValidation:
+    @pytest.mark.asyncio
+    async def test_invalid_strictness_raises_validation_error(self) -> None:
+        """Invalid strictness raises ValidationError before any DB access."""
+        from app.exceptions import ValidationError
+
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+
+        with pytest.raises(ValidationError) as exc_info:
+            await grade_essay(db, essay.id, teacher_id, "invalid_value")
+
+        err = exc_info.value
+        assert err.field == "strictness"
+        assert "invalid_value" in str(err)
+
+    @pytest.mark.asyncio
+    async def test_valid_strictness_values_accepted(self) -> None:
+        """All three valid strictness values are accepted without error."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        for strictness in ("lenient", "balanced", "strict"):
+            db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+            grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
+            with patch("app.services.grading.call_grading", return_value=grading_resp):
+                grade = await grade_essay(db, essay.id, teacher_id, strictness)
+            assert grade is not None, f"Expected grade for strictness={strictness!r}"

@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.exceptions import ForbiddenError, LLMError
+from app.exceptions import ConflictError, ForbiddenError, LLMError
 from app.tasks.celery_app import celery
 from app.tasks.grading import _revert_essay_to_queued, _run_grade_essay, grade_essay
 
@@ -154,6 +154,32 @@ class TestRevertEssayToQueued:
 
         db_mock.commit.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_no_op_when_essay_not_in_grading_status(self) -> None:
+        """_revert_essay_to_queued is a no-op when essay.status is not grading."""
+        from app.models.essay import EssayStatus
+
+        essay_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        essay_mock = MagicMock()
+        essay_mock.status = EssayStatus.graded  # Already graded — must not be downgraded
+
+        db_mock = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none = MagicMock(return_value=essay_mock)
+        db_mock.execute = AsyncMock(return_value=result_mock)
+
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.tasks.grading.AsyncSessionLocal", return_value=cm):
+            await _revert_essay_to_queued(essay_id, teacher_id)
+
+        # Status must remain graded and no commit should be issued.
+        assert essay_mock.status == EssayStatus.graded
+        db_mock.commit.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Tests — grade_essay task (eager execution via mock)
@@ -269,3 +295,25 @@ class TestGradeEssayTask:
 
         assert result.failed(), "Task should fail with ForbiddenError"
         assert len(revert_called) == 0, "Revert must not be called for ForbiddenError"
+
+    def test_conflict_error_does_not_revert_essay(self) -> None:
+        """ConflictError (e.g., duplicate grade) does not trigger _revert_essay_to_queued."""
+        essay_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        revert_called: list[str] = []
+
+        with (
+            patch(
+                "app.tasks.grading._run_grade_essay",
+                new=AsyncMock(side_effect=ConflictError("already graded")),
+            ),
+            patch(
+                "app.tasks.grading._revert_essay_to_queued",
+                new=AsyncMock(side_effect=lambda eid, tid: revert_called.append(eid)),
+            ),
+        ):
+            result = grade_essay.apply(args=[essay_id, teacher_id, "balanced"])
+
+        assert result.failed(), "Task should fail with ConflictError"
+        assert len(revert_called) == 0, "Revert must not be called for ConflictError"

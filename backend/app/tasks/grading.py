@@ -24,7 +24,7 @@ import logging
 import uuid
 
 from app.db.session import AsyncSessionLocal
-from app.exceptions import ForbiddenError, LLMError
+from app.exceptions import ConflictError, ForbiddenError, LLMError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,9 @@ async def _revert_essay_to_queued(essay_id: str, teacher_id: str) -> None:
             )
         )
         essay = result.scalar_one_or_none()
-        if essay is not None:
+        if essay is not None and essay.status == EssayStatus.grading:
+            # Only revert if still in grading state — do not downgrade a
+            # legitimately graded essay back to queued.
             essay.status = EssayStatus.queued
             await db.commit()
 
@@ -119,6 +121,19 @@ def grade_essay(self: object, essay_id: str, teacher_id: str, strictness: str) -
         logger.warning(
             "Grading task forbidden — essay does not belong to teacher",
             extra={"essay_id": essay_id},
+        )
+        raise
+    except ConflictError as exc:
+        # A ConflictError from the service indicates either a duplicate grade
+        # (essay_version_id unique violation) or a status update failure.  In
+        # the duplicate-grade case the essay may already be in graded state;
+        # in the status-update case the essay was never moved to grading.
+        # Either way _revert_essay_to_queued's status guard handles
+        # idempotency, but we skip the revert call explicitly to avoid an
+        # unnecessary DB round-trip for a known, recoverable domain conflict.
+        logger.error(
+            "Grading task conflict — not reverting essay status",
+            extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
         raise
     except LLMError as exc:

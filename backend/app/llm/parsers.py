@@ -75,10 +75,11 @@ class ParsedCriterionScore:
             range and was clamped.
         needs_review: ``True`` when any anomaly was detected — the teacher
             should review this score before locking the grade.
-        raw_score: The pre-clamp integer returned by the LLM, or ``None``
-            when the LLM returned an unparseable value.  Only meaningful when
-            ``score_clamped`` is ``True``; used to populate the
-            ``score_clamped`` audit log entry.
+        raw_score: The integer score parsed from the LLM response, or
+            ``None`` when the LLM returned an unparseable value.  When
+            ``score_clamped`` is ``True``, this stores the original
+            pre-clamp value used to populate the ``score_clamped`` audit
+            log entry.
     """
 
     criterion_id: str
