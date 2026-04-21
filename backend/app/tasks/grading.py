@@ -166,30 +166,33 @@ async def _transition_assignment_to_review(
 ) -> None:
     """Transition assignment from ``grading`` to ``review`` when batch is done.
 
-    Uses a conditional query (WHERE status = 'grading') so that concurrent
-    task completions are idempotent — only the first one will find a row to
-    update; subsequent calls are silent no-ops.
+    Uses a single conditional UPDATE (WHERE status = 'grading' AND teacher ownership)
+    so concurrent task completions are truly idempotent — only the first UPDATE
+    matches; subsequent calls affect zero rows and are silent no-ops.
     """
-    from sqlalchemy import select  # noqa: PLC0415
+    from sqlalchemy import exists, select, update  # noqa: PLC0415
 
     from app.models.assignment import Assignment, AssignmentStatus  # noqa: PLC0415
     from app.models.class_ import Class  # noqa: PLC0415
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(Assignment)
-            .join(Class, Assignment.class_id == Class.id)
+            update(Assignment)
             .where(
                 Assignment.id == assignment_id,
-                Class.teacher_id == teacher_id,
                 Assignment.status == AssignmentStatus.grading,
+                exists(
+                    select(Class.id).where(
+                        Class.id == Assignment.class_id,
+                        Class.teacher_id == teacher_id,
+                    )
+                ),
             )
+            .values(status=AssignmentStatus.review)
         )
-        assignment = result.scalar_one_or_none()
-        if assignment is None:
-            # Already transitioned or not found — no-op.
+        if result.rowcount == 0:  # type: ignore[attr-defined]
+            # Already transitioned, not found, or not owned by this teacher — no-op.
             return
-        assignment.status = AssignmentStatus.review
         await db.commit()
 
 

@@ -5,7 +5,8 @@ no real Redis.  No student PII in any fixture.
 
 Coverage:
 - trigger_batch_grading: happy path, not-gradeable state, no queued essays,
-  already-grading state accepted, enqueues correct task args
+  already-grading state accepted, enqueues correct task args,
+  rollback on Redis/broker failure
 - get_grading_status: reads from Redis, returns idle when key absent
 - retry_essay_grading: queued essay enqueued, grading rejects, completed rejects,
   cross-teacher returns 403, missing essay returns 404
@@ -77,6 +78,7 @@ def _make_db_mock() -> AsyncMock:
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     db.refresh = AsyncMock()
     return db
 
@@ -217,7 +219,97 @@ class TestTriggerBatchGrading:
         assert enqueue_calls[0] == str(essay.id)
 
     @pytest.mark.asyncio
-    async def test_raises_when_assignment_not_gradeable(self) -> None:
+    async def test_rollback_when_redis_init_fails(self) -> None:
+        """If Redis initialisation raises, assignment status is rolled back."""
+        assignment_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+        assignment = _make_assignment(assignment_id=assignment_id, status=AssignmentStatus.open)
+        essay = _make_essay(assignment_id=assignment_id)
+
+        db = _make_db_mock()
+        redis = _make_redis_mock()
+
+        result_mock = MagicMock()
+        result_mock.all = MagicMock(return_value=[(essay, None)])
+        db.execute = AsyncMock(return_value=result_mock)
+
+        with (
+            patch(
+                "app.services.batch_grading.get_assignment",
+                new=AsyncMock(return_value=assignment),
+            ),
+            patch(
+                "app.services.batch_grading.initialize_progress",
+                new=AsyncMock(side_effect=ConnectionError("Redis down")),
+            ),
+            pytest.raises(ConnectionError),
+        ):
+            from app.services.batch_grading import trigger_batch_grading
+
+            await trigger_batch_grading(
+                db=db, redis=redis, assignment_id=assignment_id, teacher_id=teacher_id
+            )
+
+        # Status was set in memory before the try block
+        assert assignment.status == AssignmentStatus.grading
+        # DB commit must NOT have been called; rollback must have been called
+        db.commit.assert_not_called()
+        db.rollback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_commit_is_deferred_until_after_enqueue(self) -> None:
+        """DB commit happens only after Redis init AND Celery enqueue succeed."""
+        assignment_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+        assignment = _make_assignment(assignment_id=assignment_id, status=AssignmentStatus.open)
+        essay = _make_essay(assignment_id=assignment_id)
+
+        db = _make_db_mock()
+        redis = _make_redis_mock()
+        commit_order: list[str] = []
+
+        original_commit = db.commit
+
+        async def _tracking_commit() -> None:
+            commit_order.append("db.commit")
+            return await original_commit()
+
+        db.commit = _tracking_commit
+
+        result_mock = MagicMock()
+        result_mock.all = MagicMock(return_value=[(essay, None)])
+        db.execute = AsyncMock(return_value=result_mock)
+
+        enqueue_calls: list[str] = []
+
+        mock_task = MagicMock()
+
+        def _tracking_delay(eid: str, *args: object) -> None:
+            commit_order.append("enqueue")
+            enqueue_calls.append(eid)
+
+        mock_task.delay = _tracking_delay
+
+        with (
+            patch(
+                "app.services.batch_grading.get_assignment",
+                new=AsyncMock(return_value=assignment),
+            ),
+            patch("app.services.batch_grading.initialize_progress", new=AsyncMock()),
+            patch("app.tasks.grading.grade_essay", mock_task),
+        ):
+            from app.services.batch_grading import trigger_batch_grading
+
+            await trigger_batch_grading(
+                db=db, redis=redis, assignment_id=assignment_id, teacher_id=teacher_id
+            )
+
+        # Enqueue must happen BEFORE commit
+        assert "enqueue" in commit_order
+        assert "db.commit" in commit_order
+        assert commit_order.index("enqueue") < commit_order.index("db.commit")
+
+
         """Non-gradeable state raises AssignmentNotGradeableError."""
         assignment_id = uuid.uuid4()
         teacher_id = uuid.uuid4()

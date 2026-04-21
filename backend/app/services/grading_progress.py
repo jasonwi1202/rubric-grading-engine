@@ -114,13 +114,18 @@ async def mark_essay_complete(
         All values are 0 if the key has expired.
     """
     _MARK_COMPLETE_SCRIPT = """
+local total = redis.call('HGET', KEYS[1], 'total')
+if not total then
+    -- Hash not initialised or has expired; treat as a no-op and return zeros.
+    return {false, false, false}
+end
 local prev = redis.call('HGET', KEYS[1], ARGV[1])
 if prev == 'complete' then
     -- Already terminal; counter must not be inflated on re-delivery.
 else
     redis.call('HSET', KEYS[1], ARGV[1], 'complete')
     if prev ~= false then
-        -- Field exists with a different value: safe to increment.
+        -- Field exists with a different (non-terminal) value: safe to increment.
         redis.call('HINCRBY', KEYS[1], 'complete', 1)
     end
 end
@@ -160,6 +165,11 @@ async def mark_essay_failed(
         All values are 0 if the key has expired.
     """
     _MARK_FAILED_SCRIPT = """
+local total = redis.call('HGET', KEYS[1], 'total')
+if not total then
+    -- Hash not initialised or has expired; treat as a no-op and return zeros.
+    return {false, false, false}
+end
 local prev = redis.call('HGET', KEYS[1], ARGV[1])
 if prev == 'failed' then
     -- Already terminal; counter must not be inflated on re-delivery.
@@ -167,7 +177,7 @@ else
     redis.call('HSET', KEYS[1], ARGV[1], 'failed')
     redis.call('HSET', KEYS[1], ARGV[2], ARGV[3])
     if prev ~= false then
-        -- Field exists with a different value: safe to increment.
+        -- Field exists with a different (non-terminal) value: safe to increment.
         redis.call('HINCRBY', KEYS[1], 'failed', 1)
     end
 end

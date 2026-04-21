@@ -213,6 +213,16 @@ class TestMarkEssayComplete:
         # Both calls go through redis.eval (which includes the idempotency guard)
         assert redis.eval.call_count == 2
 
+    @pytest.mark.asyncio
+    async def test_returns_zeros_when_hash_expired_before_write(self) -> None:
+        """Lua guard: when the hash is missing (total == nil), script returns
+        all nils and the function safely returns all-zero counters."""
+        redis = _make_eval_redis_mock(eval_result=[None, None, None])
+
+        counters = await mark_essay_complete(redis, uuid.uuid4(), uuid.uuid4())
+
+        assert counters == {"total": 0, "complete": 0, "failed": 0}
+
 
 # ---------------------------------------------------------------------------
 # Tests — mark_essay_failed
@@ -255,6 +265,16 @@ class TestMarkEssayFailed:
         await mark_essay_failed(redis, assignment_id, essay_id, "LLM_UNAVAILABLE")
 
         assert redis.eval.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_zeros_when_hash_expired_before_write(self) -> None:
+        """Lua guard: when the hash is missing (total == nil), script returns
+        all nils and the function safely returns all-zero counters."""
+        redis = _make_eval_redis_mock(eval_result=[None, None, None])
+
+        counters = await mark_essay_failed(redis, uuid.uuid4(), uuid.uuid4(), "LLM_UNAVAILABLE")
+
+        assert counters == {"total": 0, "complete": 0, "failed": 0}
 
 
 # ---------------------------------------------------------------------------

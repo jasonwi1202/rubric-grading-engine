@@ -116,12 +116,17 @@ async def trigger_batch_grading(
         )
 
     # 2. Load queued essays with optional student name for Redis initialisation.
+    # Tenant isolation is enforced directly in this query (not via prior check
+    # alone) — per project rule: no two-query ownership pattern.
     query = (
         select(Essay, Student.full_name)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
         .outerjoin(Student, Essay.student_id == Student.id)
         .where(
             Essay.assignment_id == assignment_id,
             Essay.status == EssayStatus.queued,
+            Class.teacher_id == teacher_id,
         )
     )
     if essay_ids:
@@ -133,28 +138,39 @@ async def trigger_batch_grading(
     if not rows:
         raise AssignmentNotGradeableError("No essays are queued for grading.")
 
-    # 3. Transition assignment to grading (if still open).
-    if assignment.status == AssignmentStatus.open:
+    # 3. Transition assignment to grading (if still open), but defer the DB
+    # commit until Redis initialisation and Celery enqueueing both succeed.
+    # If either step fails, roll back so the assignment is not left stuck
+    # in 'grading' state.
+    status_changed = assignment.status == AssignmentStatus.open
+    if status_changed:
         assignment.status = AssignmentStatus.grading
-        await db.commit()
-        await db.refresh(assignment)
 
-    # 4. Initialise Redis progress (overwrites any previous state).
-    essay_pairs: list[tuple[uuid.UUID, str | None]] = [
-        (essay.id, student_name) for essay, student_name in rows
-    ]
-    await initialize_progress(redis, assignment_id, essay_pairs)
+    try:
+        # 4. Initialise Redis progress (overwrites any previous state).
+        essay_pairs: list[tuple[uuid.UUID, str | None]] = [
+            (essay.id, student_name) for essay, student_name in rows
+        ]
+        await initialize_progress(redis, assignment_id, essay_pairs)
 
-    # 5. Enqueue one task per essay.
-    from app.tasks.grading import grade_essay  # noqa: PLC0415 — lazy to avoid circular import
+        # 5. Enqueue one task per essay.
+        from app.tasks.grading import grade_essay  # noqa: PLC0415 — lazy to avoid circular import
 
-    for essay, _ in rows:
-        grade_essay.delay(
-            str(essay.id),
-            str(teacher_id),
-            strictness,
-            str(assignment_id),
-        )
+        for essay, _ in rows:
+            grade_essay.delay(
+                str(essay.id),
+                str(teacher_id),
+                strictness,
+                str(assignment_id),
+            )
+
+        if status_changed:
+            await db.commit()
+            await db.refresh(assignment)
+    except Exception:
+        if status_changed:
+            await db.rollback()
+        raise
 
     logger.info(
         "Batch grading triggered",
