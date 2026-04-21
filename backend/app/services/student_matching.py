@@ -124,15 +124,12 @@ def _score_filename(filename_stem: str, student_name: str) -> float:
     n = _normalize_name(student_name)
     if not q or not n:
         return 0.0
-    return (
-        float(
-            max(
-                fuzz.ratio(q, n),
-                fuzz.token_sort_ratio(q, n),
-            )
+    return float(
+        max(
+            fuzz.ratio(q, n),
+            fuzz.token_sort_ratio(q, n),
         )
-        / 100.0
-    )
+    ) / 100.0
 
 
 def _score_author(author: str, student_name: str) -> float:
@@ -144,15 +141,12 @@ def _score_author(author: str, student_name: str) -> float:
     n = _normalize_name(student_name)
     if not q or not n:
         return 0.0
-    return (
-        float(
-            max(
-                fuzz.ratio(q, n),
-                fuzz.token_sort_ratio(q, n),
-            )
+    return float(
+        max(
+            fuzz.ratio(q, n),
+            fuzz.token_sort_ratio(q, n),
         )
-        / 100.0
-    )
+    ) / 100.0
 
 
 def _score_header(header: str, student_name: str) -> float:
