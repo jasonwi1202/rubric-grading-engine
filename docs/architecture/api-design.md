@@ -325,6 +325,16 @@ System templates are accessible to any authenticated teacher; personal templates
 }
 ```
 
+**POST /assignments/{id}/grade response (202 Accepted):**
+```json
+{
+  "data": {
+    "enqueued": 28,
+    "assignment_id": "uuid"
+  }
+}
+```
+
 **GET /assignments/{id}/grading-status response:**
 ```json
 {
@@ -334,8 +344,8 @@ System templates are accessible to any authenticated teacher; personal templates
     "complete": 12,
     "failed": 1,
     "essays": [
-      { "id": "uuid", "status": "graded", "student_name": "Alice Chen" },
-      { "id": "uuid", "status": "failed", "error": "LLM_TIMEOUT" }
+      { "id": "uuid", "status": "complete", "student_name": "Alice Chen", "error": null },
+      { "id": "uuid", "status": "failed", "student_name": "Bob Smith", "error": "LLM_TIMEOUT" }
     ]
   }
 }

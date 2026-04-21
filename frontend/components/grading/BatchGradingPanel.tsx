@@ -216,7 +216,6 @@ export function BatchGradingPanel({
   // returns `false` when status is idle or terminal, preventing unnecessary requests.
   const {
     data: gradingStatus,
-    isLoading: statusLoading,
     isError: statusError,
   } = useQuery<GradingStatusResponse>({
     queryKey: ["grading-status", assignmentId],
