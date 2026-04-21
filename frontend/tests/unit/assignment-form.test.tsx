@@ -193,7 +193,7 @@ describe("NewAssignmentPage — form validation", () => {
     mockListRubrics.mockResolvedValue(RUBRIC_LIST);
   });
 
-  it("shows required error when title is empty", async () => {
+  it("shows validation error when title field is submitted empty", async () => {
     const user = userEvent.setup();
     render(wrapper({ children: <NewAssignmentPage /> }));
 
@@ -226,7 +226,7 @@ describe("NewAssignmentPage — form validation", () => {
     expect(mockCreateAssignment).not.toHaveBeenCalled();
   });
 
-  it("shows required error when no rubric is selected", async () => {
+  it("shows validation error when form is submitted without selecting a rubric", async () => {
     const user = userEvent.setup();
     render(wrapper({ children: <NewAssignmentPage /> }));
 
@@ -243,7 +243,7 @@ describe("NewAssignmentPage — form validation", () => {
     expect(mockCreateAssignment).not.toHaveBeenCalled();
   });
 
-  it("shows error when prompt exceeds 5000 characters", async () => {
+  it("shows validation error when prompt exceeding 5000 characters is submitted", async () => {
     // Use fireEvent.change to set a long value directly — avoids the 5-second
     // per-character typing overhead of userEvent.type.
     render(wrapper({ children: <NewAssignmentPage /> }));

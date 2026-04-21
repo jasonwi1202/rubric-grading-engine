@@ -223,7 +223,6 @@ export default function NewAssignmentPage() {
                 aria-busy={rubricsLoading}
                 className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
                 {...register("rubric_id")}
-                defaultValue=""
               >
                 <option value="" disabled>
                   {rubricsLoading ? "Loading rubrics…" : "Select a rubric"}

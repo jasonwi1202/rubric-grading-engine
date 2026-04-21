@@ -153,8 +153,8 @@ export async function getAssignment(
  * Update an assignment's metadata or advance its status.
  * Calls PATCH /api/v1/assignments/{assignmentId}.
  *
- * Title, prompt, and due_date are editable only while status === 'draft'.
- * Status transitions are always applied regardless of current status.
+ * Status transitions are applied via the `status` field. The server enforces
+ * that only transitions defined in VALID_TRANSITIONS are permitted.
  */
 export async function updateAssignment(
   assignmentId: string,
