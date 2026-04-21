@@ -285,6 +285,60 @@ Errors: `404 NOT_FOUND` (source rubric not found), `403 FORBIDDEN` (source rubri
 Returns the same shape as `POST /rubric-templates` response but for any template.
 System templates are accessible to any authenticated teacher; personal templates return `403` if accessed by a different teacher.
 
+---
+
+### Comment Bank
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/comment-bank` | List the authenticated teacher's saved comments |
+| POST | `/comment-bank` | Save a new feedback comment snippet |
+| DELETE | `/comment-bank/{id}` | Remove a saved comment |
+| GET | `/comment-bank/suggestions` | Fuzzy-match suggestions for a query string |
+
+**GET /comment-bank response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "text": "Good use of textual evidence to support the argument.",
+      "created_at": "2026-04-21T00:00:00Z"
+    }
+  ]
+}
+```
+
+**POST /comment-bank body:**
+```json
+{ "text": "Good use of textual evidence to support the argument." }
+```
+`text` must be 1–2000 characters.
+
+**POST /comment-bank response (201):** Same shape as a single item in the list response.
+
+Errors: `403 FORBIDDEN` (delete — comment belongs to another teacher), `404 NOT_FOUND` (delete — comment does not exist).
+
+**GET /comment-bank/suggestions query params:** `?q=<text>` (required, 1–500 characters)
+
+**GET /comment-bank/suggestions response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "text": "Good use of textual evidence.",
+      "score": 0.9,
+      "created_at": "2026-04-21T00:00:00Z"
+    }
+  ]
+}
+```
+`score` is a normalised fuzzy-match score in the range 0.0–1.0. Results are ordered by descending score.
+Suggestions are **advisory only** — the teacher explicitly selects which comment to apply.
+
+---
+
 **POST /rubrics body:**
 ```json
 {

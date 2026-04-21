@@ -90,7 +90,7 @@ async def delete_comment(
     if entry.teacher_id != teacher_id:
         raise ForbiddenError("You do not have access to this comment.")
 
-    db.delete(entry)
+    db.delete(entry)  # type: ignore[unused-coroutine]  # db.delete is sync on AsyncSession; SQLAlchemy stubs incorrectly type it as a coroutine
     await db.commit()
 
     logger.info(
