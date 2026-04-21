@@ -4,9 +4,9 @@
  * Covers batch grading trigger, status polling, and per-essay retry.
  *
  * Status state machine (server-enforced):
- *   POST /assignments/{id}/grade        → 202 Accepted, assignment → grading
- *   GET  /assignments/{id}/grading-status → progress snapshot from Redis
- *   POST /essays/{id}/retry             → re-enqueues a failed essay
+ *   POST /assignments/{id}/grade            → 202 Accepted, assignment → grading
+ *   GET  /assignments/{id}/grading-status   → progress snapshot from Redis
+ *   POST /essays/{id}/grade/retry           → re-enqueues a failed essay
  *
  * Security notes:
  * - No essay content or student PII is logged; only entity IDs appear here.
@@ -37,28 +37,40 @@ export type GradingBatchStatus =
   | "failed"
   | "partial";
 
-/** Per-essay status entry returned by the grading-status endpoint. */
+/**
+ * Per-essay status entry returned by the grading-status endpoint.
+ * Matches backend `EssayProgressItem.status` values.
+ */
 export type EssayGradingStatus =
   | "queued"
   | "grading"
-  | "graded"
+  | "complete"
   | "failed";
 
-/** One essay entry within a grading-status response. */
+/**
+ * One essay entry within a grading-status response.
+ * Matches backend `EssayProgressItem` schema exactly.
+ */
 export interface EssayGradingEntry {
+  /** UUID of the essay. */
   id: string;
   status: EssayGradingStatus;
   /**
-   * Error type code for failed essays (e.g. "LLM_TIMEOUT", "PARSE_ERROR").
-   * Omitted for non-failed essays. `null` when the error type is unknown.
+   * Student display name — `null` when the essay is not yet assigned.
+   * Teacher-facing only; never included in logs.
+   */
+  student_name: string | null;
+  /**
+   * Error type code (e.g. "LLM_TIMEOUT", "PARSE_ERROR").
+   * Always present in the response; `null` when the error type is unknown.
    * Never contains raw exception messages or student essay content.
    */
-  error?: string | null;
+  error: string | null;
 }
 
 /**
  * Response from GET /assignments/{id}/grading-status.
- * Matches backend GradingStatusResponse schema.
+ * Matches backend `GradingStatusResponse` schema exactly.
  */
 export interface GradingStatusResponse {
   status: GradingBatchStatus;
@@ -68,12 +80,16 @@ export interface GradingStatusResponse {
   essays: EssayGradingEntry[];
 }
 
-/** Response from POST /assignments/{id}/grade (202 Accepted body). */
+/**
+ * Response from POST /assignments/{id}/grade (202 Accepted body).
+ * Matches backend `TriggerGradingResponse` schema.
+ */
 export interface TriggerGradingResponse {
-  message: string;
+  enqueued: number;
+  assignment_id: string;
 }
 
-/** Response from POST /essays/{essayId}/retry. */
+/** Response from POST /essays/{essayId}/grade/retry. */
 export interface RetryGradingResponse {
   message: string;
 }
@@ -111,10 +127,10 @@ export async function getGradingStatus(
 
 /**
  * Re-enqueue a single failed essay for grading.
- * Calls POST /api/v1/essays/{essayId}/retry.
+ * Calls POST /api/v1/essays/{essayId}/grade/retry.
  */
 export async function retryEssayGrading(
   essayId: string,
 ): Promise<RetryGradingResponse> {
-  return apiPost<RetryGradingResponse>(`/essays/${essayId}/retry`, {});
+  return apiPost<RetryGradingResponse>(`/essays/${essayId}/grade/retry`, {});
 }

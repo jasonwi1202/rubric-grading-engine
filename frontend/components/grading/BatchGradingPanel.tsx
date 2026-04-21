@@ -7,7 +7,7 @@
  * - "Grade now" button that triggers POST /assignments/{id}/grade
  * - Progress bar that polls GET /assignments/{id}/grading-status every 3 s
  * - Polling stops automatically when all essays are complete or failed
- * - Per-essay status list (queued / grading / graded / failed)
+ * - Per-essay status list (queued / grading / complete / failed)
  * - Failed essays show error type code — never raw exceptions or essay content
  * - Per-essay retry button shown only for failed essays
  * - In-app notification (aria-live region) on batch completion
@@ -19,7 +19,7 @@
  * - Entity IDs only in any logging paths.
  */
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   triggerGrading,
@@ -45,19 +45,19 @@ const TERMINAL_STATUSES = new Set(["complete", "failed", "partial"]);
 
 /**
  * Human-readable labels for per-essay grading status badges.
- * "graded" is used by the backend; we display it as "Complete".
+ * Backend uses "complete" for successfully graded essays.
  */
 const ESSAY_STATUS_LABELS: Record<EssayGradingStatus, string> = {
   queued: "Queued",
   grading: "Grading…",
-  graded: "Complete",
+  complete: "Complete",
   failed: "Failed",
 };
 
 const ESSAY_STATUS_COLORS: Record<EssayGradingStatus, string> = {
   queued: "bg-gray-100 text-gray-600",
   grading: "bg-blue-100 text-blue-700",
-  graded: "bg-green-100 text-green-700",
+  complete: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
 };
 
@@ -259,43 +259,37 @@ export function BatchGradingPanel({
   });
 
   // ----- Per-essay retry -----
-  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
 
-  const handleRetry = useCallback(
-    (essayId: string) => {
-      setRetryingIds((prev) => new Set(prev).add(essayId));
+  const retryMutation = useMutation({
+    mutationFn: (essayId: string) => retryEssayGrading(essayId),
+    onSuccess: (_, essayId) => {
       setRetryErrors((prev) => {
         const next = { ...prev };
         delete next[essayId];
         return next;
       });
-      retryEssayGrading(essayId)
-        .then(() => {
-          setRetryingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(essayId);
-            return next;
-          });
-          // Refetch grading status to show updated essay progress
-          void queryClient.invalidateQueries({
-            queryKey: ["grading-status", assignmentId],
-          });
-        })
-        .catch((err: unknown) => {
-          setRetryingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(essayId);
-            return next;
-          });
-          setRetryErrors((prev) => ({
-            ...prev,
-            [essayId]: retryErrorMessage(err),
-          }));
-        });
+      // Refetch grading status to show updated essay progress
+      void queryClient.invalidateQueries({
+        queryKey: ["grading-status", assignmentId],
+      });
     },
-    [assignmentId, queryClient],
-  );
+    onError: (err: unknown, essayId) => {
+      setRetryErrors((prev) => ({
+        ...prev,
+        [essayId]: retryErrorMessage(err),
+      }));
+    },
+  });
+
+  const handleRetry = (essayId: string) => {
+    setRetryErrors((prev) => {
+      const next = { ...prev };
+      delete next[essayId];
+      return next;
+    });
+    retryMutation.mutate(essayId);
+  };
 
   // ----- Derived state -----
   const isGrading =
@@ -424,7 +418,10 @@ export function BatchGradingPanel({
                       key={essay.id}
                       essay={essay}
                       onRetry={handleRetry}
-                      isRetrying={retryingIds.has(essay.id)}
+                      isRetrying={
+                        retryMutation.isPending &&
+                        retryMutation.variables === essay.id
+                      }
                     />
                   ))}
                 </tbody>

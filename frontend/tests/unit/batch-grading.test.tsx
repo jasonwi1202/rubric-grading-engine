@@ -81,6 +81,18 @@ function makeStatus(
   };
 }
 
+/** Factory for test essay entries — never uses real student names (FERPA). */
+function makeEssay(
+  overrides: Partial<import("@/lib/api/grading").EssayGradingEntry> &
+    Pick<import("@/lib/api/grading").EssayGradingEntry, "id" | "status">,
+): import("@/lib/api/grading").EssayGradingEntry {
+  return {
+    student_name: null,
+    error: null,
+    ...overrides,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -189,8 +201,8 @@ describe("BatchGradingPanel — Progress bar", () => {
         complete: 1,
         failed: 0,
         essays: [
-          { id: "essay-aaa-001", status: "graded" },
-          { id: "essay-bbb-002", status: "grading" },
+          makeEssay({ id: "essay-aaa-001", status: "complete" }),
+          makeEssay({ id: "essay-bbb-002", status: "grading" }),
         ],
       }),
     );
@@ -353,10 +365,10 @@ describe("BatchGradingPanel — Per-essay status", () => {
         complete: 1,
         failed: 1,
         essays: [
-          { id: "essay-aaa-001", status: "queued" },
-          { id: "essay-bbb-002", status: "grading" },
-          { id: "essay-ccc-003", status: "graded" },
-          { id: "essay-ddd-004", status: "failed", error: "LLM_TIMEOUT" },
+          makeEssay({ id: "essay-aaa-001", status: "queued" }),
+          makeEssay({ id: "essay-bbb-002", status: "grading" }),
+          makeEssay({ id: "essay-ccc-003", status: "complete" }),
+          makeEssay({ id: "essay-ddd-004", status: "failed", error: "LLM_TIMEOUT" }),
         ],
       }),
     );
@@ -379,7 +391,7 @@ describe("BatchGradingPanel — Per-essay status", () => {
         total: 1,
         complete: 0,
         failed: 1,
-        essays: [{ id: "essay-eee-005", status: "failed", error: "LLM_TIMEOUT" }],
+        essays: [makeEssay({ id: "essay-eee-005", status: "failed", error: "LLM_TIMEOUT" })],
       }),
     );
 
@@ -400,7 +412,7 @@ describe("BatchGradingPanel — Per-essay status", () => {
         total: 1,
         complete: 0,
         failed: 1,
-        essays: [{ id: "essay-fff-006", status: "failed", error: "SOME_UNKNOWN_CODE" }],
+        essays: [makeEssay({ id: "essay-fff-006", status: "failed", error: "SOME_UNKNOWN_CODE" })],
       }),
     );
 
@@ -419,7 +431,7 @@ describe("BatchGradingPanel — Per-essay status", () => {
         total: 1,
         complete: 1,
         failed: 0,
-        essays: [{ id: "essay-ggg-007", status: "graded" }],
+        essays: [makeEssay({ id: "essay-ggg-007", status: "complete" })],
       }),
     );
 
@@ -444,9 +456,9 @@ describe("BatchGradingPanel — Retry action", () => {
         complete: 1,
         failed: 1,
         essays: [
-          { id: "essay-hhh-008", status: "graded" },
-          { id: "essay-iii-009", status: "queued" },
-          { id: "essay-jjj-010", status: "failed", error: "PARSE_ERROR" },
+          makeEssay({ id: "essay-hhh-008", status: "complete" }),
+          makeEssay({ id: "essay-iii-009", status: "queued" }),
+          makeEssay({ id: "essay-jjj-010", status: "failed", error: "PARSE_ERROR" }),
         ],
       }),
     );
@@ -476,7 +488,7 @@ describe("BatchGradingPanel — Retry action", () => {
         total: 1,
         complete: 0,
         failed: 1,
-        essays: [{ id: "essay-kkk-011", status: "failed", error: "LLM_TIMEOUT" }],
+        essays: [makeEssay({ id: "essay-kkk-011", status: "failed", error: "LLM_TIMEOUT" })],
       }),
     );
 
@@ -504,7 +516,7 @@ describe("BatchGradingPanel — Retry action", () => {
         total: 1,
         complete: 0,
         failed: 1,
-        essays: [{ id: "essay-lll-012", status: "failed", error: "LLM_TIMEOUT" }],
+        essays: [makeEssay({ id: "essay-lll-012", status: "failed", error: "LLM_TIMEOUT" })],
       }),
     );
 
