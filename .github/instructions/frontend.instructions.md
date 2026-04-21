@@ -84,6 +84,8 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 - [ ] **Route group names (`(auth)`, `(dashboard)`, `(public)`) do not produce URL path segments** — `app/(dashboard)/page.tsx` is served at `/`, not `/dashboard`. Middleware `matcher` patterns must target the actual URL, not the folder name. Verify that `matcher` in `middleware.ts` fires for all routes that need protection.
 - [ ] When adding a new protected route, confirm the middleware matcher pattern covers it and test an unauthenticated request manually.
 
+## Tests Required
+
 - [ ] Vitest + React Testing Library test for every new component
 - [ ] Test covers: renders correctly, loading state, error state, key user interactions
 - [ ] New user journeys added to `frontend/tests/e2e/` as Playwright specs

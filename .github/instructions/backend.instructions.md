@@ -112,9 +112,11 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] SQLAlchemy queries use `AsyncSession` — no synchronous DB calls in async endpoints
 - [ ] **`db.add()` and `db.delete()` are synchronous** — do NOT `await` them. Only `db.flush()`, `db.commit()`, `db.refresh()`, and `db.execute()` are awaitable. Awaiting a synchronous method silently awaits `None` in production and causes `AsyncMock` mismatches in tests.
 - [ ] **No blocking CPU or sync I/O inside `async def` functions** — `bcrypt.hashpw()` is CPU-bound and will stall the event loop. Use `anyio.to_thread.run_sync()` / `starlette.concurrency.run_in_threadpool()`. Redis calls must use `redis.asyncio.Redis`, not the synchronous `redis.Redis` client.
+- [ ] **`asyncio.get_event_loop()` is deprecated on Python 3.12+** — use `asyncio.get_running_loop()` in code that already runs inside an async context, or `asyncio.run()` to start a new event loop.
 - [ ] No `SELECT *` — always select specific columns
 - [ ] Services are not aware of HTTP — no `Request`, `Response`, or status code imports in `app/services/`
 - [ ] Routers contain no business logic — they validate input, call a service, and return a response
+- [ ] **Docstrings and inline comments must accurately describe the actual implementation** — a docstring that describes aspirational or draft behavior, references a function that doesn't exist, or documents a pipeline that has since changed is worse than no docstring. Before committing, read each docstring in modified files and verify it matches what the code actually does. Pay special attention to: step-by-step pipeline descriptions, "this function is idempotent" claims, and cross-references to other functions.
 
 ## Celery Tasks
 

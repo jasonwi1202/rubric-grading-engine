@@ -34,6 +34,7 @@ Reference: `docs/architecture/security.md#1-prompt-injection-defense`
 - [ ] No secrets in comments (even "for testing" or "temporary")
 - [ ] No secrets hardcoded as default values in config or environment files
 - [ ] Secrets are only accessed via environment variables (`settings.jwt_secret_key`)
+- [ ] **No credential-format strings in test fixtures or `conftest.py`** — values like `"sk-test"` (OpenAI) or `"AKIATEST"` (AWS) trigger secret scanners (GitHub push protection, truffleHog, gitleaks) even when fake. Use clearly synthetic strings that don't match any provider's key format, e.g. `"test-openai-key"` or `"fake-aws-key-for-testing"`.
 
 ## Authentication & Session Security
 
@@ -42,6 +43,7 @@ Reference: `docs/architecture/security.md#1-prompt-injection-defense`
 - [ ] Token validation uses `PyJWT.decode()` with `algorithms=["HS256"]` and `verify_exp=True`
 - [ ] Logout invalidates the specific refresh token in Redis — not just client-side cookie deletion
 - [ ] No endpoints that skip authentication for convenience
+- [ ] **Missing or expired credentials return HTTP 401, not 403 or 422** — the frontend silent-refresh cycle fires only on 401. A 403 or 422 returned for an expired/missing token prevents the refresh-cookie path from triggering and permanently strands the session.
 
 ## Multi-Tenant Isolation
 
