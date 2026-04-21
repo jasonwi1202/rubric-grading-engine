@@ -22,7 +22,12 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, InvalidStateTransitionError, NotFoundError
+from app.exceptions import (
+    ForbiddenError,
+    InvalidStateTransitionError,
+    NotFoundError,
+    ValidationError,
+)
 from app.models.assignment import Assignment, AssignmentStatus
 from app.models.class_ import Class
 from app.models.rubric import Rubric, RubricCriterion
@@ -181,16 +186,30 @@ async def create_assignment(
     title: str,
     prompt: str | None,
     due_date: date | None,
+    feedback_tone: str = "direct",
 ) -> Assignment:
     """Create an assignment, writing an immutable rubric snapshot at creation time.
 
     The rubric snapshot is taken from the live rubric at the moment of creation.
     Any subsequent edits to the rubric will NOT affect this assignment or its grades.
 
+    Args:
+        db: Async database session.
+        teacher_id: UUID of the authenticated teacher (enforces tenant isolation).
+        class_id: UUID of the class to associate the assignment with.
+        rubric_id: UUID of the rubric to snapshot.
+        title: Assignment title.
+        prompt: Optional assignment prompt / instructions.
+        due_date: Optional due date.
+        feedback_tone: Tone for AI-generated feedback — ``"encouraging"``,
+            ``"direct"``, or ``"academic"``.  Defaults to ``"direct"``.
+
     Raises:
         NotFoundError: If the class or rubric does not exist.
         ForbiddenError: If the class or rubric belongs to a different teacher.
     """
+    from app.models.assignment import FeedbackTone  # noqa: PLC0415
+
     await _get_class_owned_by(db, class_id, teacher_id)
 
     # Verify the rubric exists and belongs to this teacher.
@@ -226,6 +245,15 @@ async def create_assignment(
 
     snapshot = _build_snapshot(rubric, criteria)
 
+    try:
+        tone_enum = FeedbackTone(feedback_tone)
+    except ValueError:
+        raise ValidationError(
+            f"Invalid feedback_tone '{feedback_tone}'. "
+            "Must be one of: encouraging, direct, academic.",
+            field="feedback_tone",
+        ) from None
+
     assignment = Assignment(
         class_id=class_id,
         rubric_id=rubric_id,
@@ -234,6 +262,7 @@ async def create_assignment(
         prompt=prompt,
         due_date=due_date,
         status=AssignmentStatus.draft,
+        feedback_tone=tone_enum,
     )
     db.add(assignment)
     await db.commit()
@@ -274,6 +303,7 @@ async def update_assignment(
     due_date: date | None,
     update_due_date: bool,
     status: AssignmentStatus | None,
+    feedback_tone: str | None = None,
 ) -> Assignment:
     """Partially update an assignment.
 
@@ -283,12 +313,15 @@ async def update_assignment(
     - ``due_date`` / ``update_due_date``: if ``update_due_date`` is True, set
       due_date (may be None to clear it).
     - ``status``: if not None, attempt a state-machine transition.
+    - ``feedback_tone``: if not None, update the feedback tone.
 
     Raises:
         NotFoundError: If the assignment does not exist.
         ForbiddenError: If the assignment belongs to a different teacher.
         InvalidStateTransitionError: If the status transition is not allowed.
     """
+    from app.models.assignment import FeedbackTone  # noqa: PLC0415
+
     assignment = await _get_assignment_owned_by(db, assignment_id, teacher_id)
 
     if status is not None:
@@ -303,6 +336,16 @@ async def update_assignment(
 
     if update_due_date:
         assignment.due_date = due_date
+
+    if feedback_tone is not None:
+        try:
+            assignment.feedback_tone = FeedbackTone(feedback_tone)
+        except ValueError:
+            raise ValidationError(
+                f"Invalid feedback_tone '{feedback_tone}'. "
+                "Must be one of: encouraging, direct, academic.",
+                field="feedback_tone",
+            ) from None
 
     await db.commit()
     await db.refresh(assignment)

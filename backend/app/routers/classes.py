@@ -294,6 +294,7 @@ async def create_assignment_endpoint(
         title=payload.title,
         prompt=payload.prompt,
         due_date=payload.due_date,
+        feedback_tone=payload.feedback_tone.value,
     )
     return JSONResponse(
         status_code=201,

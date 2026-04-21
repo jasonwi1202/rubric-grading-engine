@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_current_teacher
 from app.exceptions import ForbiddenError, InvalidStateTransitionError, NotFoundError
 from app.main import create_app
-from app.models.assignment import AssignmentStatus
+from app.models.assignment import AssignmentStatus, FeedbackTone
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -43,6 +43,7 @@ def _make_assignment_orm(
     rubric_id: uuid.UUID | None = None,
     status: AssignmentStatus = AssignmentStatus.draft,
     title: str = "Test Assignment",
+    feedback_tone: FeedbackTone = FeedbackTone.direct,
 ) -> MagicMock:
     a = MagicMock()
     a.id = assignment_id or uuid.uuid4()
@@ -52,6 +53,7 @@ def _make_assignment_orm(
     a.prompt = None
     a.due_date = None
     a.status = status
+    a.feedback_tone = feedback_tone
     a.rubric_snapshot = {"id": str(a.rubric_id), "name": "Test Rubric", "criteria": []}
     a.resubmission_enabled = False
     a.resubmission_limit = None

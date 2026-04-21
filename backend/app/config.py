@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
     llm_request_timeout_seconds: int = 60
     llm_max_retries: int = 3
-    grading_prompt_version: str = "v1"
+    grading_prompt_version: str = "v2"
 
     # -------------------------------------------------------------------------
     # File Storage (S3 / MinIO)

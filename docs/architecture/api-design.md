@@ -311,11 +311,54 @@ System templates are accessible to any authenticated teacher; personal templates
 | GET | `/classes/{classId}/assignments` | List assignments for a class |
 | POST | `/classes/{classId}/assignments` | Create assignment |
 | GET | `/assignments/{assignmentId}` | Get assignment detail + submission status |
-| PATCH | `/assignments/{assignmentId}` | Update title, prompt, or due date (draft only) |
+| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, status, or feedback tone |
 | POST | `/assignments/{assignmentId}/grade` | Trigger grading for all queued essays |
 | GET | `/assignments/{assignmentId}/grading-status` | Batch grading progress (polled by frontend) |
 | POST | `/assignments/{assignmentId}/export` | Enqueue export job |
 | GET | `/assignments/{assignmentId}/analytics` | Score distribution, common issues, averages |
+
+**POST /classes/{classId}/assignments body:**
+```json
+{
+  "rubric_id": "uuid",
+  "title": "Persuasive Essay — Unit 3",
+  "prompt": "Write a 5-paragraph essay arguing your position.",
+  "due_date": "2026-05-01",
+  "feedback_tone": "direct"
+}
+```
+`feedback_tone` controls the register of AI-generated per-criterion feedback notes and the summary paragraph.  One of `"encouraging"`, `"direct"` (default), `"academic"`.
+
+**POST /classes/{classId}/assignments response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "class_id": "uuid",
+    "rubric_id": "uuid",
+    "rubric_snapshot": { "id": "...", "name": "...", "criteria": [...] },
+    "title": "Persuasive Essay — Unit 3",
+    "prompt": "Write a 5-paragraph essay arguing your position.",
+    "due_date": "2026-05-01",
+    "status": "draft",
+    "feedback_tone": "direct",
+    "resubmission_enabled": false,
+    "resubmission_limit": null,
+    "created_at": "2026-04-21T00:00:00Z"
+  }
+}
+```
+
+**PATCH /assignments/{assignmentId} body** (all fields optional — only provided fields are updated):
+```json
+{
+  "title": "Updated Title",
+  "prompt": "Updated prompt.",
+  "due_date": "2026-05-15",
+  "status": "open",
+  "feedback_tone": "encouraging"
+}
+```
 
 **POST /assignments/{id}/grade body:**
 ```json

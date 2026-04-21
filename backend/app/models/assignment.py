@@ -28,6 +28,14 @@ class AssignmentStatus(enum.StrEnum):
     returned = "returned"
 
 
+class FeedbackTone(enum.StrEnum):
+    """Tone used for AI-generated per-criterion feedback and summary feedback."""
+
+    encouraging = "encouraging"
+    direct = "direct"
+    academic = "academic"
+
+
 class Assignment(Base):
     """An assignment within a class, linking a rubric snapshot to essays."""
 
@@ -60,6 +68,13 @@ class Assignment(Base):
         Enum(AssignmentStatus, name="assignmentstatus"),
         nullable=False,
         default=AssignmentStatus.draft,
+    )
+    # Tone used when generating AI feedback for students.  Defaults to "direct".
+    feedback_tone: Mapped[FeedbackTone] = mapped_column(
+        Enum(FeedbackTone, name="feedbacktonelevel"),
+        nullable=False,
+        default=FeedbackTone.direct,
+        server_default="direct",
     )
     resubmission_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     resubmission_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
