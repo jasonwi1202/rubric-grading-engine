@@ -226,7 +226,20 @@ export default function AssignmentOverviewPage() {
               Student submissions
             </h2>
 
-            {(assignment.submission_statuses ?? []).length === 0 ? (
+            {assignment.submission_statuses === undefined ? (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
+                <p className="text-sm text-gray-500">
+                  Submission status is not available yet.{" "}
+                  <Link
+                    href={`/dashboard/assignments/${assignmentId}/essays?classId=${assignment.class_id}`}
+                    className="font-medium text-blue-600 underline hover:text-blue-800"
+                  >
+                    Manage essays
+                  </Link>{" "}
+                  to track student progress.
+                </p>
+              </div>
+            ) : assignment.submission_statuses.length === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-gray-200 p-10 text-center">
                 <p className="text-sm text-gray-500">
                   No students enrolled in this class yet.
@@ -261,7 +274,7 @@ export default function AssignmentOverviewPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {(assignment.submission_statuses ?? []).map((item) => (
+                    {assignment.submission_statuses.map((item) => (
                       <tr key={item.student_id} className="hover:bg-gray-50">
                         <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                           {item.student_name}

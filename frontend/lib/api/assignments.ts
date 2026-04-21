@@ -153,8 +153,11 @@ export async function createAssignment(
 }
 
 /**
- * Get assignment detail including per-student submission status.
+ * Get assignment detail.
  * Calls GET /api/v1/assignments/{assignmentId}.
+ *
+ * Note: per-student submission status may be omitted from the response until
+ * the backend exposes it consistently in `AssignmentResponse`.
  */
 export async function getAssignment(
   assignmentId: string,
