@@ -181,6 +181,33 @@ describe("BatchGradingPanel — Progress bar", () => {
     expect(screen.getByText(/1 failed/i)).toBeInTheDocument();
   });
 
+  it("renders progress bar and essay list simultaneously when essays are populated", async () => {
+    mockGetGradingStatus.mockResolvedValue(
+      makeStatus({
+        status: "processing",
+        total: 2,
+        complete: 1,
+        failed: 0,
+        essays: [
+          { id: "essay-aaa-001", status: "graded" },
+          { id: "essay-bbb-002", status: "grading" },
+        ],
+      }),
+    );
+
+    render(
+      <BatchGradingPanel assignmentId={ASSIGNMENT_ID} canGrade={true} />,
+      { wrapper },
+    );
+
+    // 1 out of 2 = 50%
+    const bar = await screen.findByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
+    // Essay list also rendered
+    expect(screen.getByText("Complete")).toBeInTheDocument();
+    expect(screen.getByText("Grading…")).toBeInTheDocument();
+  });
+
   it("shows 0% when total is 0", async () => {
     mockGetGradingStatus.mockResolvedValue(
       makeStatus({ status: "processing", total: 0, complete: 0, failed: 0, essays: [] }),

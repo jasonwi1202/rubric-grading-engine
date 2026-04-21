@@ -210,33 +210,10 @@ export function BatchGradingPanel({
 }: BatchGradingPanelProps) {
   const queryClient = useQueryClient();
 
-  /**
-   * Whether the grading status query is enabled. Starts as `false` to avoid
-   * polling on idle assignments. Becomes `true` when:
-   * - The teacher clicks "Grade now" (triggerMutation.onSuccess)
-   * - The initial one-shot status query returns a non-idle status, indicating
-   *   the assignment is already mid-grading from a previous session.
-   */
-  const [pollingEnabled, setPollingEnabled] = useState(false);
-
-  // One-shot initial fetch to check if grading is already in progress
-  // (e.g. teacher navigates to the page after grading was triggered elsewhere).
-  const { data: initialStatus } = useQuery<GradingStatusResponse>({
-    queryKey: ["grading-status-initial", assignmentId],
-    queryFn: async () => {
-      const status = await getGradingStatus(assignmentId);
-      if (status.status !== "idle") {
-        setPollingEnabled(true);
-      }
-      return status;
-    },
-    enabled: !!assignmentId,
-    staleTime: Infinity,
-    retry: false,
-  });
-  void initialStatus; // consumed only for its side-effect above
-
-  // ----- Grading status polling -----
+  // ----- Grading status query -----
+  // Always fetches once on mount to check current grading state.
+  // refetchInterval drives continuous polling only while grading is active —
+  // returns `false` when status is idle or terminal, preventing unnecessary requests.
   const {
     data: gradingStatus,
     isLoading: statusLoading,
@@ -244,13 +221,13 @@ export function BatchGradingPanel({
   } = useQuery<GradingStatusResponse>({
     queryKey: ["grading-status", assignmentId],
     queryFn: () => getGradingStatus(assignmentId),
-    enabled: pollingEnabled,
+    enabled: !!assignmentId,
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return POLL_INTERVAL_MS;
+      if (!data) return false;
       // Stop polling once we reach a terminal state
       if (TERMINAL_STATUSES.has(data.status)) return false;
-      // Also stop if there are no essays in-flight
+      // No polling when idle (grading not started)
       if (data.status === "idle") return false;
       return POLL_INTERVAL_MS;
     },
@@ -260,25 +237,21 @@ export function BatchGradingPanel({
     retry: false,
   });
 
-  // When the batch reaches a terminal state, disable polling
+  // When the batch reaches a terminal state
   const isTerminal =
     gradingStatus != null && TERMINAL_STATUSES.has(gradingStatus.status);
-  // isIdle is true only when grading status is explicitly idle (not during loading)
-  const isIdle =
-    !statusLoading &&
-    (gradingStatus == null || gradingStatus.status === "idle");
+  // isIdle is true only when a status has been fetched and is explicitly idle
+  const isIdle = gradingStatus?.status === "idle";
 
   // ----- Trigger grading -----
   const triggerMutation = useMutation({
     mutationFn: () => triggerGrading(assignmentId),
     onSuccess: () => {
-      // Start polling
-      setPollingEnabled(true);
       // Invalidate assignment detail so status badge updates
       void queryClient.invalidateQueries({
         queryKey: ["assignment", assignmentId],
       });
-      // Invalidate grading status to fetch immediately
+      // Refetch grading status immediately so the progress bar appears
       void queryClient.invalidateQueries({
         queryKey: ["grading-status", assignmentId],
       });
@@ -304,8 +277,7 @@ export function BatchGradingPanel({
             next.delete(essayId);
             return next;
           });
-          // Re-enable polling so we see the retried essay progress
-          setPollingEnabled(true);
+          // Refetch grading status to show updated essay progress
           void queryClient.invalidateQueries({
             queryKey: ["grading-status", assignmentId],
           });

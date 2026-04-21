@@ -50,7 +50,7 @@ export interface EssayGradingEntry {
   status: EssayGradingStatus;
   /**
    * Error type code for failed essays (e.g. "LLM_TIMEOUT", "PARSE_ERROR").
-   * Present only for failed essays; `null` when the error type is unknown.
+   * Omitted for non-failed essays. `null` when the error type is unknown.
    * Never contains raw exception messages or student essay content.
    */
   error?: string | null;
