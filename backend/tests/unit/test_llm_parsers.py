@@ -330,6 +330,58 @@ class TestParseGradingResponseScoreClamping:
         assert cs.score == 3
 
 
+class TestParseGradingResponseRawScore:
+    def test_raw_score_populated_when_score_clamped_above_max(self) -> None:
+        """raw_score holds the pre-clamp LLM integer when score exceeds max."""
+        criteria = [_crit("c1", min_score=1, max_score=5)]
+        payload = _grading_payload(criterion_id="c1", score=10)
+        result = parse_grading_response(payload, criteria)
+        cs = result.criterion_scores[0]
+        assert cs.score_clamped is True
+        assert cs.score == 5  # Clamped
+        assert cs.raw_score == 10  # Original LLM value
+
+    def test_raw_score_populated_when_score_clamped_below_min(self) -> None:
+        """raw_score holds the pre-clamp LLM integer when score is below min."""
+        criteria = [_crit("c1", min_score=1, max_score=5)]
+        payload = _grading_payload(criterion_id="c1", score=0)
+        result = parse_grading_response(payload, criteria)
+        cs = result.criterion_scores[0]
+        assert cs.score_clamped is True
+        assert cs.score == 1  # Clamped to min
+        assert cs.raw_score == 0  # Original LLM value
+
+    def test_raw_score_none_when_score_unparseable(self) -> None:
+        """raw_score is None when LLM returns an unparseable (non-numeric) score."""
+        criteria = [_crit("c1", min_score=1, max_score=5)]
+        payload = json.dumps(
+            {
+                "criterion_scores": [
+                    {
+                        "criterion_id": "c1",
+                        "score": "not-a-number",
+                        "justification": "Long enough justification text here.",
+                        "confidence": "high",
+                    }
+                ],
+                "summary_feedback": "ok",
+            }
+        )
+        result = parse_grading_response(payload, criteria)
+        cs = result.criterion_scores[0]
+        assert cs.score_clamped is True
+        assert cs.raw_score is None  # No pre-clamp integer available
+
+    def test_raw_score_not_set_when_score_in_range(self) -> None:
+        """raw_score equals the parsed LLM integer when no clamping occurs."""
+        criteria = [_crit("c1", min_score=1, max_score=5)]
+        payload = _grading_payload(criterion_id="c1", score=3)
+        result = parse_grading_response(payload, criteria)
+        cs = result.criterion_scores[0]
+        assert not cs.score_clamped
+        assert cs.raw_score == 3  # Equals score (pre-clamp == post-clamp)
+
+
 class TestParseGradingResponseJustification:
     def test_empty_justification_replaced_with_fallback(self) -> None:
         criteria = [_crit("c1")]

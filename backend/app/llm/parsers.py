@@ -75,6 +75,11 @@ class ParsedCriterionScore:
             range and was clamped.
         needs_review: ``True`` when any anomaly was detected — the teacher
             should review this score before locking the grade.
+        raw_score: The integer score parsed from the LLM response, or
+            ``None`` when the LLM returned an unparseable value.  When
+            ``score_clamped`` is ``True``, this stores the original
+            pre-clamp value used to populate the ``score_clamped`` audit
+            log entry.
     """
 
     criterion_id: str
@@ -83,6 +88,7 @@ class ParsedCriterionScore:
     confidence: str
     score_clamped: bool = False
     needs_review: bool = False
+    raw_score: int | None = None
 
 
 @dataclass
@@ -179,11 +185,13 @@ def parse_grading_response(
         # --- Score validation / clamping ---
         score_clamped = False
         needs_review = False
+        pre_clamp_score: int | None = None
 
         try:
             raw_score = item.get("score")
             if isinstance(raw_score, (int, float, str)):
                 score: int = int(raw_score)
+                pre_clamp_score = score  # Record before any clamping
             else:
                 raise TypeError("non-numeric score type")
         except (TypeError, ValueError):
@@ -238,6 +246,7 @@ def parse_grading_response(
                 confidence=confidence,
                 score_clamped=score_clamped,
                 needs_review=needs_review,
+                raw_score=pre_clamp_score,
             )
         )
 
