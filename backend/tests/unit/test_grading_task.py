@@ -99,6 +99,92 @@ class TestRunGradeEssay:
         ):
             await _run_grade_essay(str(uuid.uuid4()), str(uuid.uuid4()), "balanced")
 
+    @pytest.mark.asyncio
+    async def test_marks_essay_grading_before_db_work_when_assignment_id_provided(self) -> None:
+        """When assignment_id is set, _mark_essay_grading_in_redis is called before grading."""
+        grade_id = uuid.uuid4()
+        grade_mock = _make_grade_mock(grade_id)
+        essay_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        mark_grading_called: list[tuple[str, str]] = []
+
+        db_mock = AsyncMock()
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        async def _fake_mark_grading(eid: str, aid: str) -> None:
+            mark_grading_called.append((eid, aid))
+
+        with (
+            patch("app.tasks.grading.AsyncSessionLocal", return_value=cm),
+            patch("app.services.grading.grade_essay", new=AsyncMock(return_value=grade_mock)),
+            patch("app.tasks.grading._mark_essay_grading_in_redis", side_effect=_fake_mark_grading),
+            patch("app.tasks.grading._update_redis_on_success", new=AsyncMock()),
+        ):
+            await _run_grade_essay(essay_id, teacher_id, "balanced", assignment_id)
+
+        assert len(mark_grading_called) == 1
+        assert mark_grading_called[0] == (essay_id, assignment_id)
+
+    @pytest.mark.asyncio
+    async def test_redis_grading_mark_failure_does_not_abort_grading(self) -> None:
+        """A Redis failure when marking as grading is non-fatal; grading continues."""
+        grade_id = uuid.uuid4()
+        grade_mock = _make_grade_mock(grade_id)
+        essay_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        db_mock = AsyncMock()
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("app.tasks.grading.AsyncSessionLocal", return_value=cm),
+            patch("app.services.grading.grade_essay", new=AsyncMock(return_value=grade_mock)),
+            patch(
+                "app.tasks.grading._mark_essay_grading_in_redis",
+                side_effect=ConnectionError("Redis down"),
+            ),
+            patch("app.tasks.grading._update_redis_on_success", new=AsyncMock()),
+        ):
+            # Should NOT raise despite Redis failure
+            result = await _run_grade_essay(essay_id, teacher_id, "balanced", assignment_id)
+
+        assert result == str(grade_id)
+
+    @pytest.mark.asyncio
+    async def test_redis_success_update_failure_does_not_fail_graded_essay(self) -> None:
+        """A Redis failure on success update is non-fatal; the grade is already written."""
+        grade_id = uuid.uuid4()
+        grade_mock = _make_grade_mock(grade_id)
+        essay_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        db_mock = AsyncMock()
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("app.tasks.grading.AsyncSessionLocal", return_value=cm),
+            patch("app.services.grading.grade_essay", new=AsyncMock(return_value=grade_mock)),
+            patch("app.tasks.grading._mark_essay_grading_in_redis", new=AsyncMock()),
+            patch(
+                "app.tasks.grading._update_redis_on_success",
+                side_effect=ConnectionError("Redis down"),
+            ),
+        ):
+            # Should NOT raise — grade was already committed to DB
+            result = await _run_grade_essay(essay_id, teacher_id, "balanced", assignment_id)
+
+        assert result == str(grade_id)
+
 
 # ---------------------------------------------------------------------------
 # Tests — _revert_essay_to_queued async helper

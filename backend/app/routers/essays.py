@@ -9,14 +9,17 @@ Endpoints (``assignments_router``, prefix ``/assignments``):
 
 Endpoints (``essay_router``, prefix ``/essays``):
   PATCH /essays/{essayId}                  — manually assign a student to an essay
+  POST  /essays/{essayId}/grade/retry      — re-enqueue grading for a failed essay
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
+from redis.asyncio import Redis
 
 from app.config import settings
 from app.db.session import AsyncSession, get_db
@@ -24,14 +27,30 @@ from app.dependencies import get_current_teacher
 from app.exceptions import FileTooLargeError
 from app.exceptions import ValidationError as DomainValidationError
 from app.models.user import User
+from app.schemas.batch_grading import RetryGradingRequest
 from app.schemas.essay import AssignEssayRequest, EssayListItemResponse, EssayUploadItemResponse
+from app.services.batch_grading import retry_essay_grading
 from app.services.essay import assign_essay_to_student, ingest_essay, list_essays_for_assignment
 
 #: Router for assignment-scoped essay operations.
 router = APIRouter(prefix="/assignments", tags=["essays"])
 
-#: Router for essay-level operations (manual assignment).
+#: Router for essay-level operations (manual assignment, retry).
 essay_router = APIRouter(prefix="/essays", tags=["essays"])
+
+
+# ---------------------------------------------------------------------------
+# Redis dependency — local to this router
+# ---------------------------------------------------------------------------
+
+
+async def _get_redis() -> AsyncGenerator[Redis, None]:  # type: ignore[type-arg]
+    """FastAPI dependency that yields an async Redis client."""
+    client: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
+    try:
+        yield client
+    finally:
+        await client.aclose()  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -204,4 +223,46 @@ async def assign_essay_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": item.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /essays/{essayId}/grade/retry
+# ---------------------------------------------------------------------------
+
+
+@essay_router.post(
+    "/{essay_id}/grade/retry",
+    status_code=202,
+    summary="Re-enqueue grading for a failed essay",
+)
+async def retry_essay_grading_endpoint(
+    essay_id: uuid.UUID,
+    payload: RetryGradingRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+) -> JSONResponse:
+    """Re-enqueue grading for a single failed (reverted-to-queued) essay.
+
+    Only available for essays with ``status=queued``.  Essays that have
+    already been graded (``graded``, ``reviewed``, ``locked``, ``returned``)
+    or are currently being graded (``grading``) return 409.
+
+    Returns 202 immediately — does not wait for the task to complete.
+
+    Returns 403 if the essay belongs to a different teacher.
+    Returns 404 if the essay does not exist.
+    Returns 409 if the essay is not in a retryable state.
+    """
+    await retry_essay_grading(
+        db=db,
+        redis=redis_client,
+        essay_id=essay_id,
+        teacher_id=teacher.id,
+        strictness=payload.strictness,
+    )
+    return JSONResponse(
+        status_code=202,
+        content={"data": {"essay_id": str(essay_id), "status": "queued"}},
     )
