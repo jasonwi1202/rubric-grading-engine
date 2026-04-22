@@ -11,8 +11,8 @@ Security invariants:
 - The query that loads grades re-applies ``teacher_id`` via the class join
   so cross-teacher access cannot occur even if the ownership helper is bypassed.
 - No student PII in any log statement — only entity IDs.
-- An ``export_requested`` audit log entry (format: ``csv``) is written on
-  every call — INSERT only, no UPDATE or DELETE on audit_logs.
+- An ``export_requested`` audit log entry (format: ``csv``) is written for
+  successful CSV exports — INSERT only, no UPDATE or DELETE on audit_logs.
 - The rubric snapshot is always used for criterion metadata — never the live
   rubric rows.
 """

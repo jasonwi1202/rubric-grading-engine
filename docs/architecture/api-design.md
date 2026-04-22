@@ -30,6 +30,8 @@ All responses follow a consistent envelope:
 }
 ```
 
+**Exception — file download endpoints:** Endpoints that stream binary or text files (e.g., `GET /assignments/{assignmentId}/grades.csv`) return the file content directly with the appropriate `Content-Type` (e.g., `text/csv`) and `Content-Disposition: attachment` header.  These endpoints do **not** use the `{"data": ...}` envelope and cannot be called via the shared `apiGet()` helper.  See the individual endpoint documentation for frontend integration guidance.
+
 Errors:
 ```json
 {
@@ -456,7 +458,7 @@ student_id,student_name,<criterion_name_1>,...,weighted_total
 ```
 Criterion columns are ordered by `display_order` from the immutable rubric snapshot.  Only locked grades (`is_locked = true`) are included.  If no grades are locked, the response contains only the header row.  The `Content-Disposition` header is set to `attachment; filename="grades-<uuid>.csv"`.
 
-> **Frontend note:** This endpoint returns `text/csv`, not the standard `{"data": ...}` JSON envelope, so it cannot be called via the shared `apiGet()` helper (which calls `response.json()`).  Use a dedicated helper that performs a `fetch()` with `response.blob()` or `response.text()`, or trigger the download via `window.location.href` with the access token forwarded as a query parameter through a short-lived signed URL proxy.
+> **Frontend note:** This endpoint returns `text/csv`, not the standard `{"data": ...}` JSON envelope, so it cannot be called via the shared `apiGet()` helper (which calls `response.json()`).  Use a dedicated helper that performs a `fetch()` with the normal `Authorization: Bearer ...` header and reads the response via `response.blob()` or `response.text()`.  If a browser-navigation-style download is required, expose a separate JSON endpoint that returns a short-lived pre-signed URL or one-time download token specifically for the export.  Do **not** place the access token in the URL or query string.
 
 Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
 
