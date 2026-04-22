@@ -12,6 +12,7 @@ When reviewing a PR that touches `docs/**`, check every item below.
 - [ ] API endpoint paths, field names, and HTTP methods match `docs/architecture/api-design.md`
 - [ ] Data model column names and types match `docs/architecture/data-model.md`
 - [ ] Environment variable names match `docs/architecture/configuration.md`
+- [ ] **No realistic-looking student names or PII in example payloads** — API doc examples must use non-PII placeholders (e.g., `"Student A"`, `"Student B"`, or `"<student_name>"`) rather than realistic names like "Alice Chen" or "Bob Smith". The same FERPA standard that applies to code applies to documentation.
 
 ## Core Principles Not Violated
 

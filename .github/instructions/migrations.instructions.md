@@ -40,7 +40,7 @@ Reference: `docs/architecture/migrations.md#zero-downtime-migration-rules`
 - [ ] New columns, tables, and indexes are consistent with `docs/architecture/data-model.md`
 - [ ] Foreign keys reference existing tables and columns
 - [ ] Index names follow convention: `ix_{table}_{column(s)}` (e.g., `ix_essays_assignment_id`)
-- [ ] Foreign key names follow convention: `fk_{table}_{referenced_table}`
+- [ ] **Foreign keys must have an explicit `name=` argument** — e.g., `sa.ForeignKey("users.id", name="fk_comment_bank_entries_users")`. Unnamed foreign keys use auto-generated names that differ across databases and Alembic environments, making diffs and targeted drops unreliable. Convention: `fk_{child_table}_{parent_table}`.
 - [ ] Table names are `snake_case`, plural
 - [ ] Column names are `snake_case`
 - [ ] `UNIQUE` constraints are intentional and reflect a domain requirement, not just DB convenience

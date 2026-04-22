@@ -26,6 +26,7 @@ Reference: `docs/architecture/testing-guide.md`
 
 - [ ] No real OpenAI API calls in any test — mock via `pytest-mock` fixture
 - [ ] LLM mock is applied as an `autouse` fixture — not patched individually in each test
+- [ ] **Test assertions must be capable of failing** — an assertion like `assert "direct" in system_content` passes vacuously if the template already contains the word "direct" in multiple places (e.g., in option descriptions). Assertions for injected/templated values must target the specific rendered line or field, not just a substring that is always present. Review each assertion and ask: "would this pass even if the feature was completely broken?"
 - [ ] The following LLM failure scenarios have explicit tests:
   - [ ] Valid response (happy path)
   - [ ] JSON parse failure → retry behavior
