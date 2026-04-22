@@ -7,7 +7,9 @@
  *   PATCH /grades/{gradeId}/criteria/{criterionScoreId} — override score or feedback
  *   POST  /grades/{gradeId}/lock                       — lock grade as final
  *
- * Matches backend `app/schemas/grade.py` exactly.
+ * Aligned with backend `app/schemas/grade.py` response shapes.
+ * Note: `PatchCriterionRequest` intentionally restricts fields to non-null
+ * values to match the current backend validator contract.
  *
  * Security notes:
  * - No student PII is logged; only entity IDs appear here.

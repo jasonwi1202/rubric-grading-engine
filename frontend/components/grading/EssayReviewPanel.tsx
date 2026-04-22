@@ -7,7 +7,7 @@
  * - Displays per-criterion AI score, AI justification, and feedback.
  * - Inline score override via a number input (clamped to criterion range).
  * - Inline feedback text editor (textarea).
- * - Live weighted total recalculates as the teacher types a new score.
+ * - Live total recalculates as the teacher types a new score.
  * - Editable overall summary feedback textarea.
  * - "Lock grade" button — requires explicit teacher action.
  * - Locked grades: ALL controls visually and functionally disabled (not hidden).
@@ -214,8 +214,15 @@ function CriterionCard({
       onLocalScoreClear(criterionScore.id);
       onSaveSuccess(updatedGrade);
     },
-    onError: (err: unknown) => {
-      setSaveError(criterionErrorMessage(err));
+    onError: (err: unknown, variables: PatchCriterionRequest) => {
+      // Route to the appropriate error message based on which field was saved.
+      // teacher_feedback validation errors (e.g. max_length) must not show the
+      // score-range message that criterionErrorMessage() uses for VALIDATION_ERROR.
+      if ("teacher_feedback" in variables) {
+        setSaveError(feedbackErrorMessage(err));
+      } else {
+        setSaveError(criterionErrorMessage(err));
+      }
     },
   });
 
@@ -253,7 +260,8 @@ function CriterionCard({
     if (isLocked) return;
     const trimmed = feedbackInput.trim();
     const existing = criterionScore.teacher_feedback ?? criterionScore.ai_feedback ?? "";
-    if (trimmed === existing) return; // unchanged — nothing to save
+    const trimmedExisting = existing.trim();
+    if (trimmed === trimmedExisting) return; // unchanged — nothing to save
 
     if (trimmed.length === 0) {
       // The backend does not support clearing teacher_feedback to null via
