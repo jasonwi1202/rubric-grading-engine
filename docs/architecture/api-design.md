@@ -449,12 +449,14 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
 }
 ```
 
-**GET /assignments/{id}/grades.csv response (200):**
+**GET /assignments/{assignmentId}/grades.csv response (200):**
 Returns a `text/csv` file download with header:
 ```
 student_id,student_name,<criterion_name_1>,...,weighted_total
 ```
 Criterion columns are ordered by `display_order` from the immutable rubric snapshot.  Only locked grades (`is_locked = true`) are included.  If no grades are locked, the response contains only the header row.  The `Content-Disposition` header is set to `attachment; filename="grades-<uuid>.csv"`.
+
+> **Frontend note:** This endpoint returns `text/csv`, not the standard `{"data": ...}` JSON envelope, so it cannot be called via the shared `apiGet()` helper (which calls `response.json()`).  Use a dedicated helper that performs a `fetch()` with `response.blob()` or `response.text()`, or trigger the download via `window.location.href` with the access token forwarded as a query parameter through a short-lived signed URL proxy.
 
 Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
 

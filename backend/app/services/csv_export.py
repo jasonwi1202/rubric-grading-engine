@@ -48,12 +48,22 @@ logger = logging.getLogger(__name__)
 def _extract_criteria(rubric_snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     """Return criteria from a rubric snapshot sorted by display_order.
 
-    Falls back to the original list order when display_order is absent so the
-    function is safe to call on snapshots created before display_order was
-    populated.
+    Criteria with an explicit ``display_order`` are sorted by that value.
+    Criteria without ``display_order`` retain their original relative order and
+    are placed after explicitly ordered criteria, so the function is safe to
+    call on snapshots created before ``display_order`` was populated.
     """
     criteria: list[dict[str, Any]] = rubric_snapshot.get("criteria", [])
-    return sorted(criteria, key=lambda c: c.get("display_order", 0))
+    indexed_criteria = list(enumerate(criteria))
+    sorted_criteria = sorted(
+        indexed_criteria,
+        key=lambda item: (
+            item[1].get("display_order") is None,
+            item[1].get("display_order", item[0]),
+            item[0],
+        ),
+    )
+    return [criterion for _, criterion in sorted_criteria]
 
 
 def _build_csv(
@@ -112,7 +122,11 @@ def _write_audit(
         entity_id=assignment_id,
         action="export_requested",
         before_value=None,
-        after_value={"assignment_id": str(assignment_id), "format": "csv"},
+        after_value={
+            "assignment_id": str(assignment_id),
+            "format": "csv",
+            "task_id": None,
+        },
     )
     db.add(audit)
 

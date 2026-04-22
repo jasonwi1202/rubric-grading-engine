@@ -117,16 +117,16 @@ class TestExtractCriteria:
 
         assert [c["name"] for c in result] == ["First", "Second", "Third"]
 
-    def test_missing_display_order_falls_back_to_zero(self) -> None:
+    def test_missing_display_order_placed_after_ordered_criteria(self) -> None:
         c_no_order = {"id": str(_make_uuid()), "name": "NoOrder"}
         c_ordered = _make_criterion(name="Ordered", display_order=1)
-        snapshot = {"criteria": [c_ordered, c_no_order]}
+        snapshot = {"criteria": [c_no_order, c_ordered]}
 
         result = _extract_criteria(snapshot)
 
-        # c_no_order sorts before c_ordered because 0 < 1.
-        assert result[0]["name"] == "NoOrder"
-        assert result[1]["name"] == "Ordered"
+        # Criteria with explicit display_order come first; unordered ones follow.
+        assert result[0]["name"] == "Ordered"
+        assert result[1]["name"] == "NoOrder"
 
     def test_empty_criteria_returns_empty_list(self) -> None:
         result = _extract_criteria({"criteria": []})
@@ -392,4 +392,5 @@ class TestExportGradesCsv:
         assert audit_obj.entity_type == "export"
         assert audit_obj.after_value["format"] == "csv"
         assert audit_obj.after_value["assignment_id"] == str(assignment_id)
+        assert audit_obj.after_value["task_id"] is None
         assert audit_obj.teacher_id == teacher_id
