@@ -283,7 +283,7 @@ Append-only record of every consequential action. Never updated or deleted.
 | Grade | `grade_locked` | `grade` | |
 | Grade | `score_clamped` | `criterion_score` | `before_value`: LLM raw score; `after_value`: clamped score |
 | Grade | `regrade_resolved` | `grade` | |
-| Data access | `export_requested` | `export` | `after_value`: `{assignment_id, format}` |
+| Data access | `export_requested` | `export` | `after_value`: `{assignment_id, format, task_id}` |
 | Data access | `export_downloaded` | `export` | |
 | Data lifecycle | `student_data_deletion_requested` | `student` | FERPA deletion request |
 | Data lifecycle | `student_data_deletion_completed` | `student` | Background job completion |

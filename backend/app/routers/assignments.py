@@ -8,6 +8,7 @@ Endpoints:
   PATCH  /assignments/{assignmentId}                — update title, prompt, due_date, status
   POST   /assignments/{assignmentId}/grade          — trigger batch grading (returns 202)
   GET    /assignments/{assignmentId}/grading-status — read per-essay progress from Redis
+  POST   /assignments/{assignmentId}/export         — enqueue PDF batch export (returns 202)
 """
 
 from __future__ import annotations
@@ -29,8 +30,10 @@ from app.schemas.batch_grading import (
     TriggerGradingRequest,
     TriggerGradingResponse,
 )
+from app.schemas.export import TriggerExportResponse
 from app.services.assignment import get_assignment, update_assignment
 from app.services.batch_grading import get_grading_status, trigger_batch_grading
+from app.services.export import trigger_export
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
@@ -100,6 +103,50 @@ async def trigger_grading_endpoint(
         strictness=payload.strictness,
     )
     response = TriggerGradingResponse(enqueued=enqueued, assignment_id=assignment_id)
+    return JSONResponse(
+        status_code=202,
+        content={"data": response.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /assignments/{assignmentId}/export
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{assignment_id}/export",
+    status_code=202,
+    summary="Enqueue PDF batch export for an assignment",
+)
+async def trigger_export_endpoint(
+    assignment_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+) -> JSONResponse:
+    """Enqueue an async PDF batch export and return 202 immediately.
+
+    The export task generates per-student feedback PDFs for all locked grades,
+    packages them into a ZIP, and uploads the archive to S3.  Only locked
+    grades are included.
+
+    Returns 202 with ``{"data": {"task_id": "...", "assignment_id": "...",
+    "status": "pending"}}`` on success.
+
+    Poll ``GET /exports/{taskId}/status`` for progress.
+    Fetch the download URL from ``GET /exports/{taskId}/download`` when complete.
+
+    Returns 403 if the assignment belongs to a different teacher.
+    Returns 404 if the assignment does not exist.
+    """
+    task_id = await trigger_export(
+        db=db,
+        redis=redis_client,
+        assignment_id=assignment_id,
+        teacher_id=teacher.id,
+    )
+    response = TriggerExportResponse(task_id=task_id, assignment_id=assignment_id)
     return JSONResponse(
         status_code=202,
         content={"data": response.model_dump(mode="json")},
