@@ -114,7 +114,8 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
       if (displayed.length === 0) return;
 
       // Clamp the stored index in case the list shrank after a filter change.
-      const current = Math.min(focusedIndex, displayed.length - 1);
+      // `displayed.length > 0` is guaranteed by the guard above.
+      const current = Math.max(0, Math.min(focusedIndex, displayed.length - 1));
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
