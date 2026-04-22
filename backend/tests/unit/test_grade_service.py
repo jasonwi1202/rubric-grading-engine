@@ -750,10 +750,20 @@ class TestGetGradeAuditLog:
         assert result[1].action == "score_override"
         assert result[1].entity_type == "criterion_score"
 
-        # Confirm the final db.execute call included order_by(AuditLog.created_at)
+        # Confirm the final db.execute call included order_by(AuditLog.created_at).
+        # We check for "order by" first, then verify created_at appears after that
+        # position — checking for "order by" (not just "created_at") ensures the
+        # assertion fails if .order_by() is removed, since created_at already
+        # appears in the SELECT clause regardless.
         audit_call_args = db.execute.call_args_list[-1]
-        compiled = audit_call_args[0][0].compile(compile_kwargs={"literal_binds": True})
-        assert "created_at" in str(compiled).lower()
+        compiled_sql = str(
+            audit_call_args[0][0].compile(compile_kwargs={"literal_binds": True})
+        ).lower()
+        assert "order by" in compiled_sql, "Query must include an ORDER BY clause"
+        order_by_pos = compiled_sql.index("order by")
+        assert "created_at" in compiled_sql[order_by_pos:], (
+            "ORDER BY clause must reference created_at"
+        )
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_audit_entries(self) -> None:
