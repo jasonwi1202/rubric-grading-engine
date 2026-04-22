@@ -19,14 +19,14 @@
  * - Entity IDs only in error payloads.
  */
 
-import { useState, useCallback, useId } from "react";
+import { useState, useCallback, useId, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   overrideCriterionScore,
   updateFeedback,
   lockGrade,
 } from "@/lib/api/grades";
-import type { GradeResponse, CriterionScoreResponse } from "@/lib/api/grades";
+import type { GradeResponse, CriterionScoreResponse, PatchCriterionRequest } from "@/lib/api/grades";
 import { ApiError } from "@/lib/api/errors";
 
 // ---------------------------------------------------------------------------
@@ -78,13 +78,13 @@ export function computeTotalScore(
 function criterionErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
-      case "LOCKED":
+      case "GRADE_LOCKED":
         return "This grade is locked and cannot be edited.";
       case "FORBIDDEN":
         return "You do not have permission to edit this grade.";
       case "NOT_FOUND":
         return "Grade not found. Please refresh the page.";
-      case "UNPROCESSABLE_ENTITY":
+      case "VALIDATION_ERROR":
         return "Score is outside the allowed range for this criterion.";
       default:
         return "Failed to save changes. Please try again.";
@@ -163,11 +163,24 @@ function CriterionCard({
     criterionScore.teacher_feedback ?? criterionScore.ai_feedback ?? "",
   );
 
+  // Sync displayed score when the persisted final_score changes (e.g., after
+  // a successful save that returns a server-clamped value, or after a lock).
+  useEffect(() => {
+    setScoreInput(String(criterionScore.final_score));
+  }, [criterionScore.final_score]);
+
+  // Sync displayed feedback when the persisted value changes from the server.
+  useEffect(() => {
+    setFeedbackInput(
+      criterionScore.teacher_feedback ?? criterionScore.ai_feedback ?? "",
+    );
+  }, [criterionScore.teacher_feedback, criterionScore.ai_feedback]);
+
   // Error state for this criterion — static message strings only
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const overrideMutation = useMutation({
-    mutationFn: (data: { teacher_score?: number; teacher_feedback?: string }) =>
+    mutationFn: (data: PatchCriterionRequest) =>
       overrideCriterionScore(gradeId, criterionScore.id, data),
     onSuccess: (updatedGrade) => {
       setSaveError(null);
@@ -212,10 +225,17 @@ function CriterionCard({
   const handleFeedbackBlur = useCallback(() => {
     if (isLocked) return;
     const trimmed = feedbackInput.trim();
-    const existing =
-      criterionScore.teacher_feedback ?? criterionScore.ai_feedback ?? "";
-    // Backend requires min_length=1 for teacher_feedback; empty strings are not sent.
-    if (trimmed !== existing && trimmed.length > 0) {
+    const existing = criterionScore.teacher_feedback ?? criterionScore.ai_feedback ?? "";
+    if (trimmed === existing) return; // unchanged — nothing to save
+
+    if (trimmed.length === 0) {
+      // Teacher intentionally cleared the field.
+      // Only send null if there was previously saved teacher feedback to clear.
+      // (Clearing back to the ai_feedback default doesn't require an API call.)
+      if (criterionScore.teacher_feedback !== null) {
+        overrideMutation.mutate({ teacher_feedback: null });
+      }
+    } else {
       overrideMutation.mutate({ teacher_feedback: trimmed });
     }
   }, [
@@ -292,13 +312,29 @@ function CriterionCard({
             aria-label={`Override score for ${criterionName} (${minScore}–${maxScore})`}
             aria-describedby={saveError ? `score-error-${criterionScore.id}` : undefined}
             onChange={(e) => {
-              setScoreInput(e.target.value);
-              const parsed = parseInt(e.target.value, 10);
-              if (!isNaN(parsed)) {
-                // Clamp immediately so the live total never shows an out-of-range value.
-                const clamped = Math.max(minScore, Math.min(maxScore, parsed));
-                onLocalScoreChange(criterionScore.id, clamped);
+              const rawValue = e.target.value;
+
+              if (rawValue === "") {
+                // User cleared the input — show empty and fall back to the
+                // persisted score for the live total until blur resets it.
+                setScoreInput("");
+                onLocalScoreClear(criterionScore.id);
+                return;
               }
+
+              const parsed = parseInt(rawValue, 10);
+
+              if (isNaN(parsed)) {
+                setScoreInput("");
+                onLocalScoreClear(criterionScore.id);
+                return;
+              }
+
+              // Clamp immediately so the displayed value and live total
+              // never show an out-of-range score.
+              const clamped = Math.max(minScore, Math.min(maxScore, parsed));
+              setScoreInput(String(clamped));
+              onLocalScoreChange(criterionScore.id, clamped);
             }}
             onBlur={handleScoreBlur}
             className="w-16 rounded-md border border-gray-300 px-2 py-1 text-center text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:opacity-60"

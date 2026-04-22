@@ -216,10 +216,7 @@ export default function EssayReviewPage() {
                   Essay
                 </h2>
               </div>
-              <div
-                className="overflow-y-auto p-4"
-                style={{ maxHeight: "calc(100vh - 12rem)" }}
-              >
+              <div className="max-h-[calc(100vh-12rem)] overflow-y-auto p-4">
                 {/* Essay text placeholder — a dedicated /essays/{id}/content
                     endpoint is not yet implemented in the API. When it is,
                     replace this placeholder with the fetched text rendered in

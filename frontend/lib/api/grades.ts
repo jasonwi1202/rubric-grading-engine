@@ -61,10 +61,12 @@ export interface CriterionScoreResponse {
 export interface GradeResponse {
   id: string;
   essay_version_id: string;
-  /** Sum of all criterion final_scores. Recalculated after every override. */
-  total_score: number;
-  /** Sum of all criterion max_scores — fixed at grade creation time. */
-  max_possible_score: number;
+  /** Sum of all criterion final_scores. Recalculated after every override.
+   *  Serialized as a JSON string from backend Decimal (e.g. "7.00"). */
+  total_score: string;
+  /** Sum of all criterion max_scores — fixed at grade creation time.
+   *  Serialized as a JSON string from backend Decimal (e.g. "10.00"). */
+  max_possible_score: string;
   /** AI-generated overall summary feedback. */
   summary_feedback: string;
   /** Teacher-edited summary feedback; null until the teacher edits it. */

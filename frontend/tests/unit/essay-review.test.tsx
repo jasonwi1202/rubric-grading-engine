@@ -116,8 +116,8 @@ function makeGrade(overrides: Partial<GradeResponse> = {}): GradeResponse {
   return {
     id: "grade-test-001",
     essay_version_id: "ev-test-001",
-    total_score: 7,
-    max_possible_score: 10,
+    total_score: "7",
+    max_possible_score: "10",
     summary_feedback: "Synthetic AI summary feedback.",
     summary_feedback_edited: null,
     strictness: "balanced",
@@ -405,7 +405,7 @@ describe("EssayReviewPanel — unlocked state (is_locked=false)", () => {
 
 describe("EssayReviewPanel — total score display", () => {
   it("displays total_score / max_possible_score on initial render", () => {
-    const grade = makeGrade({ total_score: 7, max_possible_score: 10 });
+    const grade = makeGrade({ total_score: "7", max_possible_score: "10" });
 
     render(
       <EssayReviewPanel
@@ -423,7 +423,7 @@ describe("EssayReviewPanel — total score display", () => {
   });
 
   it("recalculates the live total score when a score input changes", async () => {
-    const grade = makeGrade({ total_score: 7, max_possible_score: 10 });
+    const grade = makeGrade({ total_score: "7", max_possible_score: "10" });
     const user = userEvent.setup();
 
     render(
@@ -590,7 +590,7 @@ describe("EssayReviewPanel — score override save on blur", () => {
 
   it("shows a generic save error message when overrideCriterionScore fails", async () => {
     mockOverrideCriterionScore.mockRejectedValue(
-      new ApiError(409, { code: "LOCKED", message: "locked" }),
+      new ApiError(409, { code: "GRADE_LOCKED", message: "locked" }),
     );
     const user = userEvent.setup();
 
