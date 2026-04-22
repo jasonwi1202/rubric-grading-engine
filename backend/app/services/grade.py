@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import (
@@ -38,7 +38,7 @@ from app.models.audit_log import AuditLog
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
 from app.models.grade import CriterionScore, Grade
-from app.schemas.grade import CriterionScoreResponse, GradeResponse
+from app.schemas.grade import AuditLogEntryResponse, CriterionScoreResponse, GradeResponse
 
 logger = logging.getLogger(__name__)
 
@@ -454,3 +454,77 @@ async def lock_grade(
 
     criterion_scores = await _load_criterion_scores(db, grade.id)
     return _build_grade_response(grade, criterion_scores)
+
+
+async def get_grade_audit_log(
+    db: AsyncSession,
+    grade_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> list[AuditLogEntryResponse]:
+    """Return the full audit history for a grade in chronological order.
+
+    Fetches all audit log entries that are directly associated with this grade
+    (``entity_type="grade"``) or with any of its criterion scores
+    (``entity_type="criterion_score"``), ordered by ``created_at`` ascending.
+
+    Security:
+    - The grade is first loaded with tenant isolation via
+      :func:`_load_grade_tenant_scoped`, so cross-teacher access raises
+      :class:`ForbiddenError` (403).
+    - The returned entries contain only entity IDs — no student PII.
+    - This is a read-only operation; the audit_log table is never mutated.
+
+    Args:
+        db: Async database session.
+        grade_id: UUID of the Grade whose audit history to fetch.
+        teacher_id: UUID of the authenticated teacher (tenant isolation).
+
+    Returns:
+        List of :class:`AuditLogEntryResponse` in ascending chronological order.
+
+    Raises:
+        NotFoundError: Grade not found.
+        ForbiddenError: Grade belongs to a different teacher.
+    """
+    # Enforce tenant isolation — raises NotFoundError or ForbiddenError.
+    grade = await _load_grade_tenant_scoped(db, grade_id, teacher_id)
+
+    # Collect the IDs of all criterion scores for this grade so we can include
+    # score_override / score_clamped entries alongside grade-level entries.
+    cs_id_result = await db.execute(
+        select(CriterionScore.id).where(CriterionScore.grade_id == grade.id)
+    )
+    criterion_score_ids = list(cs_id_result.scalars().all())
+
+    # Build the filter: entries directly on the grade OR on any criterion score.
+    # SQLAlchemy handles an empty .in_([]) list safely (generates a false
+    # condition), so no special-casing is needed.
+    grade_filter = (AuditLog.entity_type == "grade") & (AuditLog.entity_id == grade_id)
+    cs_filter = (AuditLog.entity_type == "criterion_score") & (
+        AuditLog.entity_id.in_(criterion_score_ids)
+    )
+    combined_filter = or_(grade_filter, cs_filter)
+
+    audit_result = await db.execute(
+        select(AuditLog).where(combined_filter).order_by(AuditLog.created_at)
+    )
+    entries = list(audit_result.scalars().all())
+
+    logger.info(
+        "Grade audit log retrieved",
+        extra={"grade_id": str(grade_id), "teacher_id": str(teacher_id)},
+    )
+
+    return [
+        AuditLogEntryResponse(
+            id=entry.id,
+            teacher_id=entry.teacher_id,
+            entity_type=entry.entity_type,
+            entity_id=entry.entity_id,
+            action=entry.action,
+            before_value=entry.before_value,
+            after_value=entry.after_value,
+            created_at=entry.created_at,
+        )
+        for entry in entries
+    ]

@@ -666,3 +666,196 @@ class TestLockGrade:
 
         with pytest.raises(NotFoundError):
             await lock_grade(db, grade_id, teacher_id)
+
+
+# ---------------------------------------------------------------------------
+# Tests — get_grade_audit_log
+# ---------------------------------------------------------------------------
+
+
+class TestGetGradeAuditLog:
+    """Tests for get_grade_audit_log service function."""
+
+    def _make_audit_entry(
+        self,
+        entity_type: str = "grade",
+        entity_id: uuid.UUID | None = None,
+        action: str = "feedback_edited",
+        teacher_id: uuid.UUID | None = None,
+    ) -> MagicMock:
+        entry = MagicMock()
+        entry.id = _make_uuid()
+        entry.teacher_id = teacher_id or _make_uuid()
+        entry.entity_type = entity_type
+        entry.entity_id = entity_id or _make_uuid()
+        entry.action = action
+        entry.before_value = {"summary_feedback": "old text"}
+        entry.after_value = {"summary_feedback": "new text"}
+        entry.created_at = datetime.now(UTC)
+        return entry
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_audit_entries_in_order(self) -> None:
+        """Returns all audit entries for the grade in chronological order."""
+        teacher_id = _make_uuid()
+        grade = _make_grade()
+        criterion_score_id = _make_uuid()
+
+        grade_entry = self._make_audit_entry(
+            entity_type="grade",
+            entity_id=grade.id,
+            action="grade_locked",
+            teacher_id=teacher_id,
+        )
+        cs_entry = self._make_audit_entry(
+            entity_type="criterion_score",
+            entity_id=criterion_score_id,
+            action="score_override",
+            teacher_id=teacher_id,
+        )
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                # _load_grade_tenant_scoped
+                _scalar_one_or_none_mock(grade),
+                # criterion score IDs query
+                _scalars_mock([criterion_score_id]),
+                # audit log query
+                _scalars_mock([grade_entry, cs_entry]),
+            ]
+        )
+
+        from app.services.grade import get_grade_audit_log
+
+        result = await get_grade_audit_log(db, grade.id, teacher_id)
+
+        assert len(result) == 2
+        assert result[0].action == "grade_locked"
+        assert result[0].entity_type == "grade"
+        assert result[0].entity_id == grade_entry.entity_id
+        assert result[1].action == "score_override"
+        assert result[1].entity_type == "criterion_score"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_audit_entries(self) -> None:
+        """Returns an empty list when the grade has no audit entries."""
+        teacher_id = _make_uuid()
+        grade = _make_grade()
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(grade),
+                _scalars_mock([]),  # no criterion score IDs
+                _scalars_mock([]),  # no audit entries
+            ]
+        )
+
+        from app.services.grade import get_grade_audit_log
+
+        result = await get_grade_audit_log(db, grade.id, teacher_id)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_no_criterion_scores_still_fetches_grade_entries(self) -> None:
+        """Fetches grade-level entries even when the grade has no criterion scores."""
+        teacher_id = _make_uuid()
+        grade = _make_grade()
+
+        grade_entry = self._make_audit_entry(
+            entity_type="grade",
+            entity_id=grade.id,
+            action="feedback_edited",
+            teacher_id=teacher_id,
+        )
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(grade),
+                _scalars_mock([]),  # no criterion score IDs
+                _scalars_mock([grade_entry]),
+            ]
+        )
+
+        from app.services.grade import get_grade_audit_log
+
+        result = await get_grade_audit_log(db, grade.id, teacher_id)
+
+        assert len(result) == 1
+        assert result[0].action == "feedback_edited"
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_raises_forbidden(self) -> None:
+        """Raises ForbiddenError when grade belongs to another teacher (403)."""
+        teacher_id = _make_uuid()
+        grade_id = _make_uuid()
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(None),  # tenant-scoped: not found
+                _scalar_one_or_none_mock(grade_id),  # existence check: exists
+            ]
+        )
+
+        from app.services.grade import get_grade_audit_log
+
+        with pytest.raises(ForbiddenError):
+            await get_grade_audit_log(db, grade_id, teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_grade_not_found_raises_not_found(self) -> None:
+        """Raises NotFoundError when the grade does not exist."""
+        teacher_id = _make_uuid()
+        grade_id = _make_uuid()
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(None),  # tenant-scoped: not found
+                _scalar_one_or_none_mock(None),  # existence check: not found
+            ]
+        )
+
+        from app.services.grade import get_grade_audit_log
+
+        with pytest.raises(NotFoundError):
+            await get_grade_audit_log(db, grade_id, teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_response_contains_no_student_pii(self) -> None:
+        """Audit entries expose only entity IDs, not student names or content."""
+        teacher_id = _make_uuid()
+        grade = _make_grade()
+
+        entry = self._make_audit_entry(
+            entity_type="grade",
+            entity_id=grade.id,
+            action="feedback_edited",
+            teacher_id=teacher_id,
+        )
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(grade),
+                _scalars_mock([]),
+                _scalars_mock([entry]),
+            ]
+        )
+
+        from app.services.grade import get_grade_audit_log
+
+        result = await get_grade_audit_log(db, grade.id, teacher_id)
+
+        assert len(result) == 1
+        r = result[0]
+        # Fields that could carry PII should not be present.
+        assert not hasattr(r, "student_name")
+        assert not hasattr(r, "essay_text")
+        # Only IDs are exposed for attribution.
+        assert r.teacher_id == entry.teacher_id
+        assert r.entity_id == entry.entity_id
