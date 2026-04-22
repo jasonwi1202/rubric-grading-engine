@@ -20,6 +20,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   triggerGrading,
@@ -150,10 +151,12 @@ function ProgressBar({
 
 function EssayRow({
   essay,
+  assignmentId,
   onRetry,
   isRetrying,
 }: {
   essay: EssayGradingEntry;
+  assignmentId: string;
   onRetry: (essayId: string) => void;
   isRetrying: boolean;
 }) {
@@ -171,6 +174,15 @@ function EssayRow({
         {essay.status === "failed" ? errorLabel(essay.error) : null}
       </td>
       <td className="px-4 py-3 text-right">
+        {essay.status === "complete" && (
+          <Link
+            href={`/dashboard/assignments/${assignmentId}/review/${essay.id}`}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            aria-label={`Review grade for essay ${essay.id.slice(0, 8)}`}
+          >
+            Review
+          </Link>
+        )}
         {essay.status === "failed" && (
           <button
             type="button"
@@ -438,6 +450,7 @@ export function BatchGradingPanel({
                     <EssayRow
                       key={essay.id}
                       essay={essay}
+                      assignmentId={assignmentId}
                       onRetry={handleRetry}
                       isRetrying={
                         retryMutation.isPending &&
