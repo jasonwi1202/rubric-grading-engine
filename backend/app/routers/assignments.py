@@ -9,6 +9,7 @@ Endpoints:
   POST   /assignments/{assignmentId}/grade          — trigger batch grading (returns 202)
   GET    /assignments/{assignmentId}/grading-status — read per-essay progress from Redis
   POST   /assignments/{assignmentId}/export         — enqueue PDF batch export (returns 202)
+  GET    /assignments/{assignmentId}/grades.csv     — synchronous CSV gradebook export
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
@@ -33,6 +34,7 @@ from app.schemas.batch_grading import (
 from app.schemas.export import TriggerExportResponse
 from app.services.assignment import get_assignment, update_assignment
 from app.services.batch_grading import get_grading_status, trigger_batch_grading
+from app.services.csv_export import export_grades_csv
 from app.services.export import trigger_export
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
@@ -201,6 +203,49 @@ async def get_grading_status_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": response.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /assignments/{assignmentId}/grades.csv
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{assignment_id}/grades.csv",
+    summary="Synchronous CSV gradebook export for an assignment",
+    response_class=Response,
+)
+async def get_grades_csv_endpoint(
+    assignment_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Return a CSV file of all locked grades for an assignment.
+
+    Columns: ``student_id``, ``student_name``, one column per rubric criterion
+    (in ``display_order`` order from the immutable rubric snapshot), then
+    ``weighted_total``.
+
+    Only locked grades are exported.  If no grades are locked the response
+    contains only the header row.
+
+    The ``Content-Disposition`` header is set so browsers and LMS importers
+    treat the response as a file download.
+
+    Returns 403 if the assignment belongs to a different teacher.
+    Returns 404 if the assignment does not exist.
+    """
+    csv_content = await export_grades_csv(
+        db=db,
+        assignment_id=assignment_id,
+        teacher_id=teacher.id,
+    )
+    filename = f"grades-{assignment_id}.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
