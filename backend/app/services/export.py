@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -164,7 +164,7 @@ async def get_export_status(
         ForbiddenError: Task belongs to a different teacher.
     """
     redis_key = _export_redis_key(task_id)
-    record: dict[str, str] = await redis.hgetall(redis_key)  # type: ignore[assignment]
+    record: dict[str, str] = cast(dict[str, str], await redis.hgetall(redis_key))
 
     if not record:
         raise NotFoundError("Export task not found.")
@@ -206,7 +206,7 @@ async def get_export_download_url(
         ConflictError: Export is not yet complete.
     """
     redis_key = _export_redis_key(task_id)
-    record: dict[str, str] = await redis.hgetall(redis_key)  # type: ignore[assignment]
+    record: dict[str, str] = cast(dict[str, str], await redis.hgetall(redis_key))
 
     if not record:
         raise NotFoundError("Export task not found.")

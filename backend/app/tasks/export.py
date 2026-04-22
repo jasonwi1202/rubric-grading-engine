@@ -27,6 +27,7 @@ import io
 import logging
 import uuid
 import zipfile
+from typing import Any, cast
 
 from app.db.session import AsyncSessionLocal
 from app.storage.s3 import StorageError, upload_file
@@ -168,11 +169,11 @@ async def _run_export(
 
             # Build a lookup map from rubric criterion UUID → criterion metadata
             # from the immutable snapshot (never query live rubric during export).
-            snapshot_criteria: dict[str, dict[str, object]] = {}
-            snapshot = assignment.rubric_snapshot
-            for c in snapshot.get("criteria", []):  # type: ignore[union-attr]
-                cid = str(c.get("id", ""))  # type: ignore[union-attr]
-                snapshot_criteria[cid] = c  # type: ignore[assignment]
+            snapshot_criteria: dict[str, dict[str, Any]] = {}
+            snapshot = cast(dict[str, Any], assignment.rubric_snapshot)
+            for c in cast(list[dict[str, Any]], snapshot.get("criteria", [])):
+                cid = str(c.get("id", ""))
+                snapshot_criteria[cid] = c
 
             # 2. Load all locked essays with student IDs — tenant-scoped.
             essays_result = await db.execute(
@@ -269,7 +270,7 @@ async def _run_export(
                     )
 
                     # Build per-criterion items for the PDF.
-                    criterion_items: list[dict[str, object]] = []
+                    criterion_items: list[dict[str, Any]] = []
                     for score in scores_by_grade.get(grade.id, []):
                         crit_id = str(score.rubric_criterion_id)
                         crit_meta = snapshot_criteria.get(crit_id, {})

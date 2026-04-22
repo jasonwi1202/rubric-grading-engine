@@ -529,8 +529,49 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
 
 | Method | Path | Description |
 |---|---|---|
+| POST | `/assignments/{assignmentId}/export` | Enqueue PDF batch export (202) |
 | GET | `/exports/{taskId}/status` | Poll export job status |
 | GET | `/exports/{taskId}/download` | Get pre-signed S3 download URL |
+
+**POST /assignments/{assignmentId}/export response (202):**
+```json
+{
+  "data": {
+    "task_id": "uuid",
+    "assignment_id": "uuid",
+    "status": "pending"
+  }
+}
+```
+
+Only locked grades are included. Returns 404 if the assignment does not exist, 403 if it belongs to a different teacher.
+
+**GET /exports/{taskId}/status response (200):**
+```json
+{
+  "data": {
+    "task_id": "uuid",
+    "status": "processing",
+    "total": 30,
+    "complete": 12,
+    "error": null
+  }
+}
+```
+
+`status` is one of `pending | processing | complete | failed`. Returns 404 if the task is not found, 403 if it belongs to a different teacher.
+
+**GET /exports/{taskId}/download response (200):**
+```json
+{
+  "data": {
+    "task_id": "uuid",
+    "url": "https://s3.example.com/exports/…?X-Amz-Expires=900&…"
+  }
+}
+```
+
+The pre-signed URL is valid for 15 minutes. Returns 409 if the export is not yet complete, 404 if not found, 403 if cross-teacher access.
 
 ---
 
