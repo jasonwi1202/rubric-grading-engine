@@ -219,7 +219,7 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
           {displayed.map((essay, idx) => {
             const reviewStatus = getReviewStatus(essay.status);
             const scoreLabel =
-              essay.total_score != null && essay.max_possible_score != null
+              essay.total_score !== null && essay.max_possible_score !== null
                 ? `${parseFloat(essay.total_score)} / ${parseFloat(essay.max_possible_score)}`
                 : null;
 

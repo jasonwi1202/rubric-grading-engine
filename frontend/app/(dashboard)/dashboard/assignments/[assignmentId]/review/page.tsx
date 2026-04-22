@@ -48,7 +48,7 @@ export default function ReviewQueuePage() {
     isLoading: essaysLoading,
     isError: essaysError,
   } = useQuery({
-    queryKey: ["essays", assignmentId],
+    queryKey: ["assignments", assignmentId, "essays", "review-queue"],
     queryFn: () => listReviewQueue(assignmentId),
     enabled: !!assignmentId,
     // Keep reasonably fresh; teacher may have locked grades in the review
