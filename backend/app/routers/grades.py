@@ -24,6 +24,7 @@ from app.dependencies import get_current_teacher
 from app.models.user import User
 from app.schemas.grade import PatchCriterionRequest, PatchFeedbackRequest
 from app.services.grade import (
+    get_grade_audit_log,
     get_grade_for_essay,
     lock_grade,
     override_criterion,
@@ -181,4 +182,45 @@ async def lock_grade_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": grade_response.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /grades/{gradeId}/audit
+# ---------------------------------------------------------------------------
+
+
+@grades_router.get(
+    "/{grade_id}/audit",
+    summary="Get the audit log for a grade",
+)
+async def get_grade_audit_endpoint(
+    grade_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return the full change history for a grade in chronological order.
+
+    Includes all audit entries for the grade itself and its criterion scores
+    (e.g. ``feedback_edited``, ``score_override``, ``grade_locked``,
+    ``score_clamped``).  Each entry includes timestamp, actor (teacher_id),
+    entity type/id, action, and before/after values.
+
+    Access is tenant-scoped; the server does not log any PII for this read
+    path.  ``before_value`` and ``after_value`` fields carry the raw audit
+    payloads and should be treated as sensitive.
+
+    Response body: ``{"data": [AuditLogEntryResponse, ...]}``
+
+    Returns 403 if the grade belongs to a different teacher.
+    Returns 404 if the grade does not exist.
+    """
+    entries = await get_grade_audit_log(
+        db=db,
+        grade_id=grade_id,
+        teacher_id=teacher.id,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": [e.model_dump(mode="json") for e in entries]},
     )

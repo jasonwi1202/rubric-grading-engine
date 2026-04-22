@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -72,3 +73,28 @@ class PatchCriterionRequest(BaseModel):
         if self.teacher_score is None and self.teacher_feedback is None:
             raise ValueError("At least one of teacher_score or teacher_feedback must be provided.")
         return self
+
+
+class AuditLogEntryResponse(BaseModel):
+    """A single audit log entry for a grade's change history.
+
+    ``before_value`` and ``after_value`` contain the raw JSONB payloads stored
+    in ``audit_logs`` and may include free-form text (e.g. feedback strings)
+    that should be treated as sensitive.  Application log statements for this
+    read path use only entity IDs.
+    """
+
+    id: uuid.UUID
+    # Nullable — system-generated events (e.g., score_clamped) may have no
+    # acting teacher.
+    teacher_id: uuid.UUID | None
+    entity_type: str
+    # This endpoint only returns audit entries scoped to a specific grade or
+    # criterion_score record, so entity_id is always present in the response.
+    entity_id: uuid.UUID
+    action: str
+    before_value: dict[str, Any] | None
+    after_value: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
