@@ -133,13 +133,14 @@ export async function assignEssay(
 }
 
 /**
- * List all essays for an assignment with grade summary data for the review
- * queue (M3.22). Calls GET /assignments/{assignmentId}/essays.
+ * List essays for the review queue using the current assignment essays
+ * endpoint. Calls GET /assignments/{assignmentId}/essays.
  *
- * Returns ReviewQueueEssay items: each item extends EssayListItem with
- * optional grade summary fields (total_score, max_possible_score, grade_id).
- * These fields will be absent when the backend endpoint does not return them;
- * treat both absent and null as "ungraded / unavailable".
+ * This endpoint currently matches `listEssays()` and returns the standard
+ * essay list payload. The `ReviewQueueEssay` type lets review UI code handle
+ * optional grade summary fields when they are available, but callers must not
+ * assume `total_score`, `max_possible_score`, or `grade_id` are returned by
+ * the backend today; treat absent or null values as "ungraded / unavailable".
  */
 export async function listReviewQueue(
   assignmentId: string,
