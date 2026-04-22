@@ -78,7 +78,16 @@ def _build_csv(
     writer.writerow(header)
 
     # Data rows — one per locked grade.
+    # Missing criterion scores are written as empty cells so LMS importers that
+    # expect numeric columns do not receive a non-numeric sentinel like "N/A".
     for row in grade_rows:
+        if not row.full_name:
+            # A missing student name indicates the essay is unassigned; log the
+            # grade_id so the issue can be investigated without exposing PII.
+            logger.warning(
+                "CSV export: locked grade has no associated student name",
+                extra={"grade_id": str(row.id)},
+            )
         criterion_cols = grade_score_map.get(row.id, {})
         data_row = (
             [str(row.student_id) if row.student_id else "", row.full_name or ""]
