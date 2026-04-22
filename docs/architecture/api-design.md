@@ -369,6 +369,7 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
 | POST | `/assignments/{assignmentId}/grade` | Trigger grading for all queued essays |
 | GET | `/assignments/{assignmentId}/grading-status` | Batch grading progress (polled by frontend) |
 | POST | `/assignments/{assignmentId}/export` | Enqueue export job |
+| GET | `/assignments/{assignmentId}/grades.csv` | Synchronous CSV gradebook export (locked grades only) |
 | GET | `/assignments/{assignmentId}/analytics` | Score distribution, common issues, averages |
 
 **POST /classes/{classId}/assignments body:**
@@ -447,6 +448,15 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
   }
 }
 ```
+
+**GET /assignments/{id}/grades.csv response (200):**
+Returns a `text/csv` file download with header:
+```
+student_id,student_name,<criterion_name_1>,...,weighted_total
+```
+Criterion columns are ordered by `display_order` from the immutable rubric snapshot.  Only locked grades (`is_locked = true`) are included.  If no grades are locked, the response contains only the header row.  The `Content-Disposition` header is set to `attachment; filename="grades-<uuid>.csv"`.
+
+Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
 
 ---
 

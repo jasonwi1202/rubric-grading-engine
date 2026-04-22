@@ -23,6 +23,7 @@ import csv
 import io
 import logging
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select
@@ -57,7 +58,7 @@ def _extract_criteria(rubric_snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _build_csv(
     criteria: list[dict[str, Any]],
-    grade_rows: list[Any],
+    grade_rows: Sequence[Any],
     grade_score_map: dict[uuid.UUID, dict[str, int]],
 ) -> str:
     """Render the CSV string from pre-loaded data.
