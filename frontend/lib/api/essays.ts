@@ -44,6 +44,25 @@ export interface EssayListItem {
   auto_assign_status: AutoAssignStatus;
 }
 
+/**
+ * Essay list item enriched with grade summary for the review queue (M3.22).
+ *
+ * `total_score`, `max_possible_score`, and `grade_id` are null when the essay
+ * has not been graded yet. Callers should treat null as "ungraded" and sort
+ * such essays after all scored essays when sorting by score.
+ *
+ * These fields are returned by the same GET /assignments/{id}/essays endpoint
+ * when the essay is in a graded state; they are absent (null) otherwise.
+ */
+export interface ReviewQueueEssay extends EssayListItem {
+  /** Total score string from the grade record, e.g. "7.00". Null if ungraded. */
+  total_score: string | null;
+  /** Max possible score string, e.g. "10.00". Null if ungraded. */
+  max_possible_score: string | null;
+  /** Grade UUID. Null if the essay has not been graded yet. */
+  grade_id: string | null;
+}
+
 /** PATCH /essays/{essayId} request body. */
 export interface AssignEssayRequest {
   student_id: string;
@@ -108,4 +127,18 @@ export async function assignEssay(
   data: AssignEssayRequest,
 ): Promise<EssayListItem> {
   return apiPatch<EssayListItem>(`/essays/${essayId}`, data);
+}
+
+/**
+ * List all essays for an assignment with grade summary data for the review
+ * queue (M3.22). Calls GET /api/v1/assignments/{assignmentId}/essays.
+ *
+ * Returns ReviewQueueEssay items: each item extends EssayListItem with
+ * optional grade summary fields (total_score, max_possible_score, grade_id).
+ * These fields are null when the essay has not been graded.
+ */
+export async function listReviewQueue(
+  assignmentId: string,
+): Promise<ReviewQueueEssay[]> {
+  return apiGet<ReviewQueueEssay[]>(`/assignments/${assignmentId}/essays`);
 }

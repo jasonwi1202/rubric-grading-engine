@@ -181,6 +181,19 @@ export default function AssignmentOverviewPage() {
                 Manage essays
               </Link>
 
+              {/* Review queue — shown once grading has started */}
+              {(assignment.status === "grading" ||
+                assignment.status === "review" ||
+                assignment.status === "complete" ||
+                assignment.status === "returned") && (
+                <Link
+                  href={`/dashboard/assignments/${assignmentId}/review`}
+                  className="rounded-md border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  Review queue
+                </Link>
+              )}
+
               {/* Status transition control — only shown when a next state exists */}
               {nextStatus && transitionLabel && (
                 <button
