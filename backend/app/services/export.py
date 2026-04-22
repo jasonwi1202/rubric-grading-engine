@@ -226,10 +226,16 @@ async def get_export_download_url(
 
     # Write audit log entry for the download — INSERT only.
     assignment_id_str = record.get("assignment_id", "")
+    assignment_uuid: uuid.UUID | None = None
     try:
         assignment_uuid = uuid.UUID(assignment_id_str)
     except ValueError:
-        assignment_uuid = uuid.uuid4()
+        # assignment_id in the Redis record is malformed — log the issue rather
+        # than silently masking it with a surrogate UUID.
+        logger.error(
+            "Export download: assignment_id in Redis record is not a valid UUID",
+            extra={"task_id": task_id},
+        )
 
     audit = AuditLog(
         teacher_id=teacher_id,

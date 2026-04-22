@@ -176,7 +176,7 @@ async def _run_export(
 
             # 2. Load all locked essays with student IDs — tenant-scoped.
             essays_result = await db.execute(
-                select(Essay, Student.id.label("sid"))
+                select(Essay, Student.id.label("student_uuid"))
                 .join(Assignment, Essay.assignment_id == Assignment.id)
                 .join(Class, Assignment.class_id == Class.id)
                 .outerjoin(Student, Essay.student_id == Student.id)
@@ -199,6 +199,7 @@ async def _run_export(
                 )
                 return
 
+            # total = essays found with locked status at query time.
             total = len(essays_rows)
             await redis.hset(redis_key, "total", str(total))
 
@@ -230,21 +231,34 @@ async def _run_export(
 
             # 5. Generate PDFs and package into ZIP.
             zip_buffer = io.BytesIO()
+            # completed counts PDFs written successfully; skipped tracks unprocessable essays.
             completed = 0
+            skipped = 0
 
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for essay, student_id_val in essays_rows:
+                for essay, student_uuid_val in essays_rows:
                     essay_id = essay.id
-                    student_id_str = str(student_id_val) if student_id_val else str(essay_id)
+
+                    if student_uuid_val is None:
+                        # Essay has no enrolled student — log and skip rather than silently
+                        # using a surrogate identifier that could cause confusion.
+                        logger.warning(
+                            "Export task: locked essay has no associated student — skipping",
+                            extra={"essay_id": str(essay_id)},
+                        )
+                        skipped += 1
+                        continue
+
+                    student_id_str = str(student_uuid_val)
 
                     grade_pair = grade_by_essay.get(essay_id)
                     if grade_pair is None:
-                        # Essay is locked but no locked grade found — skip.
+                        # Essay is locked but no locked grade record found — skip.
                         logger.warning(
                             "Export task: locked essay has no locked grade — skipping",
                             extra={"essay_id": str(essay_id)},
                         )
-                        total -= 1
+                        skipped += 1
                         continue
 
                     _ev, grade = grade_pair
@@ -293,8 +307,11 @@ async def _run_export(
                     completed += 1
                     await redis.hset(redis_key, "complete", str(completed))
 
-            # Update total count in Redis (may have decreased if essays were skipped).
-            await redis.hset(redis_key, "total", str(completed))
+            if skipped > 0:
+                logger.warning(
+                    "Export task: some essays were skipped",
+                    extra={"assignment_id": assignment_id, "skipped": skipped},
+                )
 
             # 6. Upload ZIP to S3.
             zip_bytes = zip_buffer.getvalue()
