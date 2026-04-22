@@ -141,8 +141,17 @@ async def _run_export(
     redis: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
 
     try:
-        # Mark as processing so poll endpoints return an accurate status.
-        await redis.hset(redis_key, "status", "processing")
+        # Mark as processing and reset retry-sensitive fields so poll endpoints
+        # do not observe stale error/progress data from a previous failed attempt.
+        await redis.hset(
+            redis_key,
+            mapping={
+                "status": "processing",
+                "error": "",
+                "complete": "0",
+                "total": "0",
+            },
+        )
 
         async with AsyncSessionLocal() as db:
             # 1. Load assignment — tenant-scoped, verifies teacher owns it.
@@ -159,7 +168,10 @@ async def _run_export(
             if assignment is None:
                 logger.error(
                     "Export task: assignment not found or forbidden",
-                    extra={"assignment_id": assignment_id},
+                    extra={
+                        "assignment_id": assignment_id,
+                        "error_type": "AssignmentNotFoundOrForbidden",
+                    },
                 )
                 await redis.hset(
                     redis_key,

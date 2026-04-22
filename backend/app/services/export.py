@@ -268,7 +268,7 @@ async def get_export_download_url(
         # than silently masking it with a surrogate UUID.
         logger.error(
             "Export download: assignment_id in Redis record is not a valid UUID",
-            extra={"task_id": task_id},
+            extra={"task_id": task_id, "error_type": "ValueError"},
         )
 
     audit = AuditLog(
