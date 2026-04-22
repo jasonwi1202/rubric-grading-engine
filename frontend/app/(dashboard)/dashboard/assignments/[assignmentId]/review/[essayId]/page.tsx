@@ -156,10 +156,7 @@ export default function EssayReviewPage() {
           </h1>
           {assignment && (
             <p className="mt-1 text-sm text-gray-500">
-              Rubric:{" "}
-              {typeof assignment.rubric_snapshot.name === "string"
-                ? assignment.rubric_snapshot.name
-                : ""}
+              Rubric: {assignment.rubric_snapshot.name}
             </p>
           )}
         </div>

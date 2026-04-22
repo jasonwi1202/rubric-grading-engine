@@ -214,6 +214,7 @@ function CriterionCard({
     const trimmed = feedbackInput.trim();
     const existing =
       criterionScore.teacher_feedback ?? criterionScore.ai_feedback ?? "";
+    // Backend requires min_length=1 for teacher_feedback; empty strings are not sent.
     if (trimmed !== existing && trimmed.length > 0) {
       overrideMutation.mutate({ teacher_feedback: trimmed });
     }
@@ -441,6 +442,8 @@ export function EssayReviewPanel({
     const trimmed = summaryFeedback.trim();
     const existing =
       grade.summary_feedback_edited ?? grade.summary_feedback;
+    // Backend PatchFeedbackRequest requires min_length=1 for summary_feedback;
+    // empty strings are not sent to avoid a 422 validation error.
     if (trimmed !== existing && trimmed.length > 0) {
       feedbackMutation.mutate(trimmed);
     }
