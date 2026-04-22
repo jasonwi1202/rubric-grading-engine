@@ -204,14 +204,18 @@ async def _run_export(
             total = len(essays_rows)
             await redis.hset(redis_key, "total", str(total))
 
-            # 3. Load grades for locked essays — join Essay → EssayVersion → Grade.
+            # 3. Load grades for locked essays — join back to Class for tenant isolation.
             essay_ids = [essay.id for essay, _ in essays_rows]
             grades_result = await db.execute(
                 select(EssayVersion, Grade)
                 .join(Grade, Grade.essay_version_id == EssayVersion.id)
+                .join(Essay, EssayVersion.essay_id == Essay.id)
+                .join(Assignment, Essay.assignment_id == Assignment.id)
+                .join(Class, Assignment.class_id == Class.id)
                 .where(
                     EssayVersion.essay_id.in_(essay_ids),
                     Grade.is_locked == True,  # noqa: E712 — SQLAlchemy requires ==
+                    Class.teacher_id == teacher_uuid,
                 )
             )
             grade_rows = grades_result.all()
@@ -313,6 +317,22 @@ async def _run_export(
                     "Export task: some essays were skipped",
                     extra={"assignment_id": assignment_id, "skipped": skipped},
                 )
+                # Adjust total in Redis to reflect only the essays that produced
+                # a PDF, so polling clients see complete == total on success.
+                await redis.hset(redis_key, "total", str(completed))
+
+            # Guard: if no PDFs were produced (all essays skipped), fail the task
+            # instead of uploading an empty ZIP.
+            if completed == 0:
+                logger.warning(
+                    "Export task: no PDFs generated — all essays were skipped",
+                    extra={"assignment_id": assignment_id},
+                )
+                await redis.hset(
+                    redis_key,
+                    mapping={"status": "failed", "error": "NO_EXPORTABLE_GRADES"},
+                )
+                return
 
             # 6. Upload ZIP to S3.
             zip_bytes = zip_buffer.getvalue()

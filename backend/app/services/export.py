@@ -115,21 +115,55 @@ async def trigger_export(
     await redis.expire(redis_key, _EXPORT_TTL_SECONDS)
 
     # Write audit log entry — INSERT only, no UPDATE/DELETE on audit_logs.
+    # after_value shape matches the catalog in docs/architecture/data-model.md#auditlog.
     audit = AuditLog(
         teacher_id=teacher_id,
         entity_type="export",
         entity_id=assignment_id,
         action="export_requested",
         before_value=None,
-        after_value={"task_id": task_id},
+        after_value={
+            "assignment_id": str(assignment_id),
+            "format": "pdf",
+            "task_id": task_id,
+        },
     )
     db.add(audit)
     await db.commit()
 
-    # Enqueue the Celery export task.
+    # Enqueue the Celery export task.  If broker submission fails after the
+    # Redis record and audit log have been written, mark the export record as
+    # failed so polling clients do not see a permanently pending task.
     from app.tasks.export import export_assignment  # noqa: PLC0415
 
-    export_assignment.delay(str(assignment_id), str(teacher_id), task_id)
+    try:
+        export_assignment.delay(str(assignment_id), str(teacher_id), task_id)
+    except Exception as exc:
+        try:
+            await redis.hset(
+                redis_key,
+                mapping={"status": "failed", "error": "ENQUEUE_FAILED"},
+            )
+        except Exception as redis_exc:
+            logger.error(
+                "Failed to update export status after enqueue failure",
+                extra={
+                    "assignment_id": str(assignment_id),
+                    "teacher_id": str(teacher_id),
+                    "task_id": task_id,
+                    "error_type": type(redis_exc).__name__,
+                },
+            )
+        logger.error(
+            "Failed to enqueue export task",
+            extra={
+                "assignment_id": str(assignment_id),
+                "teacher_id": str(teacher_id),
+                "task_id": task_id,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise RuntimeError("Failed to enqueue export task.") from exc
 
     logger.info(
         "Export task enqueued",

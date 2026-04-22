@@ -423,6 +423,74 @@ class TestRunExport:
         error_val = failed_call.kwargs.get("mapping", {}).get("error")
         assert error_val == "S3_UPLOAD_FAILED", f"Expected S3_UPLOAD_FAILED, got {error_val!r}"
 
+    @pytest.mark.asyncio
+    async def test_all_essays_skipped_sets_no_exportable_grades(self) -> None:
+        """When all locked essays have no associated student (all skipped), the task
+        should fail with NO_EXPORTABLE_GRADES rather than uploading an empty ZIP."""
+        from app.tasks.export import _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+        essay_id = uuid.uuid4()
+
+        mock_assignment = MagicMock()
+        mock_assignment.id = uuid.UUID(assignment_id)
+        mock_assignment.title = "Test Assignment"
+        mock_assignment.rubric_snapshot = {"criteria": []}
+
+        mock_essay = MagicMock()
+        mock_essay.id = essay_id
+
+        def make_result(rows: list) -> MagicMock:  # type: ignore[type-arg]
+            r = MagicMock()
+            r.scalar_one_or_none.return_value = rows[0] if len(rows) == 1 else None
+            r.all.return_value = rows
+            scalars_mock = MagicMock()
+            scalars_mock.__iter__ = MagicMock(return_value=iter(rows))
+            r.scalars.return_value = scalars_mock
+            return r
+
+        # One locked essay with no associated student (student_uuid = None).
+        execute_responses = [
+            make_result([mock_assignment]),
+            make_result([(mock_essay, None)]),  # student_uuid_val is None → skipped
+            make_result([]),  # no grades
+            make_result([]),  # no scores
+        ]
+        execute_call_count = 0
+
+        async def _mock_execute(*args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal execute_call_count
+            resp = execute_responses[execute_call_count]
+            execute_call_count += 1
+            return resp
+
+        db_mock = AsyncMock()
+        db_mock.execute = _mock_execute
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        redis_mock = _make_redis_mock()
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal", return_value=cm),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+        ):
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        hset_calls = redis_mock.hset.call_args_list
+        failed_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("status") == "failed"),
+            None,
+        )
+        assert failed_call is not None, "Redis should be set to failed when all essays are skipped"
+        error_val = failed_call.kwargs.get("mapping", {}).get("error")
+        assert error_val == "NO_EXPORTABLE_GRADES", (
+            f"Expected NO_EXPORTABLE_GRADES, got {error_val!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Celery task — happy path and retry
@@ -588,6 +656,40 @@ class TestTriggerExportService:
             pytest.raises(ForbiddenError),
         ):
             await trigger_export(db, redis, uuid.uuid4(), uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_enqueue_failure_marks_redis_failed_and_raises(self) -> None:
+        """When the Celery broker is unavailable, trigger_export marks the Redis
+        record as failed and raises RuntimeError so the HTTP layer returns 500."""
+        from app.services.export import trigger_export
+
+        assignment_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+
+        db = _make_db_mock()
+        redis = _make_redis_mock()
+
+        with (
+            patch(
+                "app.services.export.get_assignment",
+                new=AsyncMock(return_value=MagicMock()),
+            ),
+            patch("app.tasks.export.export_assignment") as mock_task,
+            pytest.raises(RuntimeError, match="Failed to enqueue export task"),
+        ):
+            mock_task.delay = MagicMock(side_effect=RuntimeError("Broker down"))
+            await trigger_export(db, redis, assignment_id, teacher_id)
+
+        # Redis must be updated to 'failed' so poll clients do not see 'pending' forever.
+        hset_calls = redis.hset.call_args_list
+        failed_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("status") == "failed"),
+            None,
+        )
+        assert failed_call is not None, (
+            "Redis should be updated to 'failed' when the Celery enqueue fails"
+        )
+        assert failed_call.kwargs["mapping"]["error"] == "ENQUEUE_FAILED"
 
 
 # ---------------------------------------------------------------------------

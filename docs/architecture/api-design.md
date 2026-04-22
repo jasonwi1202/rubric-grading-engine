@@ -565,8 +565,8 @@ Only locked grades are included. Returns 404 if the assignment does not exist, 4
 ```json
 {
   "data": {
-    "task_id": "uuid",
-    "url": "https://s3.example.com/exports/…?X-Amz-Expires=900&…"
+    "url": "https://s3.example.com/exports/…?X-Amz-Expires=900&…",
+    "expires_in_seconds": 900
   }
 }
 ```
