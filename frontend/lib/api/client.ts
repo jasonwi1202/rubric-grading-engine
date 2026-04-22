@@ -190,6 +190,68 @@ export function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
+ * Authenticated GET that returns the raw response body as a Blob.
+ *
+ * Used for binary/text file download endpoints (e.g. CSV export) that do NOT
+ * return the standard `{ data: T }` JSON envelope. Auth, 401-refresh, and
+ * error handling mirror `apiFetch`.
+ */
+export async function apiGetBlob(
+  path: string,
+  init?: RequestInit,
+): Promise<Blob> {
+  const url = `${getBaseUrl()}${path}`;
+  const headers = new Headers(init?.headers);
+  const token = getAccessToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, {
+    ...init,
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
+
+  if (response.status === 401 && !AUTH_PATHS.has(path)) {
+    const newToken = await silentRefresh();
+    if (newToken) {
+      return apiGetBlob(path, init);
+    }
+    if (typeof window !== "undefined") {
+      const currentPathname = window.location.pathname ?? "";
+      const currentSearch = window.location.search ?? "";
+      const currentPath = currentPathname + currentSearch;
+      const nextParam = isSafeRedirectPath(currentPath)
+        ? `?next=${encodeURIComponent(currentPath)}`
+        : "";
+      window.location.replace(`/login${nextParam}`);
+    }
+    throw new ApiError(401, {
+      code: "UNAUTHORIZED",
+      message: "Session expired. Please log in again.",
+    });
+  }
+
+  if (!response.ok) {
+    let errorBody: ApiErrorBody;
+    try {
+      const json = (await response.json()) as { error?: ApiErrorBody };
+      errorBody = json.error ?? {
+        code: "UNKNOWN_ERROR",
+        message: response.statusText,
+      };
+    } catch {
+      errorBody = { code: "UNKNOWN_ERROR", message: response.statusText };
+    }
+    throw new ApiError(response.status, errorBody);
+  }
+
+  return response.blob();
+}
+
+/**
  * POST with a FormData body (multipart/form-data).
  *
  * Unlike apiPost, this helper deliberately does NOT set Content-Type so the

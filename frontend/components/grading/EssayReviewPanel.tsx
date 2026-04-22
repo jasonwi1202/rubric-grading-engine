@@ -130,6 +130,57 @@ function feedbackErrorMessage(err: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// Clipboard helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a plain-text representation of the student feedback for clipboard
+ * copy. Format: overall feedback followed by per-criterion details.
+ *
+ * Only the teacher-facing feedback fields are included — not AI justifications.
+ * No student PII (name, essay text) is included in the clipboard payload.
+ *
+ * Exported for unit testing.
+ */
+export function buildClipboardText(
+  grade: GradeResponse,
+  criteria: RubricSnapshotCriterion[],
+): string {
+  const criteriaMap = new Map<string, RubricSnapshotCriterion>(
+    criteria.map((c) => [c.id, c]),
+  );
+
+  const lines: string[] = [];
+
+  // Overall feedback
+  const summary =
+    (grade.summary_feedback_edited ?? grade.summary_feedback ?? "").trim();
+  if (summary) {
+    lines.push("Overall feedback:");
+    lines.push(summary);
+  }
+
+  // Per-criterion entries
+  for (const cs of grade.criterion_scores) {
+    const criterion = criteriaMap.get(cs.rubric_criterion_id);
+    const name = criterion?.name ?? "Criterion";
+    const maxScore = criterion?.max_score ?? cs.final_score;
+    const feedback = (
+      cs.teacher_feedback ?? cs.ai_feedback ?? ""
+    ).trim();
+
+    lines.push("");
+    lines.push(`--- ${name} ---`);
+    lines.push(`Score: ${cs.final_score} / ${maxScore}`);
+    if (feedback) {
+      lines.push(feedback);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Confidence badge
 // ---------------------------------------------------------------------------
 
@@ -480,6 +531,9 @@ export function EssayReviewPanel({
   // Lock error
   const [lockError, setLockError] = useState<string | null>(null);
 
+  // Clipboard copy state — tracks whether the last copy succeeded
+  const [copied, setCopied] = useState(false);
+
   const isLocked = grade.is_locked;
 
   // Build a map from rubric_criterion_id → criterion for O(1) lookup
@@ -675,13 +729,35 @@ export function EssayReviewPanel({
               : "Lock grade"}
         </button>
         {isLocked && (
-          <p className="mt-2 text-center text-xs text-gray-500">
-            Locked
-            {grade.locked_at
-              ? ` on ${new Date(grade.locked_at).toLocaleDateString()}`
-              : ""}
-            . No further edits are allowed.
-          </p>
+          <>
+            <p className="mt-2 text-center text-xs text-gray-500">
+              Locked
+              {grade.locked_at
+                ? ` on ${new Date(grade.locked_at).toLocaleDateString()}`
+                : ""}
+              . No further edits are allowed.
+            </p>
+
+            {/* Copy feedback to clipboard — only shown for locked grades */}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const text = buildClipboardText(grade, criteria);
+                  await navigator.clipboard.writeText(text);
+                  setCopied(true);
+                  // Reset label after 2 seconds
+                  setTimeout(() => setCopied(false), 2000);
+                } catch {
+                  // Clipboard API unavailable or permission denied — silently fail
+                }
+              }}
+              aria-label="Copy student feedback to clipboard"
+              className="mt-3 w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              {copied ? "Copied!" : "Copy feedback to clipboard"}
+            </button>
+          </>
         )}
       </div>
     </section>

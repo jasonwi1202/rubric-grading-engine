@@ -26,7 +26,9 @@ import {
   STATUS_LABELS,
 } from "@/lib/api/assignments";
 import type { AssignmentStatus, SubmissionStatusItem } from "@/lib/api/assignments";
+import { listEssays } from "@/lib/api/essays";
 import { BatchGradingPanel } from "@/components/grading/BatchGradingPanel";
+import { ExportPanel } from "@/components/grading/ExportPanel";
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -78,6 +80,25 @@ export default function AssignmentOverviewPage() {
     queryFn: () => getAssignment(assignmentId),
     enabled: !!assignmentId,
   });
+
+  // Fetch essays to determine whether any grades are locked.
+  // Only enabled once the assignment is loaded and in a state where grades
+  // can exist (grading stage or later).
+  const { data: essays } = useQuery({
+    queryKey: ["assignments", assignmentId, "essays"],
+    queryFn: () => listEssays(assignmentId),
+    enabled:
+      !!assignmentId &&
+      !!assignment &&
+      !["draft", "open"].includes(assignment.status),
+    staleTime: 30_000,
+  });
+
+  // At least one essay has a locked or returned grade → export is available.
+  const hasLockedGrades =
+    essays?.some(
+      (e) => e.status === "locked" || e.status === "returned",
+    ) ?? false;
 
   const transitionMutation = useMutation({
     mutationFn: (nextStatus: AssignmentStatus) =>
@@ -180,6 +201,17 @@ export default function AssignmentOverviewPage() {
               >
                 Manage essays
               </Link>
+
+              {/* Export options — shown once grading has started */}
+              {(assignment.status === "grading" ||
+                assignment.status === "review" ||
+                assignment.status === "complete" ||
+                assignment.status === "returned") && (
+                <ExportPanel
+                  assignmentId={assignmentId}
+                  hasLockedGrades={hasLockedGrades}
+                />
+              )}
 
               {/* Review queue — shown once grading has started */}
               {(assignment.status === "grading" ||
