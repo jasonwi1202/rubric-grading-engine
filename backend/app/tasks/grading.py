@@ -316,9 +316,7 @@ def grade_essay(
         if assignment_id:
             try:
                 asyncio.run(
-                    _update_redis_on_failure(
-                        essay_id, assignment_id, teacher_id, "LLM_UNAVAILABLE"
-                    )
+                    _update_redis_on_failure(essay_id, assignment_id, teacher_id, "LLM_UNAVAILABLE")
                 )
             except Exception as redis_exc:
                 logger.warning(
@@ -336,9 +334,7 @@ def grade_essay(
         if assignment_id:
             try:
                 asyncio.run(
-                    _update_redis_on_failure(
-                        essay_id, assignment_id, teacher_id, "INTERNAL_ERROR"
-                    )
+                    _update_redis_on_failure(essay_id, assignment_id, teacher_id, "INTERNAL_ERROR")
                 )
             except Exception as redis_exc:
                 logger.warning(

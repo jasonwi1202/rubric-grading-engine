@@ -324,7 +324,11 @@ async def override_criterion(
             snapshot = cast(dict[str, Any], assignment.rubric_snapshot)
             criteria_data = cast(list[dict[str, Any]], snapshot.get("criteria", []))
             criterion_data = next(
-                (c for c in criteria_data if str(c["id"]) == str(criterion_score.rubric_criterion_id)),
+                (
+                    c
+                    for c in criteria_data
+                    if str(c["id"]) == str(criterion_score.rubric_criterion_id)
+                ),
                 None,
             )
             if criterion_data is not None:
