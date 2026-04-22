@@ -19,7 +19,7 @@
  * - Entity IDs only in error payloads.
  */
 
-import { useState, useCallback, useId, useEffect } from "react";
+import { useState, useCallback, useId, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   overrideCriterionScore,
@@ -533,6 +533,17 @@ export function EssayReviewPanel({
 
   // Clipboard copy state — tracks whether the last copy succeeded
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the "Copied!" timer when the component unmounts to avoid a state
+  // update on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
 
   const isLocked = grade.is_locked;
 
@@ -746,8 +757,14 @@ export function EssayReviewPanel({
                   const text = buildClipboardText(grade, criteria);
                   await navigator.clipboard.writeText(text);
                   setCopied(true);
-                  // Reset label after 2 seconds
-                  setTimeout(() => setCopied(false), 2000);
+                  // Reset label after 2 seconds; cancel any previous timer first.
+                  if (copiedTimerRef.current !== null) {
+                    clearTimeout(copiedTimerRef.current);
+                  }
+                  copiedTimerRef.current = setTimeout(
+                    () => setCopied(false),
+                    2000,
+                  );
                 } catch {
                   // Clipboard API unavailable or permission denied — silently fail
                 }

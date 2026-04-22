@@ -194,11 +194,20 @@ export function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
  *
  * Used for binary/text file download endpoints (e.g. CSV export) that do NOT
  * return the standard `{ data: T }` JSON envelope. Auth, 401-refresh, and
- * error handling mirror `apiFetch`.
+ * error handling mirror `apiFetch` — including the single-retry guard that
+ * prevents infinite recursion on persistent 401 responses.
  */
-export async function apiGetBlob(
+export function apiGetBlob(
   path: string,
   init?: RequestInit,
+): Promise<Blob> {
+  return apiFetchBlob(path, init);
+}
+
+async function apiFetchBlob(
+  path: string,
+  init?: RequestInit,
+  isRetry = false,
 ): Promise<Blob> {
   const url = `${getBaseUrl()}${path}`;
   const headers = new Headers(init?.headers);
@@ -214,10 +223,11 @@ export async function apiGetBlob(
     credentials: "include",
   });
 
-  if (response.status === 401 && !AUTH_PATHS.has(path)) {
+  // Single-retry guard — mirrors the pattern in apiFetch.
+  if (response.status === 401 && !isRetry && !AUTH_PATHS.has(path)) {
     const newToken = await silentRefresh();
     if (newToken) {
-      return apiGetBlob(path, init);
+      return apiFetchBlob(path, init, true);
     }
     if (typeof window !== "undefined") {
       const currentPathname = window.location.pathname ?? "";

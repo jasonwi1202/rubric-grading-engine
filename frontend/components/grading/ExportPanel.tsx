@@ -109,7 +109,7 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
 
-  // Close the menu when clicking outside
+  // Close the menu when clicking outside or pressing Escape
   useEffect(() => {
     if (!menuOpen) return;
     function handleClickOutside(event: MouseEvent) {
@@ -117,8 +117,17 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
         setMenuOpen(false);
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [menuOpen]);
 
   // ----- Export status polling -----
