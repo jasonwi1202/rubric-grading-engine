@@ -293,7 +293,7 @@ function CriterionCard({
             onChange={(e) => {
               setScoreInput(e.target.value);
               const parsed = parseInt(e.target.value, 10);
-              if (!isNaN(parsed)) {
+              if (!isNaN(parsed) && parsed >= minScore && parsed <= maxScore) {
                 onLocalScoreChange(criterionScore.id, parsed);
               }
             }}
