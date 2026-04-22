@@ -4,9 +4,9 @@
  * Pure functions so they are trivially unit-testable without React or a DOM.
  * Imported by the ReviewQueue component and directly by unit tests.
  *
- * Security: operates on entity IDs and status strings only — never on
- * essay content or student PII beyond what is already present in the
- * teacher-facing review list.
+ * Security: operates only on already-provided teacher-facing review-list
+ * fields (for example IDs, status values, scores, and `student_name` for
+ * sorting) and never reads essay content.
  */
 
 import type { ReviewQueueEssay } from "@/lib/api/essays";
@@ -113,10 +113,10 @@ export function sortEssays(
       }
 
       case "score": {
-        // Null scores (essay not yet graded) always sorted last.
-        if (a.total_score === null && b.total_score === null) return 0;
-        if (a.total_score === null) return 1;
-        if (b.total_score === null) return -1;
+        // Null/undefined scores (essay not yet graded) always sorted last.
+        if (a.total_score == null && b.total_score == null) return 0;
+        if (a.total_score == null) return 1;
+        if (b.total_score == null) return -1;
         const diff = parseFloat(a.total_score) - parseFloat(b.total_score);
         return diff * multiplier;
       }

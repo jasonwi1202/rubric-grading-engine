@@ -47,20 +47,23 @@ export interface EssayListItem {
 /**
  * Essay list item enriched with grade summary for the review queue (M3.22).
  *
- * `total_score`, `max_possible_score`, and `grade_id` are null when the essay
- * has not been graded yet. Callers should treat null as "ungraded" and sort
- * such essays after all scored essays when sorting by score.
+ * `total_score`, `max_possible_score`, and `grade_id` are absent (`undefined`)
+ * when the backend does not (yet) return them, and `null` when the essay has
+ * been graded but the field has no value. Callers must treat both `null` and
+ * `undefined` as "ungraded / unavailable" (i.e. use `== null` checks).
  *
- * These fields are returned by the same GET /assignments/{id}/essays endpoint
- * when the essay is in a graded state; they are absent (null) otherwise.
+ * Note: the current backend `EssayListItemResponse` does not include these
+ * fields. They are typed here as optional so the frontend degrades gracefully
+ * (shows "—" score) until a backend endpoint that returns grade summaries is
+ * available.
  */
 export interface ReviewQueueEssay extends EssayListItem {
-  /** Total score string from the grade record, e.g. "7.00". Null if ungraded. */
-  total_score: string | null;
-  /** Max possible score string, e.g. "10.00". Null if ungraded. */
-  max_possible_score: string | null;
-  /** Grade UUID. Null if the essay has not been graded yet. */
-  grade_id: string | null;
+  /** Total score string from the grade record, e.g. "7.00". Absent or null if ungraded. */
+  total_score?: string | null;
+  /** Max possible score string, e.g. "10.00". Absent or null if ungraded. */
+  max_possible_score?: string | null;
+  /** Grade UUID. Absent or null if the essay has not been graded yet. */
+  grade_id?: string | null;
 }
 
 /** PATCH /essays/{essayId} request body. */
@@ -131,11 +134,12 @@ export async function assignEssay(
 
 /**
  * List all essays for an assignment with grade summary data for the review
- * queue (M3.22). Calls GET /api/v1/assignments/{assignmentId}/essays.
+ * queue (M3.22). Calls GET /assignments/{assignmentId}/essays.
  *
  * Returns ReviewQueueEssay items: each item extends EssayListItem with
  * optional grade summary fields (total_score, max_possible_score, grade_id).
- * These fields are null when the essay has not been graded.
+ * These fields will be absent when the backend endpoint does not return them;
+ * treat both absent and null as "ungraded / unavailable".
  */
 export async function listReviewQueue(
   assignmentId: string,

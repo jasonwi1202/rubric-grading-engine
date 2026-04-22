@@ -113,14 +113,17 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (displayed.length === 0) return;
 
+      // Clamp the stored index in case the list shrank after a filter change.
+      const current = Math.min(focusedIndex, displayed.length - 1);
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        const next = Math.min(focusedIndex + 1, displayed.length - 1);
+        const next = Math.min(current + 1, displayed.length - 1);
         setFocusedIndex(next);
         rowRefs.current[next]?.focus();
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        const prev = Math.max(focusedIndex - 1, 0);
+        const prev = Math.max(current - 1, 0);
         setFocusedIndex(prev);
         rowRefs.current[prev]?.focus();
       }
@@ -218,10 +221,23 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
         >
           {displayed.map((essay, idx) => {
             const reviewStatus = getReviewStatus(essay.status);
-            const scoreLabel =
-              essay.total_score !== null && essay.max_possible_score !== null
-                ? `${parseFloat(essay.total_score)} / ${parseFloat(essay.max_possible_score)}`
-                : null;
+            const scoreLabel = (() => {
+              if (
+                essay.total_score == null ||
+                essay.max_possible_score == null
+              ) {
+                return null;
+              }
+              const totalScore = parseFloat(essay.total_score);
+              const maxPossibleScore = parseFloat(essay.max_possible_score);
+              if (
+                !Number.isFinite(totalScore) ||
+                !Number.isFinite(maxPossibleScore)
+              ) {
+                return null;
+              }
+              return `${totalScore} / ${maxPossibleScore}`;
+            })();
 
             return (
               <Link
