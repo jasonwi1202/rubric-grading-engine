@@ -98,6 +98,29 @@ def _make_essay(assignment_id: uuid.UUID | None = None) -> MagicMock:
     return e
 
 
+def _make_assignment(
+    rubric_criterion_id: uuid.UUID,
+    min_score: int = 1,
+    max_score: int = 5,
+) -> MagicMock:
+    """Return a mock Assignment whose rubric_snapshot contains one criterion."""
+    a = MagicMock()
+    a.id = _make_uuid()
+    a.rubric_snapshot = {
+        "id": str(_make_uuid()),
+        "name": "Test Rubric",
+        "criteria": [
+            {
+                "id": str(rubric_criterion_id),
+                "name": "Criterion 1",
+                "min_score": min_score,
+                "max_score": max_score,
+            }
+        ],
+    }
+    return a
+
+
 # ---------------------------------------------------------------------------
 # DB mock helpers
 # ---------------------------------------------------------------------------
@@ -349,15 +372,18 @@ class TestOverrideCriterion:
         teacher_id = _make_uuid()
         grade = _make_grade()
         criterion_score = _make_criterion_score(grade_id=grade.id, ai_score=2)
+        assignment = _make_assignment(criterion_score.rubric_criterion_id, min_score=1, max_score=5)
 
         added_objects: list[object] = []
         db = AsyncMock()
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),  # load grade tenant-scoped
-                _scalar_one_or_none_mock(criterion_score),  # load criterion score
-                _scalars_mock([criterion_score]),  # load all criterion scores
+                _scalar_one_or_none_mock(grade),          # load grade tenant-scoped
+                _scalar_one_or_none_mock(criterion_score), # load criterion score
+                _scalar_one_or_none_mock(assignment),      # load assignment for validation
+                _scalars_mock([4]),                        # recalculate total_score
+                _scalars_mock([criterion_score]),          # load all criterion scores
             ]
         )
 
@@ -435,6 +461,33 @@ class TestOverrideCriterion:
                 _make_uuid(),
                 _make_uuid(),
                 teacher_score=None,
+                teacher_feedback=None,
+            )
+
+    @pytest.mark.asyncio
+    async def test_score_out_of_range_raises_validation_error(self) -> None:
+        """Raises ValidationError when teacher_score is outside rubric criterion bounds."""
+        teacher_id = _make_uuid()
+        grade = _make_grade()
+        criterion_score = _make_criterion_score(grade_id=grade.id)
+        assignment = _make_assignment(criterion_score.rubric_criterion_id, min_score=1, max_score=5)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(grade),           # load grade tenant-scoped
+                _scalar_one_or_none_mock(criterion_score),  # load criterion score
+                _scalar_one_or_none_mock(assignment),       # load assignment for validation
+            ]
+        )
+
+        with pytest.raises(ValidationError):
+            await override_criterion(
+                db,
+                grade.id,
+                criterion_score.id,
+                teacher_id,
+                teacher_score=10,  # outside [1, 5]
                 teacher_feedback=None,
             )
 
@@ -526,8 +579,9 @@ class TestLockGrade:
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),
-                _scalars_mock([criterion_score]),
+                _scalar_one_or_none_mock(grade),       # _load_grade_tenant_scoped
+                _scalar_one_or_none_mock(grade.id),    # atomic UPDATE → lock performed
+                _scalars_mock([criterion_score]),       # _load_criterion_scores
             ]
         )
 
@@ -562,8 +616,9 @@ class TestLockGrade:
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),
-                _scalars_mock([criterion_score]),
+                _scalar_one_or_none_mock(grade),       # _load_grade_tenant_scoped
+                _scalar_one_or_none_mock(None),        # atomic UPDATE → no rows (already locked)
+                _scalars_mock([criterion_score]),       # _load_criterion_scores
             ]
         )
 

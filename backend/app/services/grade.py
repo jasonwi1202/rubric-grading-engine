@@ -21,8 +21,10 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import (
@@ -308,6 +310,32 @@ async def override_criterion(
     if criterion_score is None:
         raise NotFoundError("Criterion score not found for this grade.")
 
+    if teacher_score is not None:
+        # Validate teacher_score against the rubric_snapshot criterion bounds.
+        # Always use the immutable snapshot — never the live rubric rows.
+        assignment_result = await db.execute(
+            select(Assignment)
+            .join(Essay, Essay.assignment_id == Assignment.id)
+            .join(EssayVersion, EssayVersion.essay_id == Essay.id)
+            .where(EssayVersion.id == grade.essay_version_id)
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        if assignment is not None:
+            snapshot = cast(dict[str, Any], assignment.rubric_snapshot)
+            criteria_data = cast(list[dict[str, Any]], snapshot.get("criteria", []))
+            criterion_data = next(
+                (c for c in criteria_data if str(c["id"]) == str(criterion_score.rubric_criterion_id)),
+                None,
+            )
+            if criterion_data is not None:
+                min_score = int(str(criterion_data["min_score"]))
+                max_score = int(str(criterion_data["max_score"]))
+                if not (min_score <= teacher_score <= max_score):
+                    raise ValidationError(
+                        f"teacher_score {teacher_score} is out of range [{min_score}, {max_score}].",
+                        field="teacher_score",
+                    )
+
     before_value: dict[str, object] = {
         "teacher_score": criterion_score.teacher_score,
         "teacher_feedback": criterion_score.teacher_feedback,
@@ -317,6 +345,16 @@ async def override_criterion(
     if teacher_score is not None:
         criterion_score.teacher_score = teacher_score
         criterion_score.final_score = teacher_score
+
+        # Recompute grade.total_score from all criterion final_scores so that
+        # GradeResponse.total_score is never stale after an override.
+        total_score_result = await db.execute(
+            select(CriterionScore.final_score).where(CriterionScore.grade_id == grade_id)
+        )
+        grade.total_score = Decimal(
+            sum(score for score in total_score_result.scalars().all() if score is not None)
+        )
+
     if teacher_feedback is not None:
         criterion_score.teacher_feedback = teacher_feedback
 
@@ -376,9 +414,22 @@ async def lock_grade(
     """
     grade = await _load_grade_tenant_scoped(db, grade_id, teacher_id)
 
-    if not grade.is_locked:
+    # Atomic lock: UPDATE ... WHERE is_locked = FALSE so that only one concurrent
+    # request can perform the transition, preventing duplicate audit entries.
+    now = datetime.now(UTC)
+    update_result = await db.execute(
+        update(Grade)
+        .where(Grade.id == grade_id, Grade.is_locked.is_(False))
+        .values(is_locked=True, locked_at=now)
+        .returning(Grade.id)
+    )
+    lock_performed = update_result.scalar_one_or_none() is not None
+
+    if lock_performed:
+        # Keep the in-memory object consistent so the response is correct
+        # without needing a second SELECT round-trip.
         grade.is_locked = True
-        grade.locked_at = datetime.now(UTC)
+        grade.locked_at = now
 
         audit = AuditLog(
             teacher_id=teacher_id,
