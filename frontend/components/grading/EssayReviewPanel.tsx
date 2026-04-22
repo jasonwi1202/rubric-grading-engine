@@ -20,7 +20,7 @@
  */
 
 import { useState, useCallback, useId } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import {
   overrideCriterionScore,
   updateFeedback,
@@ -66,7 +66,7 @@ export function computeTotalScore(
 ): number {
   return criterionScores.reduce((sum, cs) => {
     const score =
-      localOverrides[cs.id] !== undefined ? localOverrides[cs.id] : cs.final_score;
+      cs.id in localOverrides ? localOverrides[cs.id] : cs.final_score;
     return sum + score;
   }, 0);
 }
@@ -293,8 +293,10 @@ function CriterionCard({
             onChange={(e) => {
               setScoreInput(e.target.value);
               const parsed = parseInt(e.target.value, 10);
-              if (!isNaN(parsed) && parsed >= minScore && parsed <= maxScore) {
-                onLocalScoreChange(criterionScore.id, parsed);
+              if (!isNaN(parsed)) {
+                // Clamp immediately so the live total never shows an out-of-range value.
+                const clamped = Math.max(minScore, Math.min(maxScore, parsed));
+                onLocalScoreChange(criterionScore.id, clamped);
               }
             }}
             onBlur={handleScoreBlur}
@@ -357,13 +359,8 @@ export interface EssayReviewPanelProps {
    */
   criteria: RubricSnapshotCriterion[];
   /**
-   * Query key(s) to invalidate after a successful save or lock.
-   * Typically: ['grade', essayId]
-   */
-  queryKeys?: unknown[][];
-  /**
    * Called when any save operation returns an updated grade.
-   * The parent should update its own grade state.
+   * The parent should update its own grade state and any affected query caches.
    */
   onGradeUpdate: (grade: GradeResponse) => void;
 }
@@ -375,11 +372,8 @@ export interface EssayReviewPanelProps {
 export function EssayReviewPanel({
   grade,
   criteria,
-  queryKeys = [],
   onGradeUpdate,
 }: EssayReviewPanelProps) {
-  const queryClient = useQueryClient();
-
   // Local pending score overrides — used for live total recalculation
   // before changes are saved to the server.
   const [localScoreOverrides, setLocalScoreOverrides] = useState<
@@ -425,11 +419,8 @@ export function EssayReviewPanel({
   const handleCriterionSaveSuccess = useCallback(
     (updatedGrade: GradeResponse) => {
       onGradeUpdate(updatedGrade);
-      for (const qk of queryKeys) {
-        void queryClient.invalidateQueries({ queryKey: qk });
-      }
     },
-    [onGradeUpdate, queryClient, queryKeys],
+    [onGradeUpdate],
   );
 
   // Summary feedback mutation
@@ -439,9 +430,6 @@ export function EssayReviewPanel({
     onSuccess: (updatedGrade) => {
       setSummaryFeedbackError(null);
       onGradeUpdate(updatedGrade);
-      for (const qk of queryKeys) {
-        void queryClient.invalidateQueries({ queryKey: qk });
-      }
     },
     onError: (err: unknown) => {
       setSummaryFeedbackError(criterionErrorMessage(err));
@@ -470,9 +458,6 @@ export function EssayReviewPanel({
     onSuccess: (updatedGrade) => {
       setLockError(null);
       onGradeUpdate(updatedGrade);
-      for (const qk of queryKeys) {
-        void queryClient.invalidateQueries({ queryKey: qk });
-      }
     },
     onError: (err: unknown) => {
       setLockError(lockErrorMessage(err));

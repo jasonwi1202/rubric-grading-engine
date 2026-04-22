@@ -294,6 +294,7 @@ describe("EssayReviewPanel — unlocked state (is_locked=false)", () => {
   const unlockedGrade = makeGrade({ is_locked: false });
 
   beforeEach(() => {
+    vi.clearAllMocks();
     mockOverrideCriterionScore.mockResolvedValue(unlockedGrade);
     mockUpdateFeedback.mockResolvedValue(unlockedGrade);
     mockLockGrade.mockResolvedValue({ ...unlockedGrade, is_locked: true });

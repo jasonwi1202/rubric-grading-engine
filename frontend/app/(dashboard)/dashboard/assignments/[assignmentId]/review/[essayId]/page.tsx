@@ -259,7 +259,6 @@ export default function EssayReviewPage() {
             <EssayReviewPanel
               grade={grade}
               criteria={criteria}
-              queryKeys={[["grade", essayId], ["assignment", assignmentId]]}
               onGradeUpdate={handleGradeUpdate}
             />
           </div>

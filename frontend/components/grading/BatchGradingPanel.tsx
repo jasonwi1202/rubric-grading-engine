@@ -178,7 +178,7 @@ function EssayRow({
           <Link
             href={`/dashboard/assignments/${assignmentId}/review/${essay.id}`}
             className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-            aria-label={`Review grade for essay ${essay.id.slice(0, 8)}`}
+            aria-label="Review grade"
           >
             Review
           </Link>
