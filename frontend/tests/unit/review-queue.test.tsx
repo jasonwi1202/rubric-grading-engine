@@ -16,11 +16,11 @@
  * - ReviewQueue: essay links use UUIDs, not student names (no PII in URL)
  *
  * Security:
- * - No student PII in fixtures — synthetic IDs only.
+ * - No real student PII in fixtures — uses synthetic IDs and placeholder student names only.
  * - No credential-format strings in test data.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
@@ -34,11 +34,6 @@ import {
   getReviewStatus,
   filterEssays,
   sortEssays,
-} from "@/lib/utils/reviewQueue";
-import type {
-  StatusFilter,
-  SortKey,
-  SortDirection,
 } from "@/lib/utils/reviewQueue";
 import type { ReviewQueueEssay } from "@/lib/api/essays";
 

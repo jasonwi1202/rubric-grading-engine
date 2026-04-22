@@ -114,11 +114,18 @@ export function sortEssays(
 
       case "score": {
         // Null/undefined scores (essay not yet graded) always sorted last.
+        // Non-finite parsed values (e.g. empty string) are also treated as missing.
         if (a.total_score == null && b.total_score == null) return 0;
         if (a.total_score == null) return 1;
         if (b.total_score == null) return -1;
-        const diff = parseFloat(a.total_score) - parseFloat(b.total_score);
-        return diff * multiplier;
+        const aScore = parseFloat(a.total_score);
+        const bScore = parseFloat(b.total_score);
+        const aMissing = !Number.isFinite(aScore);
+        const bMissing = !Number.isFinite(bScore);
+        if (aMissing && bMissing) return 0;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+        return (aScore - bScore) * multiplier;
       }
 
       case "student_name": {

@@ -260,7 +260,7 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
                   {REVIEW_STATUS_LABELS[reviewStatus]}
                 </span>
 
-                {/* Student label — shows UUID fragment when unassigned to avoid "no name" confusion */}
+                {/* Student label — shows the student name, or "Unassigned" when no student is assigned */}
                 <span className="flex-1 truncate text-sm font-medium text-gray-900">
                   {essay.student_name ?? (
                     <span className="italic text-gray-400">Unassigned</span>
