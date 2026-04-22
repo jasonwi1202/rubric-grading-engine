@@ -42,6 +42,7 @@ Any code path that sends essay content to the LLM must follow these rules — no
 - [ ] Essay text is wrapped in explicit delimiters (`<ESSAY_START>` / `<ESSAY_END>`) in the user turn
 - [ ] LLM responses are validated against the grading schema before any data is written to the database
 - [ ] Score values are range-clamped server-side regardless of what the LLM returns
+- [ ] **Prompt constraints must be consistent across the system prompt, the JSON schema description, and the parser** \u2014 e.g., if the system prompt says "minimum 20 words" for justification, the JSON schema description and the parser must also enforce 20 words (not 20 characters). Mismatched constraints produce conflicting model guidance and confusing parser behavior.
 
 Reference: `docs/architecture/security.md#1-prompt-injection-defense`
 
@@ -51,6 +52,7 @@ Reference: `docs/architecture/security.md#1-prompt-injection-defense`
 - [ ] Essay content is never logged at any level in production code paths
 - [ ] No student data is sent to third-party services not covered by a DPA
 - [ ] Student data is never used for LLM fine-tuning or model training
+- [ ] **Free-form text fields are not assumed to be PII-free** — fields like `CommentBankEntry.text`, `feedback`, or any teacher-entered freeform field can contain student names or identifiers. Do not document them as "no student PII" and never log their content.
 - [ ] **S3 object keys are never logged or included in exception messages** — keys are often derived from user-supplied filenames which can contain student PII. Log only the operation type and entity ID. Raise `StorageError` with a generic message, chaining the original exception for debugging only.
 
 Reference: `docs/architecture/security.md#5-ferpa-compliance`
@@ -60,6 +62,8 @@ Reference: `docs/architecture/security.md#5-ferpa-compliance`
 Every endpoint that changes grade state or performs a consequential access/admin action must write an audit log entry. See the full action catalog in `docs/architecture/data-model.md#auditlog`.
 
 - [ ] **Any new `action` value used in an audit log entry must be added to the action catalog** in `docs/architecture/data-model.md#auditlog`. Using an undocumented action code creates unhandled cases when the frontend or reports branch on `action`.
+- [ ] **`score_clamped` entries must use the `CriterionScore.id` as `entity_id`** (not the rubric criterion UUID), so audit queries can join back to the exact score row. `before_value` must be `{"raw_score": N}` and `after_value` must be `{"clamped_score": N}`.
+- [ ] **State transitions that produce audit entries must be atomic** — e.g., `lock_grade()` can race under concurrent requests (two transactions both see `is_locked=False`). Use a conditional `UPDATE ... WHERE is_locked = false` and check `rowcount` to ensure only one caller writes the audit entry.
 
 **Grade events** (every change to grade state):
 - [ ] `score_override` on any criterion score change
@@ -108,7 +112,7 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] All public functions have type annotations (`mypy` strict)
 - [ ] `ruff check .` passes with zero errors from `backend/`
 - [ ] `ruff format --check .` passes with zero "would reformat" files from `backend/`
-- [ ] No `# type: ignore` without an inline explanation
+- [ ] **No `# type: ignore` without a specific error code AND an inline explanation** — use `# type: ignore[call-overload]  # reason`, not a bare `# type: ignore`. Always try to remove the ignore first by narrowing types or adding an explicit `cast()`; the ignore is the last resort.
 - [ ] SQLAlchemy queries use `AsyncSession` — no synchronous DB calls in async endpoints
 - [ ] **`db.add()` and `db.delete()` are synchronous** — do NOT `await` them. Only `db.flush()`, `db.commit()`, `db.refresh()`, and `db.execute()` are awaitable. Awaiting a synchronous method silently awaits `None` in production and causes `AsyncMock` mismatches in tests.
 - [ ] **No blocking CPU or sync I/O inside `async def` functions** — `bcrypt.hashpw()` is CPU-bound and will stall the event loop. Use `anyio.to_thread.run_sync()` / `starlette.concurrency.run_in_threadpool()`. Redis calls must use `redis.asyncio.Redis`, not the synchronous `redis.Redis` client.
@@ -116,6 +120,13 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] No `SELECT *` — always select specific columns
 - [ ] Services are not aware of HTTP — no `Request`, `Response`, or status code imports in `app/services/`
 - [ ] Routers contain no business logic — they validate input, call a service, and return a response
+- [ ] **`StrEnum` values must be accessed via `.value` or passed directly, not via `str()`** — `str(FeedbackTone.direct)` produces `"FeedbackTone.direct"` (the repr), not `"direct"`. Use `tone.value` or rely on `StrEnum` auto-coercion when passing to string contexts.
+- [ ] **`None` and empty list `[]` are distinct — treat them separately in service functions** — `if essay_ids:` is falsy for both `None` and `[]`, causing an empty list to be silently ignored and the full dataset to be processed. Use `if essay_ids is not None:` to distinguish "not provided" from "provided but empty".
+- [ ] **Status transitions that gate subsequent I/O must be committed last or rolled back on failure** — committing an assignment/essay status change before Redis initialization or Celery enqueue leaves the status stuck if the subsequent step fails. Either defer the commit until all side effects succeed, or roll back the status on exception.
+- [ ] **Non-fatal side effects (Redis progress updates, notifications) must be caught and logged, not allowed to propagate** — a transient Redis outage should not fail an otherwise-successful grading write. Wrap best-effort operations in `try/except` with structured error logging.
+- [ ] **Score overrides must be validated against `rubric_snapshot` min/max, not the live rubric** — the rubric may have changed since assignment creation. Read `assignment.rubric_snapshot` to find the criterion bounds and raise a domain `ValidationError` when `teacher_score` is out of range.
+- [ ] **`total_score` must be recomputed after any criterion override** — `CriterionScore.final_score` changes but `Grade.total_score` is a stored aggregate. Recalculate from all criterion scores before committing the override.
+- [ ] **Hard deletes require explicit justification** — the API conventions define DELETE as soft delete (`deleted_at`). If a resource genuinely warrants hard delete, document why in a comment and ensure list/suggest queries filter out deleted entries.
 - [ ] **Docstrings and inline comments must accurately describe the actual implementation** — a docstring that describes aspirational or draft behavior, references a function that doesn't exist, or documents a pipeline that has since changed is worse than no docstring. Before committing, read each docstring in modified files and verify it matches what the code actually does. Pay special attention to: step-by-step pipeline descriptions, "this function is idempotent" claims, and cross-references to other functions.
 
 ## Celery Tasks
@@ -124,6 +135,7 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] **Tasks accept only IDs, never full entity objects** — passing full data into a task payload means retries use stale data from the original enqueue, not the current state. Tasks must load their own data from the DB using the ID.
 - [ ] **Tasks use exponential backoff** — do not set a fixed `default_retry_delay`. Use `countdown=2 ** self.request.retries` or equivalent. A fixed delay defeats the retry strategy during outages.
 - [ ] Tasks are idempotent — safe to re-run if a worker crashes mid-execution
+- [ ] **Celery task error handlers must not unconditionally revert state** — a `_revert_to_queued` helper called from a broad `except Exception` block will downgrade a legitimately `graded` essay if the failure is a `ConflictError` (e.g., duplicate grade). Handle `ConflictError` and other non-"stuck" failures explicitly without reverting, and only revert when the current status is actually the in-progress state (e.g., `grading`).
 - [ ] **Scan/batch tasks must be truly idempotent** — if a scheduled task can be triggered twice in the same window (e.g., by a cron overlap), verify it does not produce duplicate side effects (e.g., duplicate emails). Document the invariant in a comment.
 - [ ] **Task configuration values come from `settings.*`** — do not hardcode `result_expires`, `task_soft_time_limit`, or queue names inline. Hardcoded values cause staging/prod drift.
 - [ ] Task failures write a visible error state to the affected entity — never silently drop
