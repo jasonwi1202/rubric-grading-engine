@@ -82,13 +82,18 @@ export interface GradeResponse {
 
 /**
  * Request body for PATCH /grades/{gradeId}/criteria/{criterionScoreId}.
- * At least one field must be non-null (validated by backend).
+ * At least one field must be provided (validated by backend).
+ *
+ * Note: the backend validator 422s when both fields are None; sending an
+ * explicit JSON `null` maps to None and triggers the same error. Clearing
+ * a criterion override/feedback is not supported by the current backend
+ * contract — omit the field to leave it unchanged.
  *
  * Matches backend `PatchCriterionRequest`.
  */
 export interface PatchCriterionRequest {
-  teacher_score?: number | null;
-  teacher_feedback?: string | null;
+  teacher_score?: number;
+  teacher_feedback?: string;
 }
 
 /**

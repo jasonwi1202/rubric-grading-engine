@@ -521,6 +521,151 @@ describe("EssayReviewPanel — criterion display", () => {
 
     expect(screen.getByText(/unnamed criterion/i)).toBeInTheDocument();
   });
+
+  it("maxScore fallback uses Math.max(final_score, ai_score) so an existing teacher override is not clamped", () => {
+    // teacher_score=7 > ai_score=3; without the max() fallback, clamping to
+    // ai_score=3 would corrupt the displayed value on the unmatched criterion.
+    const gradeWithHighOverride = makeGrade({
+      criterion_scores: [
+        makeCriterionScore({
+          id: "cs-high-override",
+          rubric_criterion_id: "no-match-id", // no criterion metadata → fallback
+          ai_score: 3,
+          teacher_score: 7,
+          final_score: 7,
+        }),
+      ],
+    });
+
+    render(
+      <EssayReviewPanel
+        grade={gradeWithHighOverride}
+        criteria={CRITERIA} // no entry for "no-match-id"
+        onGradeUpdate={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    // The displayed score input should show 7, not 3 (ai_score).
+    const scoreInput = screen.getByRole("spinbutton");
+    expect(scoreInput).toHaveValue(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EssayReviewPanel — summary feedback blur behaviour
+// ---------------------------------------------------------------------------
+
+describe("EssayReviewPanel — summary feedback blur behaviour", () => {
+  const unlockedGrade = makeGrade({
+    is_locked: false,
+    summary_feedback: "AI summary feedback.",
+    summary_feedback_edited: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUpdateFeedback.mockResolvedValue(unlockedGrade);
+  });
+
+  it("resets summary feedback textarea and shows error when teacher clears it", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EssayReviewPanel
+        grade={unlockedGrade}
+        criteria={CRITERIA}
+        onGradeUpdate={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    const textarea = screen.getByRole("textbox", {
+      name: /overall summary feedback/i,
+    });
+
+    // Clear the textarea and blur
+    await user.clear(textarea);
+    fireEvent.blur(textarea);
+
+    // Textarea should be reset to the persisted value (not stay empty)
+    await waitFor(() =>
+      expect(textarea).toHaveValue("AI summary feedback."),
+    );
+
+    // A validation error message should be shown
+    expect(
+      await screen.findByText(/summary feedback cannot be empty/i),
+    ).toBeInTheDocument();
+
+    // No API call should have been made
+    expect(mockUpdateFeedback).not.toHaveBeenCalled();
+  });
+
+  it("clears the validation error and saves when a valid (non-empty) value is entered", async () => {
+    const user = userEvent.setup();
+    const onGradeUpdate = vi.fn();
+
+    render(
+      <EssayReviewPanel
+        grade={unlockedGrade}
+        criteria={CRITERIA}
+        onGradeUpdate={onGradeUpdate}
+      />,
+      { wrapper },
+    );
+
+    const textarea = screen.getByRole("textbox", {
+      name: /overall summary feedback/i,
+    });
+
+    // Type a new value and blur
+    await user.clear(textarea);
+    await user.type(textarea, "Updated feedback.");
+    fireEvent.blur(textarea);
+
+    await waitFor(() =>
+      expect(mockUpdateFeedback).toHaveBeenCalledWith(
+        unlockedGrade.id,
+        { summary_feedback: "Updated feedback." },
+      ),
+    );
+  });
+
+  it("dismisses the validation error after the teacher enters valid text following a clear attempt", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EssayReviewPanel
+        grade={unlockedGrade}
+        criteria={CRITERIA}
+        onGradeUpdate={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    const textarea = screen.getByRole("textbox", {
+      name: /overall summary feedback/i,
+    });
+
+    // Step 1: clear and blur to trigger the error
+    await user.clear(textarea);
+    fireEvent.blur(textarea);
+    expect(
+      await screen.findByText(/summary feedback cannot be empty/i),
+    ).toBeInTheDocument();
+
+    // Step 2: type valid text and blur — error should be dismissed
+    await user.type(textarea, "Valid feedback now.");
+    fireEvent.blur(textarea);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/summary feedback cannot be empty/i),
+      ).not.toBeInTheDocument(),
+    );
+    expect(mockUpdateFeedback).toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -107,6 +107,28 @@ function lockErrorMessage(err: unknown): string {
   return "Failed to lock grade. Please try again.";
 }
 
+/**
+ * Maps API errors for summary/criterion feedback saves.
+ * VALIDATION_ERROR here covers length constraints, not score range.
+ */
+function feedbackErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case "GRADE_LOCKED":
+        return "This grade is locked and cannot be edited.";
+      case "FORBIDDEN":
+        return "You do not have permission to edit this grade.";
+      case "NOT_FOUND":
+        return "Grade not found. Please refresh the page.";
+      case "VALIDATION_ERROR":
+        return "Failed to save feedback. Please check your input.";
+      default:
+        return "Failed to save changes. Please try again.";
+    }
+  }
+  return "Failed to save changes. Please try again.";
+}
+
 // ---------------------------------------------------------------------------
 // Confidence badge
 // ---------------------------------------------------------------------------
@@ -152,7 +174,12 @@ function CriterionCard({
   const headingId = useId();
 
   const minScore = criterion?.min_score ?? 0;
-  const maxScore = criterion?.max_score ?? criterionScore.ai_score;
+  // When criterion metadata is missing, ensure the fallback max covers the
+  // persisted final_score (which may include an existing teacher override
+  // above ai_score) so clamping can't silently lower a valid saved value.
+  const maxScore =
+    criterion?.max_score ??
+    Math.max(criterionScore.final_score, criterionScore.ai_score);
   const criterionName = criterion?.name ?? "Unnamed criterion";
 
   // Local input state — tracks what the teacher has typed before blur
@@ -229,15 +256,13 @@ function CriterionCard({
     if (trimmed === existing) return; // unchanged — nothing to save
 
     if (trimmed.length === 0) {
-      // Teacher intentionally cleared the field.
-      // Only send null if there was previously saved teacher feedback to clear.
-      // (Clearing back to the ai_feedback default doesn't require an API call.)
-      if (criterionScore.teacher_feedback !== null) {
-        overrideMutation.mutate({ teacher_feedback: null });
-      }
-    } else {
-      overrideMutation.mutate({ teacher_feedback: trimmed });
+      // The backend does not support clearing teacher_feedback to null via
+      // this endpoint (both fields None → 422). Reset the displayed value
+      // back to the last persisted feedback so the UI stays consistent.
+      setFeedbackInput(existing);
+      return;
     }
+    overrideMutation.mutate({ teacher_feedback: trimmed });
   }, [
     isLocked,
     feedbackInput,
@@ -417,13 +442,32 @@ export function EssayReviewPanel({
     Record<string, number>
   >({});
 
+  // Clear all pending local overrides when the grade changes (navigation to
+  // another essay) or when the grade becomes locked (override values are
+  // irrelevant once locking commits all scores server-side).
+  useEffect(() => {
+    setLocalScoreOverrides({});
+  }, [grade.id, grade.is_locked]);
+
   // Summary feedback local state
   const [summaryFeedback, setSummaryFeedback] = useState<string>(
-    grade.summary_feedback_edited ?? grade.summary_feedback,
+    (grade.summary_feedback_edited ?? grade.summary_feedback) || "",
   );
   const [summaryFeedbackError, setSummaryFeedbackError] = useState<
     string | null
   >(null);
+
+  // Sync displayed summary feedback only when navigating to a different essay
+  // (grade.id changes). Syncing on every grade prop update would overwrite
+  // unsaved local edits if a background refetch fires while the teacher types.
+  // After a successful save the displayed text is already the teacher's input.
+  useEffect(() => {
+    setSummaryFeedback(
+      (grade.summary_feedback_edited ?? grade.summary_feedback) || "",
+    );
+    setSummaryFeedbackError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grade.id]);
 
   // Lock error
   const [lockError, setLockError] = useState<string | null>(null);
@@ -469,7 +513,7 @@ export function EssayReviewPanel({
       onGradeUpdate(updatedGrade);
     },
     onError: (err: unknown) => {
-      setSummaryFeedbackError(criterionErrorMessage(err));
+      setSummaryFeedbackError(feedbackErrorMessage(err));
     },
   });
 
@@ -477,10 +521,20 @@ export function EssayReviewPanel({
     if (isLocked) return;
     const trimmed = summaryFeedback.trim();
     const existing =
-      grade.summary_feedback_edited ?? grade.summary_feedback;
-    // Backend PatchFeedbackRequest requires min_length=1 for summary_feedback;
-    // empty strings are not sent to avoid a 422 validation error.
-    if (trimmed !== existing && trimmed.length > 0) {
+      (grade.summary_feedback_edited ?? grade.summary_feedback ?? "").trim();
+
+    // Backend PatchFeedbackRequest requires min_length=1 for summary_feedback.
+    // Revert the controlled field to the last persisted value and show an
+    // error so the teacher understands the change can't be saved as empty.
+    if (trimmed.length === 0) {
+      setSummaryFeedback(existing);
+      setSummaryFeedbackError("Summary feedback cannot be empty.");
+      return;
+    }
+
+    setSummaryFeedbackError(null);
+
+    if (trimmed !== existing) {
       feedbackMutation.mutate(trimmed);
     }
   }, [
