@@ -379,11 +379,11 @@ class TestOverrideCriterion:
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),          # load grade tenant-scoped
-                _scalar_one_or_none_mock(criterion_score), # load criterion score
-                _scalar_one_or_none_mock(assignment),      # load assignment for validation
-                _scalars_mock([4]),                        # recalculate total_score
-                _scalars_mock([criterion_score]),          # load all criterion scores
+                _scalar_one_or_none_mock(grade),  # load grade tenant-scoped
+                _scalar_one_or_none_mock(criterion_score),  # load criterion score
+                _scalar_one_or_none_mock(assignment),  # load assignment for validation
+                _scalars_mock([4]),  # recalculate total_score
+                _scalars_mock([criterion_score]),  # load all criterion scores
             ]
         )
 
@@ -475,9 +475,9 @@ class TestOverrideCriterion:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),           # load grade tenant-scoped
+                _scalar_one_or_none_mock(grade),  # load grade tenant-scoped
                 _scalar_one_or_none_mock(criterion_score),  # load criterion score
-                _scalar_one_or_none_mock(assignment),       # load assignment for validation
+                _scalar_one_or_none_mock(assignment),  # load assignment for validation
             ]
         )
 
@@ -579,9 +579,9 @@ class TestLockGrade:
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),       # _load_grade_tenant_scoped
-                _scalar_one_or_none_mock(grade.id),    # atomic UPDATE → lock performed
-                _scalars_mock([criterion_score]),       # _load_criterion_scores
+                _scalar_one_or_none_mock(grade),  # _load_grade_tenant_scoped
+                _scalar_one_or_none_mock(grade.id),  # atomic UPDATE → lock performed
+                _scalars_mock([criterion_score]),  # _load_criterion_scores
             ]
         )
 
@@ -616,9 +616,9 @@ class TestLockGrade:
         db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),       # _load_grade_tenant_scoped
-                _scalar_one_or_none_mock(None),        # atomic UPDATE → no rows (already locked)
-                _scalars_mock([criterion_score]),       # _load_criterion_scores
+                _scalar_one_or_none_mock(grade),  # _load_grade_tenant_scoped
+                _scalar_one_or_none_mock(None),  # atomic UPDATE → no rows (already locked)
+                _scalars_mock([criterion_score]),  # _load_criterion_scores
             ]
         )
 

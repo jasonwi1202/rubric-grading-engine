@@ -309,7 +309,6 @@ class TestTriggerBatchGrading:
         assert "db.commit" in commit_order
         assert commit_order.index("enqueue") < commit_order.index("db.commit")
 
-
         """Non-gradeable state raises AssignmentNotGradeableError."""
         assignment_id = uuid.uuid4()
         teacher_id = uuid.uuid4()
