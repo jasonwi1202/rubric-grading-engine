@@ -206,7 +206,9 @@ async def get_grade_audit_endpoint(
     ``score_clamped``).  Each entry includes timestamp, actor (teacher_id),
     entity type/id, action, and before/after values.
 
-    No student PII is included — only entity IDs appear in the response.
+    Access is tenant-scoped; the server does not log any PII for this read
+    path.  ``before_value`` and ``after_value`` fields carry the raw audit
+    payloads and should be treated as sensitive.
 
     Response body: ``{"data": [AuditLogEntryResponse, ...]}``
 

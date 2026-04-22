@@ -471,8 +471,10 @@ async def get_grade_audit_log(
     - The grade is first loaded with tenant isolation via
       :func:`_load_grade_tenant_scoped`, so cross-teacher access raises
       :class:`ForbiddenError` (403).
-    - The returned entries contain only entity IDs — no student PII.
-    - This is a read-only operation; the audit_log table is never mutated.
+    - Application log statements for this read path use only entity IDs.
+    - Returned entries expose the stored audit payloads, including
+      ``before_value`` and ``after_value``, as recorded in ``audit_logs``.
+    - This is a read-only operation; the audit_logs table is never mutated.
 
     Args:
         db: Async database session.
@@ -510,7 +512,7 @@ async def get_grade_audit_log(
     )
     entries = list(audit_result.scalars().all())
 
-    logger.info(
+    logger.debug(
         "Grade audit log retrieved",
         extra={"grade_id": str(grade_id), "teacher_id": str(teacher_id)},
     )
@@ -520,7 +522,9 @@ async def get_grade_audit_log(
             id=entry.id,
             teacher_id=entry.teacher_id,
             entity_type=entry.entity_type,
-            entity_id=entry.entity_id,
+            # entity_id is always non-null for grade/criterion_score entries;
+            # the query filter above guarantees this invariant at runtime.
+            entity_id=entry.entity_id,  # type: ignore[arg-type]  # ORM column is nullable; query ensures non-null here
             action=entry.action,
             before_value=entry.before_value,
             after_value=entry.after_value,

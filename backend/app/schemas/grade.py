@@ -78,7 +78,10 @@ class PatchCriterionRequest(BaseModel):
 class AuditLogEntryResponse(BaseModel):
     """A single audit log entry for a grade's change history.
 
-    Only entity IDs are exposed — no student PII.
+    ``before_value`` and ``after_value`` contain the raw JSONB payloads stored
+    in ``audit_logs`` and may include free-form text (e.g. feedback strings)
+    that should be treated as sensitive.  Application log statements for this
+    read path use only entity IDs.
     """
 
     id: uuid.UUID
@@ -86,11 +89,9 @@ class AuditLogEntryResponse(BaseModel):
     # acting teacher.
     teacher_id: uuid.UUID | None
     entity_type: str
-    # Nullable because the underlying AuditLog model allows it for events
-    # (e.g., login_failure) that do not reference a specific application entity.
-    # All grade and criterion_score entries returned by this endpoint will have
-    # a non-null entity_id.
-    entity_id: uuid.UUID | None
+    # This endpoint only returns audit entries scoped to a specific grade or
+    # criterion_score record, so entity_id is always present in the response.
+    entity_id: uuid.UUID
     action: str
     before_value: dict[str, Any] | None
     after_value: dict[str, Any] | None

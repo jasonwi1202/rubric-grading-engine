@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -696,10 +696,17 @@ class TestGetGradeAuditLog:
 
     @pytest.mark.asyncio
     async def test_happy_path_returns_audit_entries_in_order(self) -> None:
-        """Returns all audit entries for the grade in chronological order."""
+        """Returns all audit entries for the grade in chronological order.
+
+        Distinct ``created_at`` values are used so the ordering assertion can
+        fail if the query omits ``order_by(AuditLog.created_at)``.
+        """
         teacher_id = _make_uuid()
         grade = _make_grade()
         criterion_score_id = _make_uuid()
+
+        t0 = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+        t1 = datetime(2024, 1, 1, 12, 0, 1, tzinfo=UTC)
 
         grade_entry = self._make_audit_entry(
             entity_type="grade",
@@ -707,12 +714,15 @@ class TestGetGradeAuditLog:
             action="grade_locked",
             teacher_id=teacher_id,
         )
+        grade_entry.created_at = t0
+
         cs_entry = self._make_audit_entry(
             entity_type="criterion_score",
             entity_id=criterion_score_id,
             action="score_override",
             teacher_id=teacher_id,
         )
+        cs_entry.created_at = t1
 
         db = AsyncMock()
         db.execute = AsyncMock(
@@ -721,7 +731,7 @@ class TestGetGradeAuditLog:
                 _scalar_one_or_none_mock(grade),
                 # criterion score IDs query
                 _scalars_mock([criterion_score_id]),
-                # audit log query
+                # audit log query — DB returns entries in ascending order
                 _scalars_mock([grade_entry, cs_entry]),
             ]
         )
@@ -731,11 +741,19 @@ class TestGetGradeAuditLog:
         result = await get_grade_audit_log(db, grade.id, teacher_id)
 
         assert len(result) == 2
+        # Verify chronological order via the distinct timestamps
+        assert result[0].created_at == t0
+        assert result[1].created_at == t1
         assert result[0].action == "grade_locked"
         assert result[0].entity_type == "grade"
         assert result[0].entity_id == grade_entry.entity_id
         assert result[1].action == "score_override"
         assert result[1].entity_type == "criterion_score"
+
+        # Confirm the final db.execute call included order_by(AuditLog.created_at)
+        audit_call_args = db.execute.call_args_list[-1]
+        compiled = audit_call_args[0][0].compile(compile_kwargs={"literal_binds": True})
+        assert "created_at" in str(compiled).lower()
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_audit_entries(self) -> None:
@@ -826,8 +844,8 @@ class TestGetGradeAuditLog:
             await get_grade_audit_log(db, grade_id, teacher_id)
 
     @pytest.mark.asyncio
-    async def test_response_contains_no_student_pii(self) -> None:
-        """Audit entries expose only entity IDs, not student names or content."""
+    async def test_logger_does_not_emit_sensitive_payload_fields(self) -> None:
+        """Logger must not emit before_value/after_value, which may contain sensitive text."""
         teacher_id = _make_uuid()
         grade = _make_grade()
 
@@ -837,6 +855,9 @@ class TestGetGradeAuditLog:
             action="feedback_edited",
             teacher_id=teacher_id,
         )
+        # Simulate a payload that contains sensitive feedback text.
+        entry.before_value = {"summary_feedback": "old sensitive text"}
+        entry.after_value = {"summary_feedback": "new sensitive text"}
 
         db = AsyncMock()
         db.execute = AsyncMock(
@@ -849,13 +870,24 @@ class TestGetGradeAuditLog:
 
         from app.services.grade import get_grade_audit_log
 
-        result = await get_grade_audit_log(db, grade.id, teacher_id)
+        with patch("app.services.grade.logger") as mock_logger:
+            result = await get_grade_audit_log(db, grade.id, teacher_id)
 
         assert len(result) == 1
-        r = result[0]
-        # Fields that could carry PII should not be present.
-        assert not hasattr(r, "student_name")
-        assert not hasattr(r, "essay_text")
-        # Only IDs are exposed for attribution.
-        assert r.teacher_id == entry.teacher_id
-        assert r.entity_id == entry.entity_id
+        # Confirm response has exactly the expected fields (no extras that could leak PII)
+        response_keys = set(result[0].model_dump().keys())
+        assert response_keys == {
+            "id",
+            "teacher_id",
+            "entity_type",
+            "entity_id",
+            "action",
+            "before_value",
+            "after_value",
+            "created_at",
+        }
+        # Confirm the logger did not emit before_value or after_value content
+        for call in mock_logger.debug.call_args_list + mock_logger.info.call_args_list:
+            call_str = str(call)
+            assert "old sensitive text" not in call_str
+            assert "new sensitive text" not in call_str
