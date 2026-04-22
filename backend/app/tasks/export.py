@@ -204,8 +204,9 @@ async def _run_export(
             total = len(essays_rows)
             await redis.hset(redis_key, "total", str(total))
 
-            # 3. Load grades for locked essays — join back to Class for tenant isolation.
-            essay_ids = [essay.id for essay, _ in essays_rows]
+            # 3. Load grades for locked essays — independently tenant-scoped via
+            # Assignment.id + Class.teacher_id.  Does not rely on essay_ids derived
+            # from the previous query, so tenant isolation is enforced autonomously.
             grades_result = await db.execute(
                 select(EssayVersion, Grade)
                 .join(Grade, Grade.essay_version_id == EssayVersion.id)
@@ -213,7 +214,8 @@ async def _run_export(
                 .join(Assignment, Essay.assignment_id == Assignment.id)
                 .join(Class, Assignment.class_id == Class.id)
                 .where(
-                    EssayVersion.essay_id.in_(essay_ids),
+                    Assignment.id == assignment_uuid,
+                    Essay.status == EssayStatus.locked,
                     Grade.is_locked == True,  # noqa: E712 — SQLAlchemy requires ==
                     Class.teacher_id == teacher_uuid,
                 )

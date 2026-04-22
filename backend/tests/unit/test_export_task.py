@@ -425,22 +425,49 @@ class TestRunExport:
 
     @pytest.mark.asyncio
     async def test_all_essays_skipped_sets_no_exportable_grades(self) -> None:
-        """When all locked essays have no associated student (all skipped), the task
-        should fail with NO_EXPORTABLE_GRADES rather than uploading an empty ZIP."""
+        """When all locked essays have no associated student (all skipped in the PDF
+        generation loop), the task should fail with NO_EXPORTABLE_GRADES rather than
+        uploading an empty ZIP.
+
+        The grade and scores queries still run and return data — the skip happens in
+        the PDF generation loop when ``student_uuid_val is None``, not during grade
+        loading.
+        """
         from app.tasks.export import _run_export
 
         assignment_id = str(uuid.uuid4())
         teacher_id = str(uuid.uuid4())
         task_id = str(uuid.uuid4())
         essay_id = uuid.uuid4()
+        grade_id = uuid.uuid4()
+        criterion_id = uuid.uuid4()
 
         mock_assignment = MagicMock()
         mock_assignment.id = uuid.UUID(assignment_id)
         mock_assignment.title = "Test Assignment"
-        mock_assignment.rubric_snapshot = {"criteria": []}
+        mock_assignment.rubric_snapshot = {
+            "criteria": [{"id": str(criterion_id), "name": "Criterion A", "max_score": 5}]
+        }
 
         mock_essay = MagicMock()
         mock_essay.id = essay_id
+
+        # Grade and essay version exist, but the essay is skipped in the loop because
+        # the essay has no associated student (student_uuid_val = None).
+        mock_ev = MagicMock()
+        mock_ev.essay_id = essay_id
+        mock_grade = MagicMock()
+        mock_grade.id = grade_id
+        mock_grade.is_locked = True
+        mock_grade.summary_feedback = "Good work."
+        mock_grade.summary_feedback_edited = None
+
+        mock_score = MagicMock()
+        mock_score.grade_id = grade_id
+        mock_score.rubric_criterion_id = criterion_id
+        mock_score.final_score = 4
+        mock_score.ai_feedback = "Well done."
+        mock_score.teacher_feedback = None
 
         def make_result(rows: list) -> MagicMock:  # type: ignore[type-arg]
             r = MagicMock()
@@ -451,12 +478,12 @@ class TestRunExport:
             r.scalars.return_value = scalars_mock
             return r
 
-        # One locked essay with no associated student (student_uuid = None).
+        # The essay is returned with student_uuid_val = None — skipped in the loop.
         execute_responses = [
             make_result([mock_assignment]),
-            make_result([(mock_essay, None)]),  # student_uuid_val is None → skipped
-            make_result([]),  # no grades
-            make_result([]),  # no scores
+            make_result([(mock_essay, None)]),  # student_uuid_val = None → loop skips
+            make_result([(mock_ev, mock_grade)]),  # grade loaded, but essay skipped before lookup
+            make_result([mock_score]),  # scores loaded, but essay skipped before lookup
         ]
         execute_call_count = 0
 
