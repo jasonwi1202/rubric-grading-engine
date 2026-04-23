@@ -28,8 +28,12 @@ _BASE: dict[str, str] = {
 
 
 def _make(**overrides: object) -> Settings:
-    """Build a Settings instance from _BASE, applying keyword overrides."""
-    return Settings.model_validate({**_BASE, **overrides})
+    """Build a Settings instance from _BASE, applying keyword overrides.
+
+    Passes _env_file=None so that the local .env file does not interfere with
+    tests that assert on defaults or required-field validation.
+    """
+    return Settings(_env_file=None, **{**_BASE, **overrides})  # type: ignore[call-arg]
 
 
 # ---------------------------------------------------------------------------
@@ -42,25 +46,25 @@ class TestRequiredFields:
         monkeypatch.delenv("DATABASE_URL", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "database_url"}
         with pytest.raises(ValidationError, match="database_url"):
-            Settings.model_validate(kwargs)
+            Settings(_env_file=None, **kwargs)  # type: ignore[call-arg]
 
     def test_missing_redis_url_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("REDIS_URL", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "redis_url"}
         with pytest.raises(ValidationError, match="redis_url"):
-            Settings.model_validate(kwargs)
+            Settings(_env_file=None, **kwargs)  # type: ignore[call-arg]
 
     def test_missing_jwt_secret_key_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "jwt_secret_key"}
         with pytest.raises(ValidationError, match="jwt_secret_key"):
-            Settings.model_validate(kwargs)
+            Settings(_env_file=None, **kwargs)  # type: ignore[call-arg]
 
     def test_missing_cors_origins_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CORS_ORIGINS", raising=False)
         kwargs = {k: v for k, v in _BASE.items() if k != "cors_origins"}
         with pytest.raises(ValidationError, match="cors_origins"):
-            Settings.model_validate(kwargs)
+            Settings(_env_file=None, **kwargs)  # type: ignore[call-arg]
 
 
 # ---------------------------------------------------------------------------

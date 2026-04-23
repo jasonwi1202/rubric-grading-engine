@@ -22,4 +22,6 @@ regexes = [
     '''#\s*INTEGRITY_API_KEY=''',
     # Similarity threshold config value — not a secret
     '''INTEGRITY_SIMILARITY_THRESHOLD=''',
+    # smoke_test_demo.py uses body_contains= as a Check constructor kwarg — not a key
+    '''body_contains=''',
 ]

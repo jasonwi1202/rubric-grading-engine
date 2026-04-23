@@ -91,6 +91,9 @@ def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
         # /dashboard should redirect unauthenticated users — we just verify it responds
         # (fetch follows redirects so we can't check for 307 directly)
         Check("Frontend: /dashboard responds", f"{frontend}/dashboard"),
+        # M3 dashboard routes — confirm pages are registered (redirect to /login when unauthenticated)
+        Check("Frontend: /dashboard/classes responds",     f"{frontend}/dashboard/classes"),
+        Check("Frontend: /dashboard/rubrics/new responds", f"{frontend}/dashboard/rubrics/new"),
 
         # --- Mailpit ---
         Check("Mailpit: web UI reachable", f"{mailpit}/"),
