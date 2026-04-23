@@ -629,7 +629,7 @@ async def get_integrity_report_for_essay(
         similarity_score=report.similarity_score,
         flagged_passages=report.flagged_passages or [],
         status=report.status,
-        reviewed_at=getattr(report, "reviewed_at", None),
+        reviewed_at=report.reviewed_at,
         created_at=report.created_at,
         updated_at=report.updated_at,
     )
@@ -678,7 +678,7 @@ async def update_integrity_report_status(
         raise ForbiddenError("You do not have access to this integrity report.")
 
     report.status = status
-    report.reviewed_at = datetime.now(tz=UTC)
+    report.reviewed_at = datetime.now(UTC)
 
     await db.flush()
     await db.commit()
@@ -759,7 +759,7 @@ async def get_integrity_summary_for_assignment(
         )
         .group_by(IntegrityReport.status)
     )
-    counts: dict[str, int] = {row.status: row.cnt for row in rows}
+    counts: dict[IntegrityReportStatus, int] = {row.status: row.cnt for row in rows}
 
     flagged = counts.get(IntegrityReportStatus.flagged, 0)
     reviewed_clear = counts.get(IntegrityReportStatus.reviewed_clear, 0)

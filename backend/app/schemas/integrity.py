@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.integrity_report import IntegrityReportStatus
 
@@ -62,13 +62,16 @@ class PatchIntegrityStatusRequest(BaseModel):
         description="Must be 'reviewed_clear' or 'flagged'.",
     )
 
-    def validate_teacher_action(self) -> None:
+    @field_validator("status")
+    @classmethod
+    def validate_teacher_action(cls, v: IntegrityReportStatus) -> IntegrityReportStatus:
         """Raise ValueError if the status is not a valid teacher action."""
         allowed = {IntegrityReportStatus.reviewed_clear, IntegrityReportStatus.flagged}
-        if self.status not in allowed:
+        if v not in allowed:
             raise ValueError(
                 f"Status must be one of: {', '.join(s.value for s in allowed)}."
             )
+        return v
 
 
 class IntegritySummaryResponse(BaseModel):

@@ -23,7 +23,6 @@ from fastapi.responses import JSONResponse
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
-from app.exceptions import ValidationError as DomainValidationError
 from app.models.user import User
 from app.schemas.integrity import (
     IntegrityReportResponse,
@@ -151,12 +150,6 @@ async def patch_integrity_status_endpoint(
     Returns 404 if the report does not exist.
     Returns 422 if the status value is not a valid teacher action.
     """
-    # Validate that the requested status is a teacher-action status.
-    try:
-        body.validate_teacher_action()
-    except ValueError as exc:
-        raise DomainValidationError(str(exc), field="status") from exc
-
     report = await update_integrity_report_status(
         db=db,
         report_id=report_id,
