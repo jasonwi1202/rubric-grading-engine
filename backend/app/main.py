@@ -201,11 +201,6 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.essays import router as essays_router
     from app.routers.exports import router as exports_router
     from app.routers.grades import essay_grade_router, grades_router
-    from app.routers.regrade_requests import (
-        assignments_regrade_router,
-        grades_regrade_router,
-        regrade_requests_router,
-    )
     from app.routers.health import router as health_router
     from app.routers.integrity import (
         assignment_integrity_router,
@@ -213,6 +208,11 @@ def _register_routers(application: FastAPI) -> None:
         integrity_reports_router,
     )
     from app.routers.onboarding import router as onboarding_router
+    from app.routers.regrade_requests import (
+        assignments_regrade_router,
+        grades_regrade_router,
+        regrade_requests_router,
+    )
     from app.routers.rubric_templates import router as rubric_templates_router
     from app.routers.rubrics import router as rubrics_router
     from app.routers.students import router as students_router

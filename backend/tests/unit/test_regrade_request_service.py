@@ -143,8 +143,6 @@ class TestCreateRegradeRequest:
         """Returns a RegradeRequestResponse on success within the window."""
         teacher_id = _make_uuid()
         grade = _make_grade(created_at=datetime.now(UTC))
-        rr = _make_regrade_request(grade_id=grade.id, teacher_id=teacher_id)
-
         db = AsyncMock()
         db.add = MagicMock()
         db.execute = AsyncMock(
@@ -395,7 +393,7 @@ class TestResolveRegradeRequest:
 
         body = RegradeRequestResolveRequest(resolution="approved", resolution_note="Well argued.")
 
-        response = await resolve_regrade_request(db, request_id, teacher_id, body)
+        await resolve_regrade_request(db, request_id, teacher_id, body)
 
         assert rr.status == RegradeRequestStatus.approved
         assert rr.resolution_note == "Well argued."
@@ -427,7 +425,7 @@ class TestResolveRegradeRequest:
             resolution_note="The original score is consistent with the rubric.",
         )
 
-        response = await resolve_regrade_request(db, request_id, teacher_id, body)
+        await resolve_regrade_request(db, request_id, teacher_id, body)
 
         assert rr.status == RegradeRequestStatus.denied
         assert rr.resolution_note == "The original score is consistent with the rubric."

@@ -24,7 +24,6 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,8 +44,8 @@ from app.models.grade import CriterionScore, Grade
 from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
 from app.schemas.regrade_request import (
     RegradeRequestCreate,
-    RegradeRequestResponse,
     RegradeRequestResolveRequest,
+    RegradeRequestResponse,
 )
 
 logger = logging.getLogger(__name__)

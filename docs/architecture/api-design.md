@@ -530,6 +530,9 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
 | PATCH | `/grades/{gradeId}/criteria/{criterionId}` | Override a criterion score or feedback |
 | POST | `/grades/{gradeId}/lock` | Lock grade as final |
 | GET | `/grades/{gradeId}/audit` | View audit log for this grade |
+| POST | `/grades/{gradeId}/regrade-requests` | Submit a regrade request for a grade |
+| GET | `/assignments/{assignmentId}/regrade-requests` | List all regrade requests for an assignment |
+| POST | `/regrade-requests/{requestId}/resolve` | Approve or deny a regrade request |
 
 **GET /essays/{essayId}/grade response (200):**
 ```json
