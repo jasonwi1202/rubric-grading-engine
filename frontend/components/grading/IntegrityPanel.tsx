@@ -14,8 +14,9 @@
  * - ALL language is framed as signals, not findings
  *   (e.g. "Potential AI-generated content detected", not "AI content found").
  * - The panel is informational; the teacher always decides next steps.
- * - Locked-state: action buttons are disabled when a terminal status is set;
- *   the teacher can still toggle between reviewed_clear and flagged.
+ * - Terminal-status behavior: the currently-selected status action is disabled
+ *   to prevent redundant updates, while the teacher can still switch between
+ *   reviewed_clear and flagged.
  *
  * Security:
  * - No essay content or student PII is logged.
@@ -235,7 +236,11 @@ export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) 
             <ul className="space-y-2" aria-label="Flagged passages">
               {report.flagged_passages.map((passage, idx) => (
                 <FlaggedPassageItem
-                  key={`${idx}-${passage.text.slice(0, 20)}`}
+                  key={
+                    passage.start_char != null && passage.end_char != null
+                      ? `${passage.start_char}-${passage.end_char}`
+                      : String(idx)
+                  }
                   passage={passage}
                 />
               ))}

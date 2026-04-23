@@ -764,16 +764,60 @@ async def get_integrity_summary_for_assignment(
             raise NotFoundError("Assignment not found.")
         raise ForbiddenError("You do not have access to this assignment.")
 
-    # Count integrity report statuses for all essay versions in this assignment,
-    # scoped to the teacher (via the IntegrityReport.teacher_id column).
-    rows = await db.execute(
-        select(IntegrityReport.status, func.count(IntegrityReport.id).label("cnt"))
-        .join(EssayVersion, IntegrityReport.essay_version_id == EssayVersion.id)
+    # Count integrity report statuses per essay, using only the latest version of
+    # each essay and the most-recently-created report for that version.  This
+    # avoids double-counting essays that have been resubmitted (multiple
+    # EssayVersions) or that have reports from multiple providers.
+
+    # Step 1 — for each essay in the assignment, find the highest version_number.
+    max_version_subq = (
+        select(
+            EssayVersion.essay_id,
+            func.max(EssayVersion.version_number).label("max_version"),
+        )
         .join(Essay, EssayVersion.essay_id == Essay.id)
+        .where(Essay.assignment_id == assignment_id)
+        .group_by(EssayVersion.essay_id)
+        .subquery("max_versions")
+    )
+
+    # Step 2 — resolve (essay_id, max_version) → essay_version_id.
+    latest_versions_subq = (
+        select(EssayVersion.id.label("version_id"))
+        .join(
+            max_version_subq,
+            (EssayVersion.essay_id == max_version_subq.c.essay_id)
+            & (EssayVersion.version_number == max_version_subq.c.max_version),
+        )
+        .subquery("latest_versions")
+    )
+
+    # Step 3 — for each of those latest versions, find the max created_at report
+    # (scoped to the requesting teacher), giving one report per essay.
+    latest_report_subq = (
+        select(
+            IntegrityReport.essay_version_id,
+            func.max(IntegrityReport.created_at).label("max_created_at"),
+        )
         .where(
-            Essay.assignment_id == assignment_id,
+            IntegrityReport.essay_version_id.in_(
+                select(latest_versions_subq.c.version_id)
+            ),
             IntegrityReport.teacher_id == teacher_id,
         )
+        .group_by(IntegrityReport.essay_version_id)
+        .subquery("latest_reports")
+    )
+
+    # Step 4 — count those deduplicated reports by status.
+    rows = await db.execute(
+        select(IntegrityReport.status, func.count(IntegrityReport.id).label("cnt"))
+        .join(
+            latest_report_subq,
+            (IntegrityReport.essay_version_id == latest_report_subq.c.essay_version_id)
+            & (IntegrityReport.created_at == latest_report_subq.c.max_created_at),
+        )
+        .where(IntegrityReport.teacher_id == teacher_id)
         .group_by(IntegrityReport.status)
     )
     counts: dict[IntegrityReportStatus, int] = {row.status: row.cnt for row in rows}

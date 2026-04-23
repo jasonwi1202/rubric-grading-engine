@@ -86,7 +86,7 @@ export interface IntegritySummaryResponse {
 
 /**
  * Fetch the latest integrity report for an essay.
- * Calls GET /api/v1/essays/{essayId}/integrity.
+ * Calls GET /essays/{essayId}/integrity.
  *
  * Returns 404 when no report exists yet — callers should handle this gracefully
  * and render a "no report available" state rather than an error.
@@ -99,7 +99,7 @@ export async function getIntegrityReport(
 
 /**
  * Update the teacher review status of an integrity report.
- * Calls PATCH /api/v1/integrity-reports/{reportId}/status.
+ * Calls PATCH /integrity-reports/{reportId}/status.
  *
  * Only "reviewed_clear" and "flagged" are accepted.
  */
@@ -115,7 +115,7 @@ export async function updateIntegrityStatus(
 
 /**
  * Fetch class-level integrity signal counts for an assignment.
- * Calls GET /api/v1/assignments/{assignmentId}/integrity/summary.
+ * Calls GET /assignments/{assignmentId}/integrity/summary.
  */
 export async function getIntegritySummary(
   assignmentId: string,
