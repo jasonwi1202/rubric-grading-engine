@@ -71,7 +71,10 @@ class Grade(Base):
     # Derived from criterion confidence levels: "low" if any criterion is "low";
     # "medium" if any is "medium" (and none is "low"); "high" if all are "high".
     # Nullable for grades written before M4.1.
-    overall_confidence: Mapped[ConfidenceLevel | None] = mapped_column(String(10), nullable=True)
+    overall_confidence: Mapped[ConfidenceLevel | None] = mapped_column(
+        Enum(ConfidenceLevel, name="confidencelevel", create_type=False),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
