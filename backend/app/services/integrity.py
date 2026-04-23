@@ -32,12 +32,13 @@ from typing import Any
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import AsyncSessionLocal
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
@@ -367,23 +368,71 @@ class OriginalityAiProvider(IntegrityProvider):
                         }
                     )
 
-        # Write the IntegrityReport for this provider.
-        # Convert empty list to None so the JSONB column stores NULL rather than [].
-        report = IntegrityReport(
-            essay_version_id=essay_version_id,
-            teacher_id=teacher_id,
-            provider="originality_ai",
-            ai_likelihood=ai_likelihood,
-            similarity_score=similarity_score,
-            flagged_passages=flagged_passages if flagged_passages else None,
-            status=IntegrityReportStatus.pending,
+        # Write the IntegrityReport atomically.  The unique constraint on
+        # (essay_version_id, provider) means a concurrent duplicate insert is
+        # silently skipped (ON CONFLICT DO NOTHING) rather than raising a DB
+        # error or creating a duplicate row.
+        stmt = (
+            pg_insert(IntegrityReport)
+            .values(
+                id=uuid.uuid4(),
+                essay_version_id=essay_version_id,
+                teacher_id=teacher_id,
+                provider="originality_ai",
+                ai_likelihood=ai_likelihood,
+                similarity_score=similarity_score,
+                flagged_passages=flagged_passages if flagged_passages else None,
+                status=IntegrityReportStatus.pending,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["essay_version_id", "provider"]
+            )
+            .returning(IntegrityReport.id)
         )
-        db.add(report)
+        insert_result = await db.execute(stmt)
+        was_inserted = insert_result.scalar_one_or_none() is not None
+
         try:
             await db.commit()
         except IntegrityError:
+            # FK violation: the essay version was deleted between the ownership
+            # check and this commit.  Translate to a domain exception so callers
+            # get a deterministic error instead of a raw SQLAlchemy exception.
             await db.rollback()
-            raise
+            raise ConflictError(
+                "Could not save integrity report — the essay version may have been deleted."
+            ) from None
+
+        if not was_inserted:
+            # Race condition: a concurrent worker already committed the row.
+            # Query for the existing report and return it without re-spending a
+            # credit.
+            logger.info(
+                "OriginalityAiProvider: concurrent insert detected — returning existing report",
+                extra={"essay_version_id": str(essay_version_id)},
+            )
+            re_select = await db.execute(
+                select(IntegrityReport).where(
+                    IntegrityReport.essay_version_id == essay_version_id,
+                    IntegrityReport.provider == "originality_ai",
+                    IntegrityReport.teacher_id == teacher_id,
+                )
+            )
+            existing = re_select.scalar_one_or_none()
+            if existing is not None:
+                return IntegrityResult(
+                    provider="originality_ai",
+                    ai_likelihood=existing.ai_likelihood,
+                    similarity_score=existing.similarity_score,
+                    flagged_passages=existing.flagged_passages or [],
+                )
+            raise ConflictError(
+                # Extremely unlikely: the ON CONFLICT DO NOTHING triggered (meaning
+                # another worker committed the row), but our re-select found nothing
+                # — the row was deleted between the two operations.  Surface a
+                # deterministic domain error rather than returning an unexpected None.
+                "Could not retrieve integrity report after concurrent write."
+            )
 
         logger.info(
             "OriginalityAiProvider check complete",

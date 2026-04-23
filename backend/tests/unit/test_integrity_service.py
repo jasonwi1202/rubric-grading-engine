@@ -54,7 +54,10 @@ def _make_db() -> AsyncMock:
     # Second call: idempotency check → no existing report (returns None).
     idempotency_result = MagicMock()
     idempotency_result.scalar_one_or_none = MagicMock(return_value=None)
-    db.execute = AsyncMock(side_effect=[ownership_result, idempotency_result])
+    # Third call: atomic pg_insert returning → row was inserted (returns a UUID).
+    insert_result = MagicMock()
+    insert_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4())
+    db.execute = AsyncMock(side_effect=[ownership_result, idempotency_result, insert_result])
     return db
 
 
@@ -325,7 +328,7 @@ class TestOriginalityAiProvider:
 
     @pytest.mark.asyncio
     async def test_writes_integrity_report_to_db(self) -> None:
-        """OriginalityAiProvider writes an IntegrityReport record and commits."""
+        """OriginalityAiProvider inserts an IntegrityReport via pg_insert and commits."""
         essay_version_id = _make_uuid()
         assignment_id = _make_uuid()
         teacher_id = _make_uuid()
@@ -362,13 +365,9 @@ class TestOriginalityAiProvider:
                 essay_text="Essay text here.",
             )
 
-        # Verify an IntegrityReport was added and db.commit was called.
-        db.add.assert_called_once()
-        added_report = db.add.call_args[0][0]
-        assert isinstance(added_report, IntegrityReport)
-        assert added_report.provider == "originality_ai"
-        assert added_report.essay_version_id == essay_version_id
-        assert added_report.teacher_id == teacher_id
+        # Verify db.execute was called for ownership, idempotency and atomic insert,
+        # and that the transaction was committed.
+        assert db.execute.call_count == 3
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -671,8 +670,10 @@ class TestOriginalityAiProvider:
 
     @pytest.mark.asyncio
     async def test_rollback_on_commit_failure(self) -> None:
-        """db.rollback() is called and the IntegrityError is re-raised on commit failure."""
+        """db.rollback() is called and ConflictError is raised on commit IntegrityError."""
         from sqlalchemy.exc import IntegrityError as SAIntegrityError
+
+        from app.exceptions import ConflictError
 
         essay_version_id = _make_uuid()
         assignment_id = _make_uuid()
@@ -700,7 +701,7 @@ class TestOriginalityAiProvider:
             mock_settings.integrity_ai_likelihood_threshold = 0.7
 
             provider = OriginalityAiProvider(api_key="fake-key-for-testing")
-            with pytest.raises(SAIntegrityError):
+            with pytest.raises(ConflictError):
                 await provider.check(
                     db=db,
                     essay_version_id=essay_version_id,
@@ -816,6 +817,73 @@ class TestOriginalityAiProvider:
                     teacher_id=teacher_id,
                     essay_text="Sample text.",
                 )
+
+    @pytest.mark.asyncio
+    async def test_race_condition_concurrent_insert_returns_existing_report(self) -> None:
+        """When pg_insert ON CONFLICT DO NOTHING skips the row, the existing report is returned."""
+        from app.exceptions import ConflictError as _ConflictError  # noqa: F401
+
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
+
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.rollback = AsyncMock()
+
+        # Call 1: ownership check → passes.
+        ownership_result = MagicMock()
+        ownership_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4())
+        # Call 2: idempotency pre-check → no existing report (proceed to API call).
+        idempotency_result = MagicMock()
+        idempotency_result.scalar_one_or_none = MagicMock(return_value=None)
+        # Call 3: pg_insert returning → None (ON CONFLICT DO NOTHING was triggered).
+        insert_result = MagicMock()
+        insert_result.scalar_one_or_none = MagicMock(return_value=None)
+        # Call 4: re-select → returns the existing report from the concurrent worker.
+        existing_report = MagicMock(spec=IntegrityReport)
+        existing_report.ai_likelihood = 0.88
+        existing_report.similarity_score = None
+        existing_report.flagged_passages = [{"text": "concurrent passage", "ai_probability": 0.9}]
+        re_select_result = MagicMock()
+        re_select_result.scalar_one_or_none = MagicMock(return_value=existing_report)
+
+        db.execute = AsyncMock(
+            side_effect=[ownership_result, idempotency_result, insert_result, re_select_result]
+        )
+
+        api_response: dict[str, object] = {"score": {"ai": 0.5}, "sentences": []}
+        mock_response = MagicMock()
+        mock_response.json = MagicMock(return_value=api_response)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.integrity.settings") as mock_settings,
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            mock_settings.integrity_api_key = "fake-key-for-testing"
+            mock_settings.integrity_ai_likelihood_threshold = 0.7
+
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            result = await provider.check(
+                db=db,
+                essay_version_id=essay_version_id,
+                assignment_id=assignment_id,
+                teacher_id=teacher_id,
+                essay_text="Some text.",
+            )
+
+        # Should return the existing report from the concurrent worker.
+        assert result.provider == "originality_ai"
+        assert result.ai_likelihood == pytest.approx(0.88)
+        assert len(result.flagged_passages) == 1
+        assert result.flagged_passages[0]["text"] == "concurrent passage"
 
 
 class TestRunIntegrityCheck:

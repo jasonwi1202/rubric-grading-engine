@@ -71,12 +71,35 @@ class TestComputeEssayEmbeddingTaskRegistration:
 
 
 class TestRunComputeEssayEmbedding:
-    def _make_text_db(self, content: str | None = "Sample essay text for testing.") -> AsyncMock:
-        """Return a DB mock whose execute() returns the given essay content."""
+    def _make_text_db(
+        self,
+        content: str | None = "Sample essay text for testing.",
+        *,
+        version_exists: bool = False,
+    ) -> AsyncMock:
+        """Return a DB mock for the tenant-scoped essay-content fetch.
+
+        Args:
+            content: The essay content to return from the tenant-scoped query.
+                When ``None`` the tenant-scoped query found no matching row.
+            version_exists: Only used when ``content is None``.  When
+                ``True`` the bare existence check returns a UUID (essay exists
+                but belongs to a different teacher → ForbiddenError).  When
+                ``False`` the existence check also returns ``None``
+                (essay truly missing → NotFoundError).
+        """
         db = AsyncMock()
         text_result = MagicMock()
         text_result.scalar_one_or_none = MagicMock(return_value=content)
-        db.execute = AsyncMock(return_value=text_result)
+        if content is None:
+            # Two execute calls: tenant-scoped query + bare existence check.
+            exists_result = MagicMock()
+            exists_result.scalar_one_or_none = MagicMock(
+                return_value=uuid.uuid4() if version_exists else None
+            )
+            db.execute = AsyncMock(side_effect=[text_result, exists_result])
+        else:
+            db.execute = AsyncMock(return_value=text_result)
         return db
 
     def _make_cm(self, db_mock: AsyncMock) -> AsyncMock:
@@ -147,6 +170,39 @@ class TestRunComputeEssayEmbedding:
                 new=AsyncMock(side_effect=LLMError("OpenAI timed out")),
             ),
             pytest.raises(LLMError),
+        ):
+            await _run_compute_essay_embedding(essay_version_id, assignment_id, teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_forbidden_when_essay_belongs_to_different_teacher(self) -> None:
+        """ForbiddenError is raised when the essay exists but belongs to a different teacher."""
+        essay_version_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        # Tenant-scoped query returns None; existence check returns a UUID (row exists).
+        db_mock = self._make_text_db(content=None, version_exists=True)
+        cm = self._make_cm(db_mock)
+
+        with (
+            patch("app.tasks.embedding.AsyncSessionLocal", return_value=cm),
+            pytest.raises(ForbiddenError),
+        ):
+            await _run_compute_essay_embedding(essay_version_id, assignment_id, teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_validation_error_when_content_is_whitespace_only(self) -> None:
+        """ValidationError is raised when the essay content is blank or whitespace-only."""
+        essay_version_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        db_mock = self._make_text_db(content="   \n\t  ")
+        cm = self._make_cm(db_mock)
+
+        with (
+            patch("app.tasks.embedding.AsyncSessionLocal", return_value=cm),
+            pytest.raises(ValidationError),
         ):
             await _run_compute_essay_embedding(essay_version_id, assignment_id, teacher_id)
 

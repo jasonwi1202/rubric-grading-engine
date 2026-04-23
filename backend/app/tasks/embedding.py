@@ -58,22 +58,41 @@ async def _run_compute_essay_embedding(
     """
     from sqlalchemy import select  # noqa: PLC0415
 
-    from app.models.essay import EssayVersion  # noqa: PLC0415 — lazy import
+    from app.models.assignment import Assignment  # noqa: PLC0415 — lazy import
+    from app.models.class_ import Class  # noqa: PLC0415 — lazy import
+    from app.models.essay import Essay, EssayVersion  # noqa: PLC0415 — lazy import
     from app.services.integrity import run_integrity_check  # noqa: PLC0415
 
-    # Fetch essay text in its own session so external providers (e.g.
-    # OriginalityAiProvider) can POST the raw text to the third-party API.
-    # Internal providers re-fetch it from the DB themselves; the redundant
-    # fetch here is harmless and required for interface uniformity.
+    # Tenant-scoped fetch — prevents loading another teacher's essay content
+    # into memory before any ownership check runs.
     async with AsyncSessionLocal() as db:
         text_row = await db.execute(
-            select(EssayVersion.content).where(
-                EssayVersion.id == uuid.UUID(essay_version_id)
+            select(EssayVersion.content)
+            .join(Essay, EssayVersion.essay_id == Essay.id)
+            .join(Assignment, Essay.assignment_id == Assignment.id)
+            .join(Class, Assignment.class_id == Class.id)
+            .where(
+                EssayVersion.id == uuid.UUID(essay_version_id),
+                Essay.assignment_id == uuid.UUID(assignment_id),
+                Class.teacher_id == uuid.UUID(teacher_id),
             )
         )
         content = text_row.scalar_one_or_none()
         if content is None:
-            raise NotFoundError("EssayVersion not found")
+            # Distinguish 404 (version doesn't exist) from 403 (wrong teacher).
+            exists_row = await db.execute(
+                select(EssayVersion.id)
+                .join(Essay, EssayVersion.essay_id == Essay.id)
+                .where(
+                    EssayVersion.id == uuid.UUID(essay_version_id),
+                    Essay.assignment_id == uuid.UUID(assignment_id),
+                )
+            )
+            if exists_row.scalar_one_or_none() is None:
+                raise NotFoundError("EssayVersion not found")
+            raise ForbiddenError("You do not have access to this essay version.")
+        if not content.strip():
+            raise ValidationError("Essay content must not be empty or whitespace-only")
         essay_text: str = content
 
     async with AsyncSessionLocal() as db:
