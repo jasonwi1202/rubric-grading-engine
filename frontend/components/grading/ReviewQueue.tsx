@@ -19,7 +19,7 @@
  * - Student names are rendered in the teacher-only dashboard only.
  */
 
-import { useState, useRef, useCallback, useId } from "react";
+import { useState, useRef, useCallback, useId, useMemo } from "react";
 import Link from "next/link";
 import type { ReviewQueueEssay } from "@/lib/api/essays";
 import { lockGrade } from "@/lib/api/grades";
@@ -117,11 +117,15 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
 
   // High-confidence essays that are not yet locked and have a grade_id.
   // These are candidates for bulk-approve.
-  const highConfidenceUnlocked = essays.filter(
-    (e) =>
-      e.overall_confidence === "high" &&
-      getReviewStatus(e.status) !== "locked" &&
-      e.grade_id != null,
+  const highConfidenceUnlocked = useMemo(
+    () =>
+      essays.filter(
+        (e) =>
+          e.overall_confidence === "high" &&
+          getReviewStatus(e.status) !== "locked" &&
+          e.grade_id != null,
+      ),
+    [essays],
   );
 
   // Derive the displayed list: apply fast-review override then status filter, then sort.
@@ -199,7 +203,8 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
     } finally {
       setBulkApproving(false);
     }
-  }, [highConfidenceUnlocked, onBulkApproveSuccess]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [essays, onBulkApproveSuccess]);
 
   return (
     <div>
