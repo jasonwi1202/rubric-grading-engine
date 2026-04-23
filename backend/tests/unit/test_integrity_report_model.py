@@ -113,9 +113,9 @@ class TestIntegrityReportModel:
         """IntegrityReport must declare a relationship to EssayVersion."""
         from sqlalchemy.orm import RelationshipProperty
 
-        mapper = IntegrityReport.__mapper__  # type: ignore[attr-defined]
+        mapper = IntegrityReport.__mapper__
         assert "essay_version" in mapper.relationships
-        rel: RelationshipProperty = mapper.relationships["essay_version"]
+        rel: RelationshipProperty[object] = mapper.relationships["essay_version"]
         assert rel.mapper.class_.__name__ == "EssayVersion"
 
 
