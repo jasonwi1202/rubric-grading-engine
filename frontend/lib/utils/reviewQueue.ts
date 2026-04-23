@@ -10,6 +10,7 @@
  */
 
 import type { ReviewQueueEssay } from "@/lib/api/essays";
+import type { ConfidenceLevel } from "@/lib/api/grades";
 
 // ---------------------------------------------------------------------------
 // Derived status type for the review queue UI
@@ -93,7 +94,7 @@ const STATUS_ORDER: Record<ReviewStatus, number> = {
  * Numeric ordering for confidence sort (low-confidence first in ascending order).
  * Essays with null/missing confidence are always placed last.
  */
-const CONFIDENCE_ORDER: Record<string, number> = {
+const CONFIDENCE_ORDER: Record<ConfidenceLevel, number> = {
   low: 0,
   medium: 1,
   high: 2,
@@ -159,12 +160,18 @@ export function sortEssays(
         // Null/missing confidence always sorted last regardless of direction.
         const aConf = a.overall_confidence ?? null;
         const bConf = b.overall_confidence ?? null;
-        if (aConf === null && bConf === null) return 0;
+        if (aConf === null && bConf === null) {
+          // Deterministic tie-break: earlier submission first.
+          return a.submitted_at < b.submitted_at ? -1 : a.submitted_at > b.submitted_at ? 1 : 0;
+        }
         if (aConf === null) return 1;
         if (bConf === null) return -1;
-        const aOrder = CONFIDENCE_ORDER[aConf] ?? 3;
-        const bOrder = CONFIDENCE_ORDER[bConf] ?? 3;
-        return (aOrder - bOrder) * multiplier;
+        const aOrder = CONFIDENCE_ORDER[aConf];
+        const bOrder = CONFIDENCE_ORDER[bConf];
+        const diff = aOrder - bOrder;
+        if (diff !== 0) return diff * multiplier;
+        // Within the same confidence level: deterministic tie-break by submitted_at.
+        return a.submitted_at < b.submitted_at ? -1 : a.submitted_at > b.submitted_at ? 1 : 0;
       }
 
       default:

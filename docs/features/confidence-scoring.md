@@ -1,7 +1,7 @@
 # Feature: Confidence Scoring
 
 **Phase:** 2 — Workflow
-**Status:** Implemented (M4.2)
+**Status:** Partially Implemented (M4.2) — queue UI, confidence badges, sort, fast-review mode, bulk-approve, and per-criterion explanations are shipped; teacher-configurable thresholds and borderline-grade flagging are planned.
 
 ---
 

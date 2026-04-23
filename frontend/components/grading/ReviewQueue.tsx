@@ -21,6 +21,7 @@
 
 import { useState, useRef, useCallback, useId, useMemo } from "react";
 import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
 import type { ReviewQueueEssay } from "@/lib/api/essays";
 import { lockGrade } from "@/lib/api/grades";
 import {
@@ -107,16 +108,13 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
   // Fast-review mode: show only low-confidence essays — M4.2
   const [fastReview, setFastReview] = useState<boolean>(false);
 
-  // Bulk-approve state — M4.2
-  const [bulkApproving, setBulkApproving] = useState(false);
-  const [bulkApproveError, setBulkApproveError] = useState<string | null>(null);
-
   const rowRefs = useRef<(HTMLAnchorElement | null)[]>([]);
   const filterId = useId();
   const fastReviewId = useId();
 
   // High-confidence essays that are not yet locked and have a grade_id.
-  // These are candidates for bulk-approve.
+  // These are the candidates for bulk-approve and are the single source of
+  // truth used both for rendering the button and for the mutation call.
   const highConfidenceUnlocked = useMemo(
     () =>
       essays.filter(
@@ -127,6 +125,31 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
       ),
     [essays],
   );
+
+  // Bulk-approve mutation — M4.2.
+  // Locks high-confidence essays with bounded concurrency (max 5 in-flight at
+  // once) so large batches don't flood the API.
+  const BULK_CONCURRENCY = 5;
+  const {
+    mutate: executeBulkApprove,
+    isPending: bulkApproving,
+    isError: bulkApproveError,
+  } = useMutation({
+    mutationFn: async (eligible: typeof highConfidenceUnlocked) => {
+      for (let i = 0; i < eligible.length; i += BULK_CONCURRENCY) {
+        await Promise.all(
+          eligible.slice(i, i + BULK_CONCURRENCY).map((e) => lockGrade(e.grade_id!)),
+        );
+      }
+    },
+  });
+
+  const handleBulkApprove = useCallback(() => {
+    if (highConfidenceUnlocked.length === 0) return;
+    executeBulkApprove(highConfidenceUnlocked, {
+      onSuccess: () => onBulkApproveSuccess?.(),
+    });
+  }, [highConfidenceUnlocked, executeBulkApprove, onBulkApproveSuccess]);
 
   // Derive the displayed list: apply fast-review override then status filter, then sort.
   const activeFilter: StatusFilter = fastReview ? "low_confidence" : filter;
@@ -185,29 +208,6 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
       </span>
     );
   };
-
-  /** Bulk-approve: lock all high-confidence, non-locked essays. */
-  const handleBulkApprove = useCallback(async () => {
-    const eligible = essays.filter(
-      (e) =>
-        e.overall_confidence === "high" &&
-        getReviewStatus(e.status) !== "locked" &&
-        e.grade_id != null,
-    );
-    if (eligible.length === 0) return;
-    setBulkApproving(true);
-    setBulkApproveError(null);
-    try {
-      await Promise.all(eligible.map((e) => lockGrade(e.grade_id!)));
-      onBulkApproveSuccess?.();
-    } catch {
-      setBulkApproveError(
-        "Failed to approve some essays. Please refresh and try again.",
-      );
-    } finally {
-      setBulkApproving(false);
-    }
-  }, [essays, onBulkApproveSuccess]);
 
   return (
     <div>
@@ -296,7 +296,7 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
         <div className="mb-4">
           {bulkApproveError && (
             <p role="alert" className="mb-2 text-sm text-red-700">
-              {bulkApproveError}
+              Failed to approve some essays. Please refresh and try again.
             </p>
           )}
           <button
