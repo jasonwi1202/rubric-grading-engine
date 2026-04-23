@@ -1,7 +1,7 @@
 # Feature: Confidence Scoring
 
 **Phase:** 2 — Workflow
-**Status:** Planned
+**Status:** Implemented (M4.2)
 
 ---
 
