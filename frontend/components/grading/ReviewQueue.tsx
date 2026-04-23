@@ -119,7 +119,7 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
   // (fast-review toggle, low-confidence filter option, bulk-approve) will
   // activate automatically without any code change.
   const hasConfidenceData = useMemo(
-    () => essays.some((e) => e.overall_confidence != null),
+    () => essays.some((e) => e.overall_confidence !== null && e.overall_confidence !== undefined),
     [essays],
   );
 
