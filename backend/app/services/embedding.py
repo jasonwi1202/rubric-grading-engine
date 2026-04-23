@@ -140,19 +140,17 @@ async def flag_similar_essays(
     from pgvector.sqlalchemy import Vector  # noqa: PLC0415 — lazy import
     from sqlalchemy import func, literal  # noqa: PLC0415
 
+    # The Settings field_validator already enforces [0, 1] at startup; the
+    # assignment here is just for local readability.
     threshold = settings.integrity_similarity_threshold
-    if not (0.0 <= threshold <= 1.0):
-        raise ValidationError(
-            f"integrity_similarity_threshold must be in [0, 1]; got {threshold}"
-        )
 
     embedding_literal = literal(embedding, type_=Vector(1536))
 
-    # Cosine distance via pgvector's <=> operator:
-    #   cosine_distance(a, b) returns distance in [0, 2]; we want
-    #   similarity = 1 - distance.  Flag when similarity >= threshold,
-    #   i.e. distance <= (1 - threshold).  Push the filter into Postgres
-    #   so only candidate pairs are transferred over the network.
+    # Cosine distance via func.cosine_distance():
+    #   returns distance in [0, 2]; similarity = 1 - distance.
+    #   Flag when similarity >= threshold, i.e. distance <= (1 - threshold).
+    #   Push the filter into Postgres so only candidate pairs are transferred
+    #   over the network.
     cosine_dist_expr = func.cosine_distance(EssayVersion.embedding, embedding_literal)
     cosine_dist = cosine_dist_expr.label("cosine_dist")
 
@@ -171,32 +169,44 @@ async def flag_similar_essays(
     )
     rows = result.all()
 
+    # Fast path: no candidates — skip the dedup DB query entirely.
+    if not rows:
+        logger.info(
+            "Similarity scan complete — no candidates",
+            extra={"essay_version_id": str(essay_version_id)},
+        )
+        return 0
+
+    # Deduplication guard: if a previous run already wrote an internal report
+    # for this source version (Celery redelivery or manual re-enqueue), skip
+    # all insertions.  Checked once before the loop so that partial runs
+    # (e.g. A matched B and C: after B is inserted, C is not skipped) don't
+    # happen — the entire similarity scan is idempotent as a unit.
+    existing = await db.execute(
+        select(IntegrityReport.id)
+        .where(
+            IntegrityReport.essay_version_id == essay_version_id,
+            IntegrityReport.provider == "internal",
+        )
+        .limit(1)
+    )
+    if existing.scalar_one_or_none() is not None:
+        logger.info(
+            "IntegrityReport already exists for this source version — skipping",
+            extra={"essay_version_id": str(essay_version_id)},
+        )
+        return 0
+
     flagged_count = 0
     for row in rows:
         other_version_id: uuid.UUID = row[0]
         dist: float = float(row[1])
-        # pgvector cosine distance is in [0, 2]; clamp similarity to [0, 1]
-        # to match IntegrityReport.similarity_score's documented range.
+        # Clamp to [0, 1] for two reasons:
+        # 1. IntegrityReport.similarity_score is documented as [0.0, 1.0].
+        # 2. Floating-point arithmetic can produce tiny values just outside
+        #    [0, 1] even for unit vectors (e.g. -1e-9 due to precision).
         similarity = max(0.0, min(1.0, 1.0 - dist))
         rounded_similarity = round(similarity, 4)
-
-        # Deduplication guard: skip if an internal report for this source
-        # version already exists (guards against Celery redelivery and
-        # manual re-enqueueing).
-        existing = await db.execute(
-            select(IntegrityReport.id)
-            .where(
-                IntegrityReport.essay_version_id == essay_version_id,
-                IntegrityReport.provider == "internal",
-            )
-            .limit(1)
-        )
-        if existing.scalar_one_or_none() is not None:
-            logger.info(
-                "IntegrityReport already exists for this source version — skipping",
-                extra={"essay_version_id": str(essay_version_id)},
-            )
-            break
 
         report = IntegrityReport(
             essay_version_id=essay_version_id,

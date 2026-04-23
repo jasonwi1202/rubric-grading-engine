@@ -402,7 +402,8 @@ class TestFlagSimilarEssays:
 
         The SQL WHERE clause filters out below-threshold candidates so they are
         never returned by the query.  The mock simulates this by returning an
-        empty result set, as Postgres would.
+        empty result set, as Postgres would.  The deduplication DB query is
+        never made when the candidate set is empty.
         """
         from app.services.embedding import flag_similar_essays
 
@@ -414,10 +415,11 @@ class TestFlagSimilarEssays:
         # Postgres filters out the below-threshold row — no rows returned.
         rows: list[tuple[uuid.UUID, float]] = []
 
+        similarity_result = MagicMock()
+        similarity_result.all = MagicMock(return_value=rows)
+
         db_mock = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.all = MagicMock(return_value=rows)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = AsyncMock(return_value=similarity_result)
         db_mock.add = MagicMock()
         db_mock.commit = AsyncMock()
 
@@ -430,16 +432,19 @@ class TestFlagSimilarEssays:
         assert flagged == 0
         db_mock.add.assert_not_called()
         db_mock.commit.assert_not_called()
+        # Only the similarity-scan execute was called; no dedup query needed.
+        assert db_mock.execute.call_count == 1
 
     @pytest.mark.asyncio
     async def test_no_candidates_returns_zero(self) -> None:
         """When no other essays have embeddings, returns 0 without writing anything."""
         from app.services.embedding import flag_similar_essays
 
+        similarity_result = MagicMock()
+        similarity_result.all = MagicMock(return_value=[])
+
         db_mock = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.all = MagicMock(return_value=[])
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = AsyncMock(return_value=similarity_result)
         db_mock.add = MagicMock()
         db_mock.commit = AsyncMock()
 
@@ -451,6 +456,8 @@ class TestFlagSimilarEssays:
 
         assert flagged == 0
         db_mock.add.assert_not_called()
+        # Only the similarity-scan execute was called; no dedup query needed.
+        assert db_mock.execute.call_count == 1
 
     @pytest.mark.asyncio
     async def test_exact_threshold_boundary_is_flagged(self) -> None:
