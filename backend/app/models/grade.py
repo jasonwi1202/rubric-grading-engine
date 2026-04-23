@@ -68,6 +68,10 @@ class Grade(Base):
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Derived from criterion confidence levels: "low" if any criterion is "low";
+    # "medium" if any is "medium" (and none is "low"); "high" if all are "high".
+    # Nullable for grades written before M4.1.
+    overall_confidence: Mapped[ConfidenceLevel | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

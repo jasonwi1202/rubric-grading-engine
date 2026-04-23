@@ -78,6 +78,10 @@ export interface GradeResponse {
   prompt_version: string;
   is_locked: boolean;
   locked_at: string | null;
+  /** Derived from criterion confidence levels: low if any criterion is low;
+   *  medium if any is medium (and none is low); high if all are high.
+   *  Null for grades written before M4.1. */
+  overall_confidence: ConfidenceLevel | null;
   created_at: string;
   criterion_scores: CriterionScoreResponse[];
 }

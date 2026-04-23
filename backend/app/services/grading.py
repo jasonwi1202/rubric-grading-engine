@@ -52,6 +52,35 @@ from app.models.grade import ConfidenceLevel, CriterionScore, Grade, StrictnessL
 logger = logging.getLogger(__name__)
 
 
+def _derive_overall_confidence(
+    criterion_scores: list,
+) -> ConfidenceLevel:
+    """Derive overall essay confidence from per-criterion confidence levels.
+
+    The derivation rule:
+    - ``"low"``    if any criterion has confidence ``"low"``
+    - ``"medium"`` if any criterion has confidence ``"medium"`` (and none is ``"low"``)
+    - ``"high"``   if all criteria have confidence ``"high"``
+
+    An empty criterion list returns ``"low"`` (safest default).
+
+    Args:
+        criterion_scores: List of :class:`ParsedCriterionScore` objects from
+            the parser.  Uses the ``.confidence`` attribute (string).
+
+    Returns:
+        A :class:`ConfidenceLevel` value.
+    """
+    if not criterion_scores:
+        return ConfidenceLevel.low
+    levels = {cs.confidence for cs in criterion_scores}
+    if "low" in levels:
+        return ConfidenceLevel.low
+    if "medium" in levels:
+        return ConfidenceLevel.medium
+    return ConfidenceLevel.high
+
+
 async def grade_essay(
     db: AsyncSession,
     essay_id: uuid.UUID,
@@ -204,7 +233,7 @@ async def grade_essay(
     )
 
     # ------------------------------------------------------------------
-    # 7. Compute aggregate scores.
+    # 7. Compute aggregate scores and overall confidence.
     #    Criteria with score=None (missing criterion) contribute 0 to
     #    total_score, consistent with ai_score=0 written for those rows.
     # ------------------------------------------------------------------
@@ -212,6 +241,7 @@ async def grade_essay(
         sum(cs.score if cs.score is not None else 0 for cs in grading_response.criterion_scores)
     )
     max_possible_score = Decimal(sum(int(str(c["max_score"])) for c in criteria_data))
+    overall_confidence = _derive_overall_confidence(grading_response.criterion_scores)
 
     # ------------------------------------------------------------------
     # 8. Write Grade record.
@@ -225,6 +255,7 @@ async def grade_essay(
         ai_model=settings.openai_grading_model,
         prompt_version=f"grading-{prompt_version}",
         is_locked=False,
+        overall_confidence=overall_confidence,
     )
     db.add(grade)
     try:
