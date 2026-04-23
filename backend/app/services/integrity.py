@@ -246,7 +246,10 @@ class OriginalityAiProvider(IntegrityProvider):
                 try:
                     ai_likelihood = max(0.0, min(1.0, float(ai_raw)))
                 except (TypeError, ValueError):
-                    pass
+                    logger.warning(
+                        "OriginalityAiProvider: could not parse 'score.ai' from response",
+                        extra={"essay_version_id": str(essay_version_id)},
+                    )
 
         # Top-level ai_likelihood field (fallback for some API versions).
         if ai_likelihood is None:
@@ -255,27 +258,35 @@ class OriginalityAiProvider(IntegrityProvider):
                 try:
                     ai_likelihood = max(0.0, min(1.0, float(top_level)))
                 except (TypeError, ValueError):
-                    pass
+                    logger.warning(
+                        "OriginalityAiProvider: could not parse 'ai_likelihood' from response",
+                        extra={"essay_version_id": str(essay_version_id)},
+                    )
 
         sentences = data.get("sentences")
         if isinstance(sentences, list):
             for s in sentences:
-                if isinstance(s, dict) and s.get("generated_prob", 0) >= settings.integrity_ai_likelihood_threshold:
+                if not isinstance(s, dict):
+                    continue
+                prob = s.get("generated_prob")
+                # Only flag when probability is a valid numeric value above threshold.
+                if isinstance(prob, (int, float)) and prob >= settings.integrity_ai_likelihood_threshold:
                     flagged_passages.append(
                         {
                             "text": s.get("sentence", ""),
-                            "ai_probability": s.get("generated_prob"),
+                            "ai_probability": prob,
                         }
                     )
 
         # Write the IntegrityReport for this provider.
+        # Convert empty list to None so the JSONB column stores NULL rather than [].
         report = IntegrityReport(
             essay_version_id=essay_version_id,
             teacher_id=teacher_id,
             provider="originality_ai",
             ai_likelihood=ai_likelihood,
             similarity_score=similarity_score,
-            flagged_passages=flagged_passages or None,
+            flagged_passages=flagged_passages if flagged_passages else None,
             status=IntegrityReportStatus.pending,
         )
         db.add(report)

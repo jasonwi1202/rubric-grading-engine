@@ -66,7 +66,7 @@ class TestGetProvider:
     def test_originality_ai_returns_originality_provider(self) -> None:
         with patch("app.services.integrity.settings") as mock_settings:
             mock_settings.integrity_provider = "originality_ai"
-            mock_settings.integrity_api_key = "test-originality-api-key"
+            mock_settings.integrity_api_key = "fake-key-for-testing"
             provider = get_provider()
         assert isinstance(provider, OriginalityAiProvider)
 
@@ -216,10 +216,10 @@ class TestOriginalityAiProvider:
             patch("app.services.integrity.settings") as mock_settings,
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
-            mock_settings.integrity_api_key = "test-originality-api-key"
+            mock_settings.integrity_api_key = "fake-key-for-testing"
             mock_settings.integrity_ai_likelihood_threshold = 0.7
 
-            provider = OriginalityAiProvider(api_key="test-originality-api-key")
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
             result = await provider.check(
                 db=db,
                 essay_version_id=essay_version_id,
@@ -251,7 +251,7 @@ class TestOriginalityAiProvider:
         )
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            provider = OriginalityAiProvider(api_key="test-originality-api-key")
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
             with pytest.raises(IntegrityProviderUnavailableError):
                 await provider.check(
                     db=db,
@@ -278,7 +278,7 @@ class TestOriginalityAiProvider:
         )
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            provider = OriginalityAiProvider(api_key="test-originality-api-key")
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
             with pytest.raises(IntegrityProviderUnavailableError):
                 await provider.check(
                     db=db,
@@ -315,10 +315,10 @@ class TestOriginalityAiProvider:
             patch("app.services.integrity.settings") as mock_settings,
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
-            mock_settings.integrity_api_key = "test-originality-api-key"
+            mock_settings.integrity_api_key = "fake-key-for-testing"
             mock_settings.integrity_ai_likelihood_threshold = 0.7
 
-            provider = OriginalityAiProvider(api_key="test-originality-api-key")
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
             await provider.check(
                 db=db,
                 essay_version_id=essay_version_id,
@@ -364,10 +364,10 @@ class TestOriginalityAiProvider:
             patch("app.services.integrity.settings") as mock_settings,
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
-            mock_settings.integrity_api_key = "test-originality-api-key"
+            mock_settings.integrity_api_key = "fake-key-for-testing"
             mock_settings.integrity_ai_likelihood_threshold = 0.7
 
-            provider = OriginalityAiProvider(api_key="test-originality-api-key")
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
             result = await provider.check(
                 db=db,
                 essay_version_id=essay_version_id,
