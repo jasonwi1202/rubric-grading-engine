@@ -23,15 +23,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.models.integrity_report import IntegrityReport
 from app.services.integrity import (
-    InternalProvider,
     IntegrityProviderUnavailableError,
     IntegrityResult,
+    InternalProvider,
     OriginalityAiProvider,
     get_provider,
     run_integrity_check,
 )
-from app.models.integrity_report import IntegrityReport
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -378,6 +378,132 @@ class TestOriginalityAiProvider:
 
         assert result.ai_likelihood == pytest.approx(0.65)
 
+    @pytest.mark.asyncio
+    async def test_unparseable_score_ai_logs_warning(self) -> None:
+        """When 'score.ai' is not parseable as float, a warning is logged and ai_likelihood stays None."""
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
+
+        db = _make_db()
+
+        api_response: dict[str, object] = {
+            "score": {"ai": "not-a-number"},
+            "sentences": [],
+        }
+
+        mock_response = MagicMock()
+        mock_response.json = MagicMock(return_value=api_response)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.integrity.settings") as mock_settings,
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            mock_settings.integrity_api_key = "fake-key-for-testing"
+            mock_settings.integrity_ai_likelihood_threshold = 0.7
+
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            result = await provider.check(
+                db=db,
+                essay_version_id=essay_version_id,
+                assignment_id=assignment_id,
+                teacher_id=teacher_id,
+                essay_text="Some text.",
+            )
+
+        assert result.ai_likelihood is None
+
+    @pytest.mark.asyncio
+    async def test_unparseable_top_level_ai_likelihood_logs_warning(self) -> None:
+        """When top-level 'ai_likelihood' is not parseable, warning logged, value stays None."""
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
+
+        db = _make_db()
+
+        api_response: dict[str, object] = {
+            "ai_likelihood": {"nested": "invalid"},
+            "sentences": [],
+        }
+
+        mock_response = MagicMock()
+        mock_response.json = MagicMock(return_value=api_response)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.integrity.settings") as mock_settings,
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            mock_settings.integrity_api_key = "fake-key-for-testing"
+            mock_settings.integrity_ai_likelihood_threshold = 0.7
+
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            result = await provider.check(
+                db=db,
+                essay_version_id=essay_version_id,
+                assignment_id=assignment_id,
+                teacher_id=teacher_id,
+                essay_text="Some text.",
+            )
+
+        assert result.ai_likelihood is None
+
+    @pytest.mark.asyncio
+    async def test_non_dict_sentence_is_skipped(self) -> None:
+        """Non-dict items in 'sentences' are skipped without error."""
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
+
+        db = _make_db()
+
+        api_response: dict[str, object] = {
+            "score": {"ai": 0.5},
+            # Mix of valid and invalid sentence types.
+            "sentences": ["plain string", None, {"sentence": "Real sentence.", "generated_prob": 0.95}],
+        }
+
+        mock_response = MagicMock()
+        mock_response.json = MagicMock(return_value=api_response)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.integrity.settings") as mock_settings,
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            mock_settings.integrity_api_key = "fake-key-for-testing"
+            mock_settings.integrity_ai_likelihood_threshold = 0.7
+
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            result = await provider.check(
+                db=db,
+                essay_version_id=essay_version_id,
+                assignment_id=assignment_id,
+                teacher_id=teacher_id,
+                essay_text="Some text.",
+            )
+
+        # Only the valid dict sentence above threshold should be flagged.
+        assert len(result.flagged_passages) == 1
+        assert result.flagged_passages[0]["text"] == "Real sentence."
+
 
 # ---------------------------------------------------------------------------
 # run_integrity_check — fallback behaviour
@@ -451,16 +577,15 @@ class TestRunIntegrityCheck:
             internal_provider,
             "check",
             side_effect=IntegrityProviderUnavailableError("Should not happen"),
-        ):
-            with pytest.raises(IntegrityProviderUnavailableError):
-                await run_integrity_check(
-                    db=db,
-                    essay_version_id=essay_version_id,
-                    assignment_id=assignment_id,
-                    teacher_id=teacher_id,
-                    essay_text="Test essay.",
-                    provider=internal_provider,
-                )
+        ), pytest.raises(IntegrityProviderUnavailableError):
+            await run_integrity_check(
+                db=db,
+                essay_version_id=essay_version_id,
+                assignment_id=assignment_id,
+                teacher_id=teacher_id,
+                essay_text="Test essay.",
+                provider=internal_provider,
+            )
 
     @pytest.mark.asyncio
     async def test_uses_get_provider_when_no_provider_arg(self) -> None:
