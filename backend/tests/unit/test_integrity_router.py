@@ -79,10 +79,11 @@ def _unauthed_app() -> object:
     """App with no dependency override → get_current_teacher returns 401."""
     from app.exceptions import UnauthorizedError
 
+    def raise_unauthed() -> None:
+        raise UnauthorizedError("Not authenticated.")
+
     app = create_app()
-    app.dependency_overrides[get_current_teacher] = lambda: (_ for _ in ()).throw(  # type: ignore[attr-defined]
-        UnauthorizedError("Not authenticated.")
-    )
+    app.dependency_overrides[get_current_teacher] = raise_unauthed  # type: ignore[attr-defined]
     return app
 
 

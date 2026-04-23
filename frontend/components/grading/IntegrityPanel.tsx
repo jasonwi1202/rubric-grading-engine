@@ -232,7 +232,7 @@ export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) 
             <ul className="space-y-2" aria-label="Flagged passages">
               {report.flagged_passages.map((passage, idx) => (
                 <FlaggedPassageItem
-                  key={idx}
+                  key={`${idx}-${(passage as FlaggedPassage).text.slice(0, 20)}`}
                   passage={passage as FlaggedPassage}
                 />
               ))}

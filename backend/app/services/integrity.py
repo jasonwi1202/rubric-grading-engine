@@ -680,7 +680,6 @@ async def update_integrity_report_status(
     report.status = status
     report.reviewed_at = datetime.now(UTC)
 
-    await db.flush()
     await db.commit()
     await db.refresh(report)
 
