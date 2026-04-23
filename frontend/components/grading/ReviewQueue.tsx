@@ -2,12 +2,15 @@
 
 /**
  * ReviewQueue — list view of all essays in an assignment for teacher triage.
- * M3.22 implementation.
+ * M3.22 implementation; extended in M4.2 with confidence-based triage.
  *
  * Features:
  * - Status badges: Unreviewed / In review / Locked
- * - Sort by: status (default), score (ascending/descending), student name
- * - Filter by status
+ * - Confidence badges: high / medium / low (M4.2, when backend returns overall_confidence)
+ * - Sort by: confidence (default, low first), status, score, student name
+ * - Filter by status; fast-review mode and low-confidence filter are shown only
+ *   when the backend essay list includes overall_confidence (M4.2)
+ * - Bulk-approve: lock all high-confidence, non-locked essays at once (M4.2)
  * - Keyboard navigation (ArrowUp / ArrowDown to move focus, Enter to open)
  * - Links to individual essay review interface (M3.21)
  *
@@ -17,9 +20,11 @@
  * - Student names are rendered in the teacher-only dashboard only.
  */
 
-import { useState, useRef, useCallback, useId } from "react";
+import { useState, useRef, useCallback, useId, useMemo } from "react";
 import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
 import type { ReviewQueueEssay } from "@/lib/api/essays";
+import { lockGrade } from "@/lib/api/grades";
 import {
   filterEssays,
   sortEssays,
@@ -48,7 +53,20 @@ const REVIEW_STATUS_COLORS: Record<ReviewStatus, string> = {
   other: "bg-gray-100 text-gray-600",
 };
 
+const CONFIDENCE_BADGE_LABELS: Record<string, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const CONFIDENCE_BADGE_COLORS: Record<string, string> = {
+  high: "bg-green-100 text-green-700",
+  medium: "bg-yellow-100 text-yellow-700",
+  low: "bg-red-100 text-red-700",
+};
+
 const SORT_KEY_LABELS: Record<SortKey, string> = {
+  confidence: "Confidence",
   status: "Status",
   score: "Score",
   student_name: "Student",
@@ -59,6 +77,7 @@ const FILTER_LABELS: Record<StatusFilter, string> = {
   unreviewed: "Unreviewed",
   in_review: "In review",
   locked: "Locked",
+  low_confidence: "Low confidence",
 };
 
 // ---------------------------------------------------------------------------
@@ -70,24 +89,89 @@ export interface ReviewQueueProps {
   essays: ReviewQueueEssay[];
   /** UUID of the assignment — used to build review links. */
   assignmentId: string;
+  /**
+   * Called after bulk-approve successfully locks high-confidence essays.
+   * The parent should invalidate its essay list query to reflect updated status.
+   */
+  onBulkApproveSuccess?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
+export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: ReviewQueueProps) {
   const [filter, setFilter] = useState<StatusFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("status");
+  // Default sort: confidence ascending (low-confidence first) — M4.2
+  const [sortKey, setSortKey] = useState<SortKey>("confidence");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  // Fast-review mode: show only low-confidence essays — M4.2
+  const [fastReview, setFastReview] = useState<boolean>(false);
 
   const rowRefs = useRef<(HTMLAnchorElement | null)[]>([]);
   const filterId = useId();
+  const fastReviewId = useId();
 
-  // Derive the displayed list (filter then sort)
+  // True when the backend has returned at least one essay with overall_confidence.
+  // The essay list endpoint (GET /assignments/{id}/essays) does not yet include
+  // overall_confidence; when it does, confidence-specific UI elements
+  // (fast-review toggle, low-confidence filter option, bulk-approve) will
+  // activate automatically without any code change.
+  const hasConfidenceData = useMemo(
+    () => essays.some((e) => e.overall_confidence !== null && e.overall_confidence !== undefined),
+    [essays],
+  );
+
+  // High-confidence essays that are not yet locked and have a grade_id.
+  // These are the candidates for bulk-approve and are the single source of
+  // truth used both for rendering the button and for the mutation call.
+  const highConfidenceUnlocked = useMemo(
+    () =>
+      essays.filter(
+        (e) =>
+          e.overall_confidence === "high" &&
+          getReviewStatus(e.status) !== "locked" &&
+          e.grade_id != null,
+      ),
+    [essays],
+  );
+
+  // Bulk-approve mutation — M4.2.
+  // Locks high-confidence essays with bounded concurrency (max 5 in-flight at
+  // once) so large batches don't flood the API.
+  // Partial failure: if a batch rejects, already-locked essays from earlier
+  // batches remain locked. The teacher should refresh to see the updated state
+  // and retry the remaining items.
+  const BULK_CONCURRENCY = 5;
+  const {
+    mutate: executeBulkApprove,
+    isPending: bulkApproving,
+    isError: bulkApproveError,
+  } = useMutation({
+    mutationFn: async (eligible: typeof highConfidenceUnlocked) => {
+      for (let i = 0; i < eligible.length; i += BULK_CONCURRENCY) {
+        await Promise.all(
+          eligible.slice(i, i + BULK_CONCURRENCY).map((e) => lockGrade(e.grade_id!)),
+        );
+      }
+    },
+  });
+
+  const handleBulkApprove = useCallback(() => {
+    if (highConfidenceUnlocked.length === 0) return;
+    executeBulkApprove(highConfidenceUnlocked, {
+      onSuccess: () => onBulkApproveSuccess?.(),
+    });
+  }, [highConfidenceUnlocked, executeBulkApprove, onBulkApproveSuccess]);
+
+  // Derive the displayed list: apply fast-review override then status filter, then sort.
+  // fast-review is only active when confidence data is actually available from the backend;
+  // when no essay has overall_confidence the fast-review state is ignored so teachers
+  // never see a permanently-empty list.
+  const activeFilter: StatusFilter = (fastReview && hasConfidenceData) ? "low_confidence" : filter;
   const displayed = sortEssays(
-    filterEssays(essays, filter),
+    filterEssays(essays, activeFilter),
     sortKey,
     sortDir,
   );
@@ -156,12 +240,22 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
           </label>
           <select
             id={filterId}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as StatusFilter)}
+            value={fastReview && hasConfidenceData ? "low_confidence" : filter}
+            onChange={(e) => {
+              const val = e.target.value as StatusFilter;
+              if (val === "low_confidence") {
+                setFastReview(true);
+              } else {
+                setFastReview(false);
+                setFilter(val);
+              }
+            }}
             className="rounded-md border border-gray-300 bg-white py-1.5 pl-2 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             {(
-              ["all", "unreviewed", "in_review", "locked"] as StatusFilter[]
+              (hasConfidenceData
+                ? ["all", "unreviewed", "in_review", "locked", "low_confidence"]
+                : ["all", "unreviewed", "in_review", "locked"]) as StatusFilter[]
             ).map((f) => (
               <option key={f} value={f}>
                 {FILTER_LABELS[f]}
@@ -170,6 +264,22 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
           </select>
         </div>
 
+        {/* Fast-review mode toggle — only available when backend returns confidence data (M4.2) */}
+        {hasConfidenceData && (
+          <div className="flex items-center gap-2">
+            <input
+              id={fastReviewId}
+              type="checkbox"
+              checked={fastReview}
+              onChange={(e) => setFastReview(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor={fastReviewId} className="text-sm font-medium text-gray-700">
+              Fast review
+            </label>
+          </div>
+        )}
+
         {/* Sort buttons */}
         <div
           className="flex items-center gap-1"
@@ -177,7 +287,7 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
           aria-label="Sort essays by"
         >
           <span className="text-sm font-medium text-gray-700">Sort:</span>
-          {(["status", "score", "student_name"] as SortKey[]).map((key) => (
+          {(["confidence", "status", "score", "student_name"] as SortKey[]).map((key) => (
             <button
               key={key}
               type="button"
@@ -201,6 +311,32 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
           {essays.length !== 1 ? "s" : ""}
         </span>
       </div>
+
+      {/* Bulk-approve — M4.2 */}
+      {highConfidenceUnlocked.length > 0 && (
+        <div className="mb-4">
+          {bulkApproveError && (
+            <p role="alert" className="mb-2 text-sm text-red-700">
+              Failed to approve some essays. Please refresh and try again.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleBulkApprove}
+            disabled={bulkApproving}
+            aria-label={
+              bulkApproving
+                ? `Approving ${highConfidenceUnlocked.length} high-confidence essay${highConfidenceUnlocked.length !== 1 ? "s" : ""}…`
+                : `Bulk approve and lock ${highConfidenceUnlocked.length} high-confidence essay${highConfidenceUnlocked.length !== 1 ? "s" : ""}`
+            }
+            className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {bulkApproving
+              ? "Approving…"
+              : `Approve ${highConfidenceUnlocked.length} high-confidence essay${highConfidenceUnlocked.length !== 1 ? "s" : ""}`}
+          </button>
+        </div>
+      )}
 
       {/* Empty state */}
       {displayed.length === 0 && (
@@ -240,6 +376,8 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
               return `${totalScore} / ${maxPossibleScore}`;
             })();
 
+            const confidenceLevel = essay.overall_confidence ?? null;
+
             return (
               <Link
                 key={essay.essay_id}
@@ -250,7 +388,7 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
                 }}
                 onFocus={() => setFocusedIndex(idx)}
                 className="mb-2 flex items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-                aria-label={`Review essay${essay.student_name ? ` for student ${essay.student_name}` : ""} — status: ${REVIEW_STATUS_LABELS[reviewStatus]}${scoreLabel ? `, score: ${scoreLabel}` : ""}`}
+                aria-label={`Review essay${essay.student_name ? ` for student ${essay.student_name}` : ""} — status: ${REVIEW_STATUS_LABELS[reviewStatus]}${confidenceLevel ? `, confidence: ${confidenceLevel}` : ""}${scoreLabel ? `, score: ${scoreLabel}` : ""}`}
               >
                 {/* Status badge */}
                 <span
@@ -259,6 +397,19 @@ export function ReviewQueue({ essays, assignmentId }: ReviewQueueProps) {
                 >
                   {REVIEW_STATUS_LABELS[reviewStatus]}
                 </span>
+
+                {/* Confidence badge — M4.2 */}
+                {confidenceLevel != null ? (
+                  <span
+                    className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      CONFIDENCE_BADGE_COLORS[confidenceLevel] ??
+                      "bg-gray-100 text-gray-600"
+                    }`}
+                    aria-label={`Confidence: ${confidenceLevel}`}
+                  >
+                    {CONFIDENCE_BADGE_LABELS[confidenceLevel] ?? confidenceLevel}
+                  </span>
+                ) : null}
 
                 {/* Student label — shows the student name, or "Unassigned" when no student is assigned */}
                 <span className="flex-1 truncate text-sm font-medium text-gray-900">

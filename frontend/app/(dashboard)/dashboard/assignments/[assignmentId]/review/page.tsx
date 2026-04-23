@@ -21,7 +21,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAssignment } from "@/lib/api/assignments";
 import { listReviewQueue } from "@/lib/api/essays";
 import { ReviewQueue } from "@/components/grading/ReviewQueue";
@@ -32,6 +32,7 @@ import { ReviewQueue } from "@/components/grading/ReviewQueue";
 
 export default function ReviewQueuePage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
+  const queryClient = useQueryClient();
 
   const {
     data: assignment,
@@ -138,7 +139,15 @@ export default function ReviewQueuePage() {
 
       {/* Review queue */}
       {!isLoading && !isError && essays && (
-        <ReviewQueue essays={essays} assignmentId={assignmentId} />
+        <ReviewQueue
+          essays={essays}
+          assignmentId={assignmentId}
+          onBulkApproveSuccess={() => {
+            queryClient.invalidateQueries({
+              queryKey: ["assignments", assignmentId, "essays", "review-queue"],
+            });
+          }}
+        />
       )}
     </div>
   );

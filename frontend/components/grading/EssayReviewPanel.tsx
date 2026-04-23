@@ -372,6 +372,19 @@ function CriterionCard({
         {criterionScore.ai_justification}
       </p>
 
+      {/* Low-confidence explanation — M4.2 */}
+      {criterionScore.confidence === "low" && (
+        <p
+          role="note"
+          className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700"
+        >
+          <span className="font-semibold">Why low confidence? </span>
+          The AI was uncertain about this score. The essay evidence was ambiguous,
+          incomplete, or conflicting for this criterion — please review carefully
+          before accepting the score.
+        </p>
+      )}
+
       {/* Score row */}
       <div className="mb-3 flex flex-wrap items-center gap-4">
         <div>

@@ -11,6 +11,7 @@
  */
 
 import { apiGet, apiPatch, apiPostForm } from "@/lib/api/client";
+import type { ConfidenceLevel } from "@/lib/api/grades";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,6 +65,12 @@ export interface ReviewQueueEssay extends EssayListItem {
   max_possible_score?: string | null;
   /** Grade UUID. Absent or null if the essay has not been graded yet. */
   grade_id?: string | null;
+  /**
+   * Overall confidence derived from criterion confidence levels.
+   * Absent or null for essays that have not been graded or for grades created
+   * before M4.1. Callers must treat both `null` and `undefined` as unavailable.
+   */
+  overall_confidence?: ConfidenceLevel | null;
 }
 
 /** PATCH /essays/{essayId} request body. */

@@ -1,13 +1,19 @@
 /**
- * Tests for the review queue — M3.22 (Review queue UI).
+ * Tests for the review queue — M3.22 (Review queue UI) and M4.2 (Confidence-based review queue).
  *
  * Covers:
  * - getReviewStatus: correct mapping for all relevant essay statuses
  * - filterEssays: "all" passes through; named filters restrict correctly
+ * - filterEssays: "low_confidence" filter — M4.2
  * - sortEssays by status: unreviewed → in_review → other → locked
  * - sortEssays by student_name: alphabetical, null names last
  * - sortEssays by score: ascending / descending, null scores always last
+ * - sortEssays by confidence: low → medium → high, null last — M4.2
  * - ReviewQueue component: renders essay rows, status badges, sort/filter UI
+ * - ReviewQueue: confidence badge on each row — M4.2
+ * - ReviewQueue: default sort is confidence — M4.2
+ * - ReviewQueue: fast-review mode toggle filters to low-confidence — M4.2
+ * - ReviewQueue: bulk-approve button disabled when no eligible essays — M4.2
  * - ReviewQueue: "Unassigned" rendered for essays with null student_name
  * - ReviewQueue: filter dropdown changes the visible set
  * - ReviewQueue: sort buttons update ordering and show direction indicator
@@ -20,11 +26,25 @@
  * - No credential-format strings in test data.
  */
 
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// ---------------------------------------------------------------------------
+// Mock lockGrade — must come before component imports
+// ---------------------------------------------------------------------------
+
+const mockLockGrade = vi.fn();
+
+vi.mock("@/lib/api/grades", () => ({
+  lockGrade: (...args: unknown[]) => mockLockGrade(...args),
+}));
+
+beforeEach(() => {
+  mockLockGrade.mockReset();
+});
 
 // ---------------------------------------------------------------------------
 // Unit under test — pure logic (no DOM required)
@@ -69,6 +89,7 @@ function makeEssay(
     total_score: null,
     max_possible_score: null,
     grade_id: null,
+    overall_confidence: null,
     ...overrides,
   };
 }
@@ -501,15 +522,15 @@ describe("ReviewQueue — sort", () => {
       <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
       { wrapper },
     );
-    const statusBtn = screen.getByRole("button", { name: /status/i });
-    // Default is asc
-    expect(statusBtn).toHaveTextContent("↑");
+    // Default is confidence (asc)
+    const confidenceBtn = screen.getByRole("button", { name: /confidence/i });
+    expect(confidenceBtn).toHaveTextContent("↑");
     // Click once → desc
-    await user.click(statusBtn);
-    expect(statusBtn).toHaveTextContent("↓");
+    await user.click(confidenceBtn);
+    expect(confidenceBtn).toHaveTextContent("↓");
     // Click again → asc
-    await user.click(statusBtn);
-    expect(statusBtn).toHaveTextContent("↑");
+    await user.click(confidenceBtn);
+    expect(confidenceBtn).toHaveTextContent("↑");
   });
 
   it("active sort button has aria-pressed=true", () => {
@@ -517,9 +538,13 @@ describe("ReviewQueue — sort", () => {
       <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
       { wrapper },
     );
+    // Default active sort is Confidence
+    expect(
+      screen.getByRole("button", { name: /confidence/i }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("button", { name: /status/i }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toHaveAttribute("aria-pressed", "false");
     expect(
       screen.getByRole("button", { name: /score/i }),
     ).toHaveAttribute("aria-pressed", "false");
@@ -603,5 +628,423 @@ describe("ReviewQueue — keyboard navigation", () => {
     last.focus();
     await user.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(last);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterEssays — low_confidence filter (M4.2)
+// ---------------------------------------------------------------------------
+
+describe("filterEssays — low_confidence filter", () => {
+  const essays: ReviewQueueEssay[] = [
+    makeEssay({ essay_id: "e-low", status: "graded", overall_confidence: "low" }),
+    makeEssay({ essay_id: "e-medium", status: "graded", overall_confidence: "medium" }),
+    makeEssay({ essay_id: "e-high", status: "graded", overall_confidence: "high" }),
+    makeEssay({ essay_id: "e-null", status: "graded", overall_confidence: null }),
+  ];
+
+  it("'low_confidence' returns only essays with overall_confidence === 'low'", () => {
+    const result = filterEssays(essays, "low_confidence");
+    expect(result).toHaveLength(1);
+    expect(result[0].essay_id).toBe("e-low");
+  });
+
+  it("'all' passes through essays with any or no confidence value", () => {
+    expect(filterEssays(essays, "all")).toHaveLength(4);
+  });
+
+  it("does not include essays with null confidence in low_confidence filter", () => {
+    const result = filterEssays(essays, "low_confidence");
+    expect(result.every((e) => e.overall_confidence === "low")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sortEssays — by confidence (M4.2)
+// ---------------------------------------------------------------------------
+
+describe("sortEssays — by confidence", () => {
+  const essays: ReviewQueueEssay[] = [
+    makeEssay({ essay_id: "e-high", status: "graded", overall_confidence: "high" }),
+    makeEssay({ essay_id: "e-null", status: "graded", overall_confidence: null }),
+    makeEssay({ essay_id: "e-low", status: "graded", overall_confidence: "low" }),
+    makeEssay({ essay_id: "e-medium", status: "graded", overall_confidence: "medium" }),
+  ];
+
+  it("asc: low → medium → high → null last", () => {
+    const result = sortEssays(essays, "confidence", "asc");
+    expect(result.map((e) => e.essay_id)).toEqual([
+      "e-low",
+      "e-medium",
+      "e-high",
+      "e-null",
+    ]);
+  });
+
+  it("desc: high → medium → low → null still last", () => {
+    const result = sortEssays(essays, "confidence", "desc");
+    expect(result.map((e) => e.essay_id)).toEqual([
+      "e-high",
+      "e-medium",
+      "e-low",
+      "e-null",
+    ]);
+  });
+
+  it("null confidence is always last regardless of direction", () => {
+    const withTwoNulls = [
+      makeEssay({ essay_id: "e-n1", status: "graded", overall_confidence: null }),
+      makeEssay({ essay_id: "e-low", status: "graded", overall_confidence: "low" }),
+      makeEssay({ essay_id: "e-n2", status: "graded", overall_confidence: null }),
+    ];
+    const asc = sortEssays(withTwoNulls, "confidence", "asc");
+    expect(asc[0].essay_id).toBe("e-low");
+    const desc = sortEssays(withTwoNulls, "confidence", "desc");
+    expect(desc[0].essay_id).toBe("e-low");
+  });
+
+  it("does not mutate the input array", () => {
+    const ids = essays.map((e) => e.essay_id);
+    sortEssays(essays, "confidence", "asc");
+    expect(essays.map((e) => e.essay_id)).toEqual(ids);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReviewQueue — confidence badge rendering (M4.2)
+// ---------------------------------------------------------------------------
+
+describe("ReviewQueue — confidence badge", () => {
+  it("renders confidence badge for essays with overall_confidence", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-low-001",
+        status: "graded",
+        overall_confidence: "low",
+        student_name: "Student Alpha",
+      }),
+      makeEssay({
+        essay_id: "e-high-001",
+        status: "graded",
+        overall_confidence: "high",
+        student_name: "Student Beta",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+
+    // Badge text is rendered as "Low" and "High" (short labels)
+    expect(screen.getByText("Low")).toBeInTheDocument();
+    expect(screen.getByText("High")).toBeInTheDocument();
+  });
+
+  it("renders medium confidence badge", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-med-001",
+        status: "graded",
+        overall_confidence: "medium",
+        student_name: "Student Gamma",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    expect(screen.getByText("Medium")).toBeInTheDocument();
+  });
+
+  it("does not render a confidence badge when overall_confidence is null", () => {
+    const essays = [
+      makeEssay({ essay_id: "e-noconf-001", status: "graded", overall_confidence: null }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    // None of the confidence labels should appear
+    expect(screen.queryByText("Low")).not.toBeInTheDocument();
+    expect(screen.queryByText("Medium")).not.toBeInTheDocument();
+    expect(screen.queryByText("High")).not.toBeInTheDocument();
+  });
+
+  it("confidence badge has aria-label describing the confidence level", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-low-002",
+        status: "graded",
+        overall_confidence: "low",
+        student_name: "Student Delta",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    // The badge is a <span> with aria-label="Confidence: low"
+    // Use getAllByLabelText to handle the link's aria-label also mentioning confidence
+    const elements = screen.getAllByLabelText(/confidence: low/i);
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+    // The badge span should be one of them
+    expect(elements.some((el) => el.tagName.toLowerCase() === "span")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReviewQueue — default sort is confidence (M4.2)
+// ---------------------------------------------------------------------------
+
+describe("ReviewQueue — default sort is confidence", () => {
+  it("default sort button is Confidence with aria-pressed=true", () => {
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    const confidenceBtn = screen.getByRole("button", { name: /confidence/i });
+    expect(confidenceBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Status sort button is not active by default", () => {
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    expect(
+      screen.getByRole("button", { name: /status/i }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("low-confidence essays appear first with default sort", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-high-s",
+        status: "graded",
+        overall_confidence: "high",
+        student_name: "Student High",
+      }),
+      makeEssay({
+        essay_id: "e-low-s",
+        status: "graded",
+        overall_confidence: "low",
+        student_name: "Student Low",
+      }),
+      makeEssay({
+        essay_id: "e-med-s",
+        status: "graded",
+        overall_confidence: "medium",
+        student_name: "Student Med",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Student Low");
+    expect(items[1]).toHaveTextContent("Student Med");
+    expect(items[2]).toHaveTextContent("Student High");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReviewQueue — fast-review mode (M4.2)
+// ---------------------------------------------------------------------------
+
+describe("ReviewQueue — fast-review mode", () => {
+  it("enables fast-review mode via checkbox", async () => {
+    const user = userEvent.setup();
+    const essays = [
+      makeEssay({
+        essay_id: "e-low-fr",
+        status: "graded",
+        overall_confidence: "low",
+        student_name: "Student Low",
+      }),
+      makeEssay({
+        essay_id: "e-high-fr",
+        status: "graded",
+        overall_confidence: "high",
+        student_name: "Student High",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+
+    const fastReviewCheckbox = screen.getByRole("checkbox", { name: /fast review/i });
+    await user.click(fastReviewCheckbox);
+
+    // Only the low-confidence essay should be shown
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("Student Low");
+  });
+
+  it("shows empty state when fast-review mode is on but no low-confidence essays exist", async () => {
+    const user = userEvent.setup();
+    const essays = [
+      makeEssay({ essay_id: "e-high-only", status: "graded", overall_confidence: "high" }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+
+    const fastReviewCheckbox = screen.getByRole("checkbox", { name: /fast review/i });
+    await user.click(fastReviewCheckbox);
+
+    expect(
+      screen.getByText(/no essays match the selected filter/i),
+    ).toBeInTheDocument();
+  });
+
+  it("filter dropdown reflects low_confidence when fast-review is on", async () => {
+    const user = userEvent.setup();
+    // Must use essays that include confidence data — fast-review checkbox is only
+    // rendered when at least one essay has overall_confidence (hasConfidenceData).
+    const essays = [
+      makeEssay({
+        essay_id: "e-low-fr-sync",
+        status: "graded",
+        overall_confidence: "low",
+        student_name: "Student Low",
+      }),
+      makeEssay({
+        essay_id: "e-high-fr-sync",
+        status: "graded",
+        overall_confidence: "high",
+        student_name: "Student High",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+
+    const fastReviewCheckbox = screen.getByRole("checkbox", { name: /fast review/i });
+    await user.click(fastReviewCheckbox);
+
+    const select = screen.getByRole("combobox", { name: /filter/i });
+    expect((select as HTMLSelectElement).value).toBe("low_confidence");
+  });
+
+  it("fast-review checkbox is not shown when no essay has confidence data", () => {
+    // BASE_ESSAYS have no overall_confidence — fast-review should be hidden
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    expect(screen.queryByRole("checkbox", { name: /fast review/i })).not.toBeInTheDocument();
+  });
+
+  it("low_confidence option is not in filter dropdown when no confidence data", () => {
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    const select = screen.getByRole("combobox", { name: /filter/i });
+    // The low_confidence option should not exist in the dropdown
+    const options = Array.from((select as HTMLSelectElement).options).map((o) => o.value);
+    expect(options).not.toContain("low_confidence");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReviewQueue — bulk-approve (M4.2)
+// ---------------------------------------------------------------------------
+
+describe("ReviewQueue — bulk-approve", () => {
+  it("bulk-approve button is not shown when there are no high-confidence essays", () => {
+    const essays = [
+      makeEssay({ essay_id: "e-low-b", status: "graded", overall_confidence: "low" }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    expect(screen.queryByRole("button", { name: /approve.*high-confidence/i })).not.toBeInTheDocument();
+  });
+
+  it("bulk-approve button is not shown when all high-confidence essays are already locked", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-high-locked",
+        status: "locked",
+        overall_confidence: "high",
+        grade_id: "grade-high-locked-001",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    expect(screen.queryByRole("button", { name: /approve.*high-confidence/i })).not.toBeInTheDocument();
+  });
+
+  it("bulk-approve button is not shown when high-confidence essay has no grade_id", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-high-nograde",
+        status: "graded",
+        overall_confidence: "high",
+        grade_id: null,
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    expect(screen.queryByRole("button", { name: /approve.*high-confidence/i })).not.toBeInTheDocument();
+  });
+
+  it("bulk-approve button is shown when high-confidence essays are not yet locked", () => {
+    const essays = [
+      makeEssay({
+        essay_id: "e-high-unlocked",
+        status: "graded",
+        overall_confidence: "high",
+        grade_id: "grade-high-001",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
+    expect(
+      screen.getByRole("button", { name: /approve.*high-confidence/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("bulk-approve calls lockGrade for each eligible essay and invokes onBulkApproveSuccess", async () => {
+    const user = userEvent.setup();
+    mockLockGrade.mockResolvedValue({ id: "grade-x", is_locked: true });
+
+    const onBulkApproveSuccess = vi.fn();
+    const essays = [
+      makeEssay({
+        essay_id: "e-high-a",
+        status: "graded",
+        overall_confidence: "high",
+        grade_id: "grade-h-a",
+      }),
+      makeEssay({
+        essay_id: "e-high-b",
+        status: "graded",
+        overall_confidence: "high",
+        grade_id: "grade-h-b",
+      }),
+    ];
+    render(
+      <ReviewQueue
+        essays={essays}
+        assignmentId={ASSIGNMENT_ID}
+        onBulkApproveSuccess={onBulkApproveSuccess}
+      />,
+      { wrapper },
+    );
+
+    const btn = screen.getByRole("button", { name: /approve.*high-confidence/i });
+    await user.click(btn);
+
+    await waitFor(() => expect(onBulkApproveSuccess).toHaveBeenCalledTimes(1));
+    expect(mockLockGrade).toHaveBeenCalledWith("grade-h-a");
+    expect(mockLockGrade).toHaveBeenCalledWith("grade-h-b");
+  });
+
+  it("bulk-approve button is disabled while approving is in progress", async () => {
+    const user = userEvent.setup();
+    // Never resolves — simulates in-flight request
+    mockLockGrade.mockImplementation(() => new Promise(() => {}));
+
+    const essays = [
+      makeEssay({
+        essay_id: "e-high-pending",
+        status: "graded",
+        overall_confidence: "high",
+        grade_id: "grade-pending-001",
+      }),
+    ];
+    render(
+      <ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+
+    const btn = screen.getByRole("button", { name: /bulk approve/i });
+    await user.click(btn);
+
+    // Button should now be disabled while approving (aria-label updates to include "Approving")
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /approving.*high-confidence/i }),
+      ).toBeDisabled(),
+    );
   });
 });
