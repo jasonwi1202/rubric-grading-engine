@@ -9,6 +9,7 @@ import enum
 import uuid
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -96,3 +97,7 @@ class EssayVersion(Base):
         server_default=func.now(),
         nullable=False,
     )
+    # Nullable — populated by the compute_essay_embedding Celery task after
+    # text extraction.  Stores a 1 536-dimension OpenAI embedding vector used
+    # for internal cosine-similarity plagiarism detection.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)

@@ -20,7 +20,7 @@ celery = Celery(
     "rubric_grading_engine",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks.debug", "app.tasks.email", "app.tasks.grading", "app.tasks.export"],
+    include=["app.tasks.debug", "app.tasks.email", "app.tasks.grading", "app.tasks.export", "app.tasks.embedding"],
 )
 
 celery.conf.update(
