@@ -94,6 +94,10 @@ def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
         # urllib follows the redirect so we verify it responds, not the status code
         Check("Frontend: /dashboard responds",      f"{frontend}/dashboard"),
 
+        # --- M3 dashboard routes (redirect to /login when unauthenticated — confirms pages are registered) ---
+        Check("Frontend: /dashboard/classes responds",              f"{frontend}/dashboard/classes"),
+        Check("Frontend: /dashboard/rubrics/new responds",          f"{frontend}/dashboard/rubrics/new"),
+
         # --- Mailpit ---
         Check("Mailpit: web UI reachable",          f"{mailpit}/"),
         Check("Mailpit: API messages endpoint",     f"{mailpit}/api/v1/messages", body_contains='"messages"'),

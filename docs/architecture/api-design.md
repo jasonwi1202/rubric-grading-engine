@@ -30,6 +30,8 @@ All responses follow a consistent envelope:
 }
 ```
 
+**Exception — file download endpoints:** Endpoints that stream binary or text files (e.g., `GET /assignments/{assignmentId}/grades.csv`) return the file content directly with the appropriate `Content-Type` (e.g., `text/csv`) and `Content-Disposition: attachment` header.  These endpoints do **not** use the `{"data": ...}` envelope and cannot be called via the shared `apiGet()` helper.  See the individual endpoint documentation for frontend integration guidance.
+
 Errors:
 ```json
 {
@@ -182,10 +184,36 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 |---|---|---|
 | GET | `/classes/{classId}/students` | List enrolled students in a class |
 | POST | `/classes/{classId}/students` | Enroll a new or existing student |
+| POST | `/classes/{classId}/students/import` | Parse a CSV roster and return an import diff (no DB write) |
+| POST | `/classes/{classId}/students/import/confirm` | Commit a reviewed CSV roster import |
 | DELETE | `/classes/{classId}/students/{studentId}` | Remove student from class (soft) |
 | GET | `/students/{studentId}` | Get student detail + skill profile |
 | GET | `/students/{studentId}/history` | Get all graded assignments for a student |
 | PATCH | `/students/{studentId}` | Update student name or external ID |
+
+#### CSV Roster Import Flow
+
+Two-phase import prevents accidental bulk writes:
+
+1. **`POST /classes/{classId}/students/import`** — multipart CSV upload (`file` field).
+   - Accepted columns: `full_name` (required, case-insensitive), `external_id` (optional).
+   - Returns a diff with per-row status and aggregate counts; **no students are written to the DB**.
+   - Returns `422` if the CSV is malformed, missing the `full_name` column, or exceeds 200 rows.
+   - Individual rows with an empty `full_name` appear in the diff with `status: "error"`.
+
+2. **`POST /classes/{classId}/students/import/confirm`** — JSON body `{ "rows": [...] }`.
+   - Teacher sends back only the rows they approve (may omit skipped/error rows).
+   - Server re-validates each row against the current roster before writing.
+   - Returns `{ "data": { "created": N, "updated": N, "skipped": N } }`.
+
+**Per-row statuses:**
+
+| Status | Meaning |
+|---|---|
+| `new` | No match found; a new student record will be created and enrolled |
+| `updated` | Existing student matched by `external_id` (not currently enrolled); will be enrolled |
+| `skipped` | Already enrolled, or fuzzy name match detected — no change will be made |
+| `error` | Row failed validation (e.g. missing `full_name`); excluded from commit |
 
 ---
 
@@ -199,6 +227,119 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | PATCH | `/rubrics/{rubricId}` | Update rubric metadata or criteria |
 | DELETE | `/rubrics/{rubricId}` | Soft-delete rubric (blocked if in use by an open assignment) |
 | POST | `/rubrics/{rubricId}/duplicate` | Duplicate rubric as a new draft |
+
+---
+
+### Rubric Templates
+
+System starter templates (seeded via migration) and teacher-owned personal templates.
+System templates have `is_system: true` (`teacher_id IS NULL`); personal templates have `is_system: false`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/rubric-templates` | List system + teacher's personal templates |
+| GET | `/rubric-templates/{templateId}` | Get a single template with full criteria |
+| POST | `/rubric-templates` | Save a rubric as a personal template |
+
+**GET /rubric-templates response:**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "5-Paragraph Essay",
+      "description": "A starter template for five-paragraph essays.",
+      "is_system": true,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z",
+      "criterion_count": 4
+    }
+  ]
+}
+```
+
+**POST /rubric-templates body:**
+```json
+{
+  "rubric_id": "uuid-of-source-rubric",
+  "name": "Optional override name"
+}
+```
+
+**POST /rubric-templates response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "name": "My Template",
+    "description": "...",
+    "is_system": false,
+    "created_at": "2026-04-20T00:00:00Z",
+    "updated_at": "2026-04-20T00:00:00Z",
+    "criteria": [...]
+  }
+}
+```
+
+Errors: `404 NOT_FOUND` (source rubric not found), `403 FORBIDDEN` (source rubric belongs to another teacher).
+
+**GET /rubric-templates/{templateId} response (200):**
+Returns the same shape as `POST /rubric-templates` response but for any template.
+System templates are accessible to any authenticated teacher; personal templates return `403` if accessed by a different teacher.
+
+---
+
+### Comment Bank
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/comment-bank` | List the authenticated teacher's saved comments |
+| POST | `/comment-bank` | Save a new feedback comment snippet |
+| DELETE | `/comment-bank/{comment_id}` | Remove a saved comment |
+| GET | `/comment-bank/suggestions` | Fuzzy-match suggestions for a query string |
+
+**GET /comment-bank response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "text": "Good use of textual evidence to support the argument.",
+      "created_at": "2026-04-21T00:00:00Z"
+    }
+  ]
+}
+```
+
+**POST /comment-bank body:**
+```json
+{ "text": "Good use of textual evidence to support the argument." }
+```
+`text` must be 1–2000 characters.
+
+**POST /comment-bank response (201):** Same shape as a single item in the list response.
+
+Errors: `403 FORBIDDEN` (delete — comment belongs to another teacher), `404 NOT_FOUND` (delete — comment does not exist).
+
+**GET /comment-bank/suggestions query params:** `?q=<text>` (required, 1–500 characters)
+
+**GET /comment-bank/suggestions response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "text": "Good use of textual evidence.",
+      "score": 0.9,
+      "created_at": "2026-04-21T00:00:00Z"
+    }
+  ]
+}
+```
+`score` is a normalised fuzzy-match score in the range 0.0–1.0. Results are ordered by descending score.
+Suggestions are **advisory only** — the teacher explicitly selects which comment to apply.
+
+---
 
 **POST /rubrics body:**
 ```json
@@ -226,17 +367,71 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | GET | `/classes/{classId}/assignments` | List assignments for a class |
 | POST | `/classes/{classId}/assignments` | Create assignment |
 | GET | `/assignments/{assignmentId}` | Get assignment detail + submission status |
-| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, rubric (draft only) |
+| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, status, or feedback tone |
 | POST | `/assignments/{assignmentId}/grade` | Trigger grading for all queued essays |
 | GET | `/assignments/{assignmentId}/grading-status` | Batch grading progress (polled by frontend) |
 | POST | `/assignments/{assignmentId}/export` | Enqueue export job |
+| GET | `/assignments/{assignmentId}/grades.csv` | Synchronous CSV gradebook export (locked grades only) |
 | GET | `/assignments/{assignmentId}/analytics` | Score distribution, common issues, averages |
+
+**POST /classes/{classId}/assignments body:**
+```json
+{
+  "rubric_id": "uuid",
+  "title": "Persuasive Essay — Unit 3",
+  "prompt": "Write a 5-paragraph essay arguing your position.",
+  "due_date": "2026-05-01",
+  "feedback_tone": "direct"
+}
+```
+`feedback_tone` controls the register of AI-generated per-criterion feedback notes and the summary paragraph.  One of `"encouraging"`, `"direct"` (default), `"academic"`.
+
+**POST /classes/{classId}/assignments response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "class_id": "uuid",
+    "rubric_id": "uuid",
+    "rubric_snapshot": { "id": "...", "name": "...", "criteria": [...] },
+    "title": "Persuasive Essay — Unit 3",
+    "prompt": "Write a 5-paragraph essay arguing your position.",
+    "due_date": "2026-05-01",
+    "status": "draft",
+    "feedback_tone": "direct",
+    "resubmission_enabled": false,
+    "resubmission_limit": null,
+    "created_at": "2026-04-21T00:00:00Z"
+  }
+}
+```
+
+**PATCH /assignments/{assignmentId} body** (all fields optional — only provided fields are updated):
+```json
+{
+  "title": "Updated Title",
+  "prompt": "Updated prompt.",
+  "due_date": "2026-05-15",
+  "status": "open",
+  "feedback_tone": "encouraging"
+}
+```
 
 **POST /assignments/{id}/grade body:**
 ```json
 {
   "essay_ids": ["uuid1", "uuid2"],  // omit to grade all queued essays
   "strictness": "balanced"
+}
+```
+
+**POST /assignments/{id}/grade response (202 Accepted):**
+```json
+{
+  "data": {
+    "enqueued": 28,
+    "assignment_id": "uuid"
+  }
 }
 ```
 
@@ -249,12 +444,23 @@ This endpoint is consumed by the dashboard trial-expiry banner.
     "complete": 12,
     "failed": 1,
     "essays": [
-      { "id": "uuid", "status": "graded", "student_name": "Alice Chen" },
-      { "id": "uuid", "status": "failed", "error": "LLM_TIMEOUT" }
+      { "id": "uuid", "status": "complete", "student_name": "Student A", "error": null },
+      { "id": "uuid", "status": "failed", "student_name": "Student B", "error": "LLM_TIMEOUT" }
     ]
   }
 }
 ```
+
+**GET /assignments/{assignmentId}/grades.csv response (200):**
+Returns a `text/csv` file download with header:
+```
+student_id,student_name,<criterion_name_1>,...,weighted_total
+```
+Criterion columns are ordered by `display_order` from the immutable rubric snapshot.  Only locked grades (`is_locked = true`) are included.  If no grades are locked, the response contains only the header row.  The `Content-Disposition` header is set to `attachment; filename="grades-<uuid>.csv"`.
+
+> **Frontend note:** This endpoint returns `text/csv`, not the standard `{"data": ...}` JSON envelope, so it cannot be called via the shared `apiGet()` helper (which calls `response.json()`).  Use a dedicated helper that performs a `fetch()` with the normal `Authorization: Bearer ...` header and reads the response via `response.blob()` or `response.text()`.  If a browser-navigation-style download is required, expose a separate JSON endpoint that returns a short-lived pre-signed URL or one-time download token specifically for the export.  Do **not** place the access token in the URL or query string.
+
+Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
 
 ---
 
@@ -269,11 +475,47 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | POST | `/essays/{essayId}/resubmit` | Submit a new version (resubmission) |
 | GET | `/essays/{essayId}/versions` | List all versions with grades |
 | GET | `/essays/{essayId}/integrity` | Get integrity report |
+| POST | `/essays/{essayId}/grade/retry` | Re-enqueue a single failed essay for grading |
 
 **POST /assignments/{id}/essays** — multipart form:
-- `files[]`: one or more files (PDF, DOCX, TXT)
-- `text`: raw text (alternative to file upload)
-- `student_id`: optional — skip auto-assignment
+- `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
+- `student_id`: optional — if provided, all uploaded essays are immediately assigned to this student; only one file may be uploaded when `student_id` is set
+
+MIME type is validated server-side from file magic bytes (not the file extension). File size limit is enforced before further processing (`MAX_ESSAY_FILE_SIZE_MB`, default 10 MB); the upload handler reads at most the configured limit plus one byte to detect oversize files without loading the entire upload into memory. The raw file is uploaded to S3 before text extraction so the original is preserved even if extraction fails.
+
+**POST /assignments/{id}/essays response (201):**
+```json
+{
+  "data": [
+    {
+      "essay_id": "uuid",
+      "essay_version_id": "uuid",
+      "assignment_id": "uuid",
+      "student_id": null,
+      "status": "unassigned",
+      "word_count": 412,
+      "file_storage_key": "essays/{assignmentId}/{essayId}/filename.pdf",
+      "submitted_at": "2026-04-20T18:00:00Z",
+      "auto_assign_status": "unassigned"
+    }
+  ]
+}
+```
+
+`auto_assign_status` reflects the outcome of the auto-assignment attempt: `"assigned"` (essay matched to exactly one student with confidence ≥ 0.85), `"ambiguous"` (multiple students matched — held for manual review), or `"unassigned"` (no match found). When `student_id` is explicitly provided in the request this field is `null` (no roster search is performed).
+
+Errors: `404 NOT_FOUND` (assignment not found, or student not found for this teacher), `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled in the class), `422 VALIDATION_ERROR` (no files, more than one file with `student_id`, invalid MIME type, or file too large — `error.code` is `FILE_TYPE_NOT_ALLOWED`, `FILE_TOO_LARGE`, or `VALIDATION_ERROR` as appropriate).
+
+**POST /essays/{essayId}/grade/retry body:**
+```json
+{
+  "strictness": "balanced"  // optional; "lenient" | "balanced" | "strict"
+}
+```
+
+Re-enqueues a single essay for grading. Only available when the essay has `status=queued` (essays fail and are reverted to `queued` after exhausting retries). Returns `202` immediately.
+
+Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (essay not found), `409 CONFLICT` (essay is currently being graded or has already been completed).
 
 ---
 
@@ -301,8 +543,49 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 
 | Method | Path | Description |
 |---|---|---|
+| POST | `/assignments/{assignmentId}/export` | Enqueue PDF batch export (202) |
 | GET | `/exports/{taskId}/status` | Poll export job status |
 | GET | `/exports/{taskId}/download` | Get pre-signed S3 download URL |
+
+**POST /assignments/{assignmentId}/export response (202):**
+```json
+{
+  "data": {
+    "task_id": "uuid",
+    "assignment_id": "uuid",
+    "status": "pending"
+  }
+}
+```
+
+Only locked grades are included. Returns 404 if the assignment does not exist, 403 if it belongs to a different teacher.
+
+**GET /exports/{taskId}/status response (200):**
+```json
+{
+  "data": {
+    "task_id": "uuid",
+    "status": "processing",
+    "total": 30,
+    "complete": 12,
+    "error": null
+  }
+}
+```
+
+`status` is one of `pending | processing | complete | failed`. Returns 404 if the task is not found, 403 if it belongs to a different teacher.
+
+**GET /exports/{taskId}/download response (200):**
+```json
+{
+  "data": {
+    "url": "https://s3.example.com/exports/…?X-Amz-Expires=900&…",
+    "expires_in_seconds": 900
+  }
+}
+```
+
+The pre-signed URL is valid for 15 minutes. Returns 409 if the export is not yet complete, 404 if not found, 403 if cross-teacher access.
 
 ---
 

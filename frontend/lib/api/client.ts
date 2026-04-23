@@ -65,7 +65,13 @@ async function apiFetch<T>(
   const headers = new Headers(init.headers);
   // Only set Content-Type for requests that carry a body (POST/PUT/PATCH).
   // Setting it on GET/DELETE triggers unnecessary CORS preflight requests.
-  if (init.body !== undefined && !headers.has("Content-Type")) {
+  // Skip for FormData — the browser must set Content-Type with the correct
+  // multipart boundary automatically.
+  if (
+    init.body !== undefined &&
+    !(init.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -181,4 +187,91 @@ export function apiPatch<T>(
 
 export function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
   return apiFetch<T>(path, { ...init, method: "DELETE" });
+}
+
+/**
+ * Authenticated GET that returns the raw response body as a Blob.
+ *
+ * Used for binary/text file download endpoints (e.g. CSV export) that do NOT
+ * return the standard `{ data: T }` JSON envelope. Auth, 401-refresh, and
+ * error handling mirror `apiFetch` — including the single-retry guard that
+ * prevents infinite recursion on persistent 401 responses.
+ */
+export function apiGetBlob(
+  path: string,
+  init?: RequestInit,
+): Promise<Blob> {
+  return apiFetchBlob(path, init);
+}
+
+async function apiFetchBlob(
+  path: string,
+  init?: RequestInit,
+  isRetry = false,
+): Promise<Blob> {
+  const url = `${getBaseUrl()}${path}`;
+  const headers = new Headers(init?.headers);
+  const token = getAccessToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, {
+    ...init,
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
+
+  // Single-retry guard — mirrors the pattern in apiFetch.
+  if (response.status === 401 && !isRetry && !AUTH_PATHS.has(path)) {
+    const newToken = await silentRefresh();
+    if (newToken) {
+      return apiFetchBlob(path, init, true);
+    }
+    if (typeof window !== "undefined") {
+      const currentPathname = window.location.pathname ?? "";
+      const currentSearch = window.location.search ?? "";
+      const currentPath = currentPathname + currentSearch;
+      const nextParam = isSafeRedirectPath(currentPath)
+        ? `?next=${encodeURIComponent(currentPath)}`
+        : "";
+      window.location.replace(`/login${nextParam}`);
+    }
+    throw new ApiError(401, {
+      code: "UNAUTHORIZED",
+      message: "Session expired. Please log in again.",
+    });
+  }
+
+  if (!response.ok) {
+    let errorBody: ApiErrorBody;
+    try {
+      const json = (await response.json()) as { error?: ApiErrorBody };
+      errorBody = json.error ?? {
+        code: "UNKNOWN_ERROR",
+        message: response.statusText,
+      };
+    } catch {
+      errorBody = { code: "UNKNOWN_ERROR", message: response.statusText };
+    }
+    throw new ApiError(response.status, errorBody);
+  }
+
+  return response.blob();
+}
+
+/**
+ * POST with a FormData body (multipart/form-data).
+ *
+ * Unlike apiPost, this helper deliberately does NOT set Content-Type so the
+ * browser can supply the correct multipart boundary automatically.  Auth,
+ * 401-refresh, and error handling are identical to all other helpers.
+ */
+export function apiPostForm<T>(
+  path: string,
+  formData: FormData,
+  init?: RequestInit,
+): Promise<T> {
+  return apiFetch<T>(path, { ...init, method: "POST", body: formData });
 }

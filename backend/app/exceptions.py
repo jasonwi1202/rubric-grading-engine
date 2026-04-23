@@ -110,6 +110,10 @@ class RateLimitError(RubricGradingError):
 # ---------------------------------------------------------------------------
 
 
+class InvalidStateTransitionError(ValidationError):
+    code = "INVALID_STATE_TRANSITION"
+
+
 class RubricWeightInvalidError(ValidationError):
     code = "RUBRIC_WEIGHT_INVALID"
 

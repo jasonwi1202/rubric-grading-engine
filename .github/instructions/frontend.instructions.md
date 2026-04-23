@@ -9,7 +9,9 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 ## API Client
 
 - [ ] All API calls go through `lib/api/client.ts` and the typed resource wrappers in `lib/api/` — no raw `fetch()` in components or hooks
-- [ ] API response types are defined in `types/` and kept in sync with backend Pydantic schemas
+- [ ] **API response types in `lib/api/` are verified against the actual Pydantic schemas in `backend/app/schemas/` before merge** — field names, nullability (`string | null` vs `string`), and shape must match exactly. Mismatched types cause runtime errors that TypeScript cannot catch because `apiGet()` returns `data` from the envelope.
+- [ ] **All new TypeScript API types are cross-checked against the backend** — run a quick side-by-side comparison of the `Response`/`Request` types here against the Pydantic `Response`/`Request` schemas. Pay specific attention to: optional vs required fields, `null` vs `undefined`, nested object shapes, and fields the backend returns that are not yet on the frontend type.
+- [ ] **API helper paths must be relative (no `/api/v1/` prefix)** — `NEXT_PUBLIC_API_URL` already includes `/api/v1`. Using a full path like `/api/v1/contact/inquiry` produces a double-prefix at runtime. All paths passed to `apiGet`/`apiPost` must be relative, e.g., `/contact/inquiry`.
 - [ ] No hardcoded API URLs — use `NEXT_PUBLIC_API_URL` environment variable
 - [ ] No API keys or secrets in any frontend file — all sensitive operations go through the backend
 
@@ -17,9 +19,12 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 
 - [ ] All server state uses `useQuery` / `useMutation` — never `useEffect + fetch`
 - [ ] Query keys are structured arrays: `['essays', assignmentId]` not flat strings
+- [ ] **Query keys include all parameters that vary the response** — if a query accepts filter params (e.g. `is_archived: false`), those params must be part of the key. A key that omits params causes different filter combinations to share the same cache entry.
 - [ ] Mutations include `onError` handler; optimistic updates include `onMutate` rollback
 - [ ] `staleTime` set appropriately — grading progress is near-real-time (3s poll); reference data longer
 - [ ] Polling (`refetchInterval`) is used only for batch grading progress — and stops when status is `complete` or `failed`
+- [ ] **After a mutation, invalidate all affected query keys** — not just the directly mutated entity. For example: adding/removing a student must also invalidate the class detail if it has a `student_count`; a status transition must also invalidate assignment list queries.
+- [ ] **Do not wire UI to backend endpoints that do not yet exist** — if a required backend endpoint is not implemented, set `enabled: false` on the query or disable the mutation trigger. A UI that calls a non-existent endpoint will error on load in every environment.
 - [ ] No direct cache manipulation outside of `onMutate` / `onSettled` patterns
 
 ## Components & Styling
@@ -34,6 +39,7 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 
 - [ ] Forms use `react-hook-form` with `zodResolver` — no uncontrolled form state
 - [ ] Zod schema defined separately and reused via `useForm({ resolver: zodResolver(schema) })`
+- [ ] **Zod validation constraints must match backend Pydantic constraints exactly** — verify field `max_length`, numeric `min`/`max`, and required vs optional against the backend schema. A mismatch produces avoidable 422 errors (frontend accepts input the API rejects) or blocks valid input (frontend is stricter than the API).
 - [ ] Clearing a nullable field sends explicit `null` in the request body — never `undefined`
 - [ ] Form submission is disabled while mutation is pending
 
@@ -59,7 +65,7 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 ## Loading & Error States
 
 - [ ] Every data-fetching component handles `isLoading` → skeleton, `isError` → user-friendly message
-- [ ] Never render `error.message` directly to the user
+- [ ] **Never render `error.message` or server-supplied error text directly to users** — server error strings can be unstable, expose internal details, or include student PII. Map to a small set of safe UI strings based on `err.code` or HTTP status (e.g., `'invalid_credentials'` → "Email or password is incorrect", generic fallback otherwise).
 - [ ] Skeleton components use `shadcn/ui Skeleton` for consistency
 - [ ] Empty states (zero results) are explicitly handled and not left blank
 
@@ -68,9 +74,15 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 - [ ] All interactive elements reachable by keyboard (Tab, Enter, Space, Arrow keys for menus)
 - [ ] No icon-only buttons without `aria-label`
 - [ ] Form errors linked to inputs via `aria-describedby`
-- [ ] Modal dialogs trap focus (Radix UI / shadcn handles this — verify not overridden)
+- [ ] **Every new modal/dialog must implement the full accessibility baseline** — use the shared dialog primitive or verify all four properties are present: (1) focus moves into the dialog on open, (2) focus is trapped inside while open (Tab/Shift-Tab cycle within), (3) Escape closes the dialog, (4) focus returns to the triggering element on close. Radix UI / shadcn `Dialog` handles this automatically — do not override `onOpenAutoFocus`, `onCloseAutoFocus`, or `onEscapeKeyDown` in ways that disable these behaviors.
+- [ ] **`role="listbox"` / `role="option"` require matching keyboard semantics** — Arrow key navigation and `aria-activedescendant` or roving tabindex. If keyboard semantics are not implemented, use `role="list"` / `role="listitem"` with plain buttons instead.
 - [ ] Color is not the only means of conveying state (score badges, status indicators include text)
 - [ ] Real-time updates (grading progress) announced via `aria-live="polite"` region
+
+## Next.js Route Groups & Middleware
+
+- [ ] **Route group names (`(auth)`, `(dashboard)`, `(public)`) do not produce URL path segments** — `app/(dashboard)/page.tsx` is served at `/`, not `/dashboard`. Middleware `matcher` patterns must target the actual URL, not the folder name. Verify that `matcher` in `middleware.ts` fires for all routes that need protection.
+- [ ] When adding a new protected route, confirm the middleware matcher pattern covers it and test an unauthenticated request manually.
 
 ## Tests Required
 

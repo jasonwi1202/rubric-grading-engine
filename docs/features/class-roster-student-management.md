@@ -1,7 +1,7 @@
 # Feature: Class Roster & Student Management
 
 **Phase:** 1 — MVP
-**Status:** Planned
+**Status:** UI implemented (M3.8); backend APIs in M3.5–M3.7
 
 ---
 

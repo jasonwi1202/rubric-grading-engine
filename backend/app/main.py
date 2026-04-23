@@ -192,16 +192,37 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
 def _register_routers(application: FastAPI) -> None:
     from app.routers.account import router as account_router
+    from app.routers.assignments import router as assignments_router
     from app.routers.auth import router as auth_router
+    from app.routers.classes import router as classes_router
+    from app.routers.comment_bank import router as comment_bank_router
     from app.routers.contact import router as contact_router
+    from app.routers.essays import essay_router
+    from app.routers.essays import router as essays_router
+    from app.routers.exports import router as exports_router
+    from app.routers.grades import essay_grade_router, grades_router
     from app.routers.health import router as health_router
     from app.routers.onboarding import router as onboarding_router
+    from app.routers.rubric_templates import router as rubric_templates_router
+    from app.routers.rubrics import router as rubrics_router
+    from app.routers.students import router as students_router
 
     application.include_router(health_router, prefix="/api/v1")
     application.include_router(contact_router, prefix="/api/v1")
     application.include_router(auth_router, prefix="/api/v1")
     application.include_router(onboarding_router, prefix="/api/v1")
     application.include_router(account_router, prefix="/api/v1")
+    application.include_router(rubrics_router, prefix="/api/v1")
+    application.include_router(rubric_templates_router, prefix="/api/v1")
+    application.include_router(classes_router, prefix="/api/v1")
+    application.include_router(students_router, prefix="/api/v1")
+    application.include_router(essays_router, prefix="/api/v1")
+    application.include_router(essay_router, prefix="/api/v1")
+    application.include_router(essay_grade_router, prefix="/api/v1")
+    application.include_router(assignments_router, prefix="/api/v1")
+    application.include_router(grades_router, prefix="/api/v1")
+    application.include_router(comment_bank_router, prefix="/api/v1")
+    application.include_router(exports_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------
