@@ -475,6 +475,8 @@ Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND`
 | POST | `/essays/{essayId}/resubmit` | Submit a new version (resubmission) |
 | GET | `/essays/{essayId}/versions` | List all versions with grades |
 | GET | `/essays/{essayId}/integrity` | Get integrity report |
+| PATCH | `/integrity-reports/{reportId}/status` | Update teacher review status (`reviewed_clear` or `flagged`) |
+| GET | `/assignments/{assignmentId}/integrity/summary` | Class-level integrity signal counts (flagged / clear / pending) |
 | POST | `/essays/{essayId}/grade/retry` | Re-enqueue a single failed essay for grading |
 
 **POST /assignments/{id}/essays** — multipart form:

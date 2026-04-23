@@ -1,4 +1,4 @@
-"""Integrity provider abstraction for academic-integrity checks (M4.5).
+"""Integrity provider abstraction for academic-integrity checks (M4.5/M4.6).
 
 Implements the ``IntegrityProvider`` interface and two concrete providers:
 
@@ -15,6 +15,12 @@ The active provider is selected by :func:`get_provider`, which reads
 network error, :func:`run_integrity_check` automatically falls back to
 :class:`InternalProvider` and logs a warning.
 
+API helper functions (M4.6):
+- :func:`get_integrity_report_for_essay` — fetch the latest IntegrityReport
+  for an essay, scoped to the authenticated teacher.
+- :func:`update_integrity_report_status` — update the teacher review status
+  on an IntegrityReport (``reviewed_clear`` or ``flagged``).
+
 Security invariants:
 - No essay content is logged at any level.
 - Only entity IDs appear in log output (no student PII).
@@ -28,21 +34,23 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import AsyncSessionLocal
-from app.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
 from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
+from app.schemas.integrity import IntegrityReportResponse, IntegritySummaryResponse
 
 logger = logging.getLogger(__name__)
 
@@ -546,3 +554,282 @@ async def run_integrity_check(
             teacher_id=teacher_id,
             essay_text=essay_text,
         )
+
+
+# ---------------------------------------------------------------------------
+# API helpers (M4.6)
+# ---------------------------------------------------------------------------
+
+
+async def get_integrity_report_for_essay(
+    db: AsyncSession,
+    essay_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> IntegrityReportResponse:
+    """Return the latest IntegrityReport for an essay, tenant-scoped.
+
+    The report is looked up via the most-recently created IntegrityReport whose
+    ``essay_version_id`` matches the essay's current (latest) version.  If the
+    essay has multiple versions, only the latest version's report is returned.
+
+    Args:
+        db: Async database session.
+        essay_id: UUID of the Essay (not the EssayVersion).
+        teacher_id: The requesting teacher's UUID (tenant isolation).
+
+    Returns:
+        A populated :class:`IntegrityReportResponse`.
+
+    Raises:
+        NotFoundError: The essay does not exist or has no integrity report.
+        ForbiddenError: The essay belongs to a different teacher.
+    """
+    # Verify essay exists and is owned by this teacher.
+    essay_result = await db.execute(
+        select(Essay)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            Essay.id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
+    )
+    essay = essay_result.scalar_one_or_none()
+    if essay is None:
+        # Distinguish between not found vs. forbidden.
+        exists_result = await db.execute(
+            select(Essay.id).where(Essay.id == essay_id)
+        )
+        if exists_result.scalar_one_or_none() is None:
+            raise NotFoundError("Essay not found.")
+        raise ForbiddenError("You do not have access to this essay.")
+
+    # Fetch the latest IntegrityReport for the latest version of this essay,
+    # scoped to the teacher.  First resolve the highest-numbered EssayVersion
+    # to avoid returning a report for an older version even if its report was
+    # created more recently.
+    version_result = await db.execute(
+        select(EssayVersion.id)
+        .where(EssayVersion.essay_id == essay_id)
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    latest_version_id = version_result.scalar_one_or_none()
+    if latest_version_id is None:
+        raise NotFoundError("No integrity report found for this essay.")
+
+    report_result = await db.execute(
+        select(IntegrityReport)
+        .where(
+            IntegrityReport.essay_version_id == latest_version_id,
+            IntegrityReport.teacher_id == teacher_id,
+        )
+        .order_by(IntegrityReport.created_at.desc())
+        .limit(1)
+    )
+    report = report_result.scalar_one_or_none()
+    if report is None:
+        raise NotFoundError("No integrity report found for this essay.")
+
+    return IntegrityReportResponse(
+        id=report.id,
+        essay_id=essay.id,
+        essay_version_id=report.essay_version_id,
+        provider=report.provider,
+        ai_likelihood=report.ai_likelihood,
+        similarity_score=report.similarity_score,
+        flagged_passages=report.flagged_passages or [],
+        status=report.status,
+        reviewed_at=report.reviewed_at,
+        created_at=report.created_at,
+        updated_at=report.updated_at,
+    )
+
+
+async def update_integrity_report_status(
+    db: AsyncSession,
+    report_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    status: IntegrityReportStatus,
+) -> IntegrityReportResponse:
+    """Update the teacher review status on an IntegrityReport.
+
+    Only ``reviewed_clear`` and ``flagged`` are valid teacher-action statuses.
+    Setting a report back to ``pending`` is not allowed.
+
+    Args:
+        db: Async database session.
+        report_id: UUID of the IntegrityReport to update.
+        teacher_id: The requesting teacher's UUID (tenant isolation).
+        status: The new status — must be ``reviewed_clear`` or ``flagged``.
+
+    Returns:
+        Updated :class:`IntegrityReportResponse`.
+
+    Raises:
+        NotFoundError: The report does not exist.
+        ForbiddenError: The report belongs to a different teacher.
+        ValidationError: The requested status is not a valid teacher action.
+    """
+    allowed = {IntegrityReportStatus.reviewed_clear, IntegrityReportStatus.flagged}
+    if status not in allowed:
+        raise ValidationError(
+            f"Status must be one of: {', '.join(s.value for s in allowed)}.",
+            field="status",
+        )
+
+    # Load and authorise.
+    report_result = await db.execute(
+        select(IntegrityReport).where(IntegrityReport.id == report_id)
+    )
+    report = report_result.scalar_one_or_none()
+    if report is None:
+        raise NotFoundError("Integrity report not found.")
+    if report.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this integrity report.")
+
+    report.status = status
+    report.reviewed_at = datetime.now(UTC)
+
+    await db.commit()
+    await db.refresh(report)
+
+    # Resolve essay_id via the report's essay version so the response includes it.
+    version_result = await db.execute(
+        select(EssayVersion.essay_id).where(EssayVersion.id == report.essay_version_id)
+    )
+    essay_id = version_result.scalar_one()
+
+    logger.info(
+        "Integrity report status updated",
+        extra={"report_id": str(report_id), "status": status.value},
+    )
+
+    return IntegrityReportResponse(
+        id=report.id,
+        essay_id=essay_id,
+        essay_version_id=report.essay_version_id,
+        provider=report.provider,
+        ai_likelihood=report.ai_likelihood,
+        similarity_score=report.similarity_score,
+        flagged_passages=report.flagged_passages or [],
+        status=report.status,
+        reviewed_at=report.reviewed_at,
+        created_at=report.created_at,
+        updated_at=report.updated_at,
+    )
+
+
+async def get_integrity_summary_for_assignment(
+    db: AsyncSession,
+    assignment_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> IntegritySummaryResponse:
+    """Return aggregate integrity signal counts for all essays in an assignment.
+
+    Counts how many integrity reports are in each status (``flagged``,
+    ``reviewed_clear``, ``pending``) so the teacher can see the class-level
+    picture at a glance on the assignment overview page.
+
+    The query is tenant-scoped: only reports for essays owned by *teacher_id*
+    are included.
+
+    Args:
+        db: Async database session.
+        assignment_id: UUID of the assignment to summarise.
+        teacher_id: The requesting teacher's UUID (tenant isolation).
+
+    Returns:
+        A populated :class:`IntegritySummaryResponse`.
+
+    Raises:
+        NotFoundError: The assignment does not exist.
+        ForbiddenError: The assignment belongs to a different teacher.
+    """
+    # Verify the assignment exists and is owned by this teacher.
+    assignment_result = await db.execute(
+        select(Assignment)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            Assignment.id == assignment_id,
+            Class.teacher_id == teacher_id,
+        )
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    if assignment is None:
+        exists_result = await db.execute(
+            select(Assignment.id).where(Assignment.id == assignment_id)
+        )
+        if exists_result.scalar_one_or_none() is None:
+            raise NotFoundError("Assignment not found.")
+        raise ForbiddenError("You do not have access to this assignment.")
+
+    # Count integrity report statuses per essay, using only the latest version of
+    # each essay and the most-recently-created report for that version.  This
+    # avoids double-counting essays that have been resubmitted (multiple
+    # EssayVersions) or that have reports from multiple providers.
+
+    # Step 1 — for each essay in the assignment, find the highest version_number.
+    max_version_subq = (
+        select(
+            EssayVersion.essay_id,
+            func.max(EssayVersion.version_number).label("max_version"),
+        )
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .where(Essay.assignment_id == assignment_id)
+        .group_by(EssayVersion.essay_id)
+        .subquery("max_versions")
+    )
+
+    # Step 2 — resolve (essay_id, max_version) → essay_version_id.
+    latest_versions_subq = (
+        select(EssayVersion.id.label("version_id"))
+        .join(
+            max_version_subq,
+            (EssayVersion.essay_id == max_version_subq.c.essay_id)
+            & (EssayVersion.version_number == max_version_subq.c.max_version),
+        )
+        .subquery("latest_versions")
+    )
+
+    # Step 3 — for each of those latest versions, find the max created_at report
+    # (scoped to the requesting teacher), giving one report per essay.
+    latest_report_subq = (
+        select(
+            IntegrityReport.essay_version_id,
+            func.max(IntegrityReport.created_at).label("max_created_at"),
+        )
+        .where(
+            IntegrityReport.essay_version_id.in_(
+                select(latest_versions_subq.c.version_id)
+            ),
+            IntegrityReport.teacher_id == teacher_id,
+        )
+        .group_by(IntegrityReport.essay_version_id)
+        .subquery("latest_reports")
+    )
+
+    # Step 4 — count those deduplicated reports by status.
+    rows = await db.execute(
+        select(IntegrityReport.status, func.count(IntegrityReport.id).label("cnt"))
+        .join(
+            latest_report_subq,
+            (IntegrityReport.essay_version_id == latest_report_subq.c.essay_version_id)
+            & (IntegrityReport.created_at == latest_report_subq.c.max_created_at),
+        )
+        .where(IntegrityReport.teacher_id == teacher_id)
+        .group_by(IntegrityReport.status)
+    )
+    counts: dict[IntegrityReportStatus, int] = {row.status: row.cnt for row in rows}
+
+    flagged = counts.get(IntegrityReportStatus.flagged, 0)
+    reviewed_clear = counts.get(IntegrityReportStatus.reviewed_clear, 0)
+    pending = counts.get(IntegrityReportStatus.pending, 0)
+
+    return IntegritySummaryResponse(
+        assignment_id=assignment_id,
+        flagged=flagged,
+        reviewed_clear=reviewed_clear,
+        pending=pending,
+        total=flagged + reviewed_clear + pending,
+    )
