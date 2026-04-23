@@ -28,7 +28,6 @@ import {
 import type { AssignmentStatus, SubmissionStatusItem } from "@/lib/api/assignments";
 import { listEssays } from "@/lib/api/essays";
 import { getIntegritySummary } from "@/lib/api/integrity";
-import type { IntegritySummaryResponse } from "@/lib/api/integrity";
 import { BatchGradingPanel } from "@/components/grading/BatchGradingPanel";
 import { ExportPanel } from "@/components/grading/ExportPanel";
 
