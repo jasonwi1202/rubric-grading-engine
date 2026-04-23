@@ -12,7 +12,7 @@ created (triggered by the essay upload router).  It:
 
 Retry behaviour:
 - On ``LLMError`` (OpenAI transport failure), the task retries up to 3 times
-  with exponential back-off (2, 4, 8 seconds).
+  with exponential back-off: 2 s, 4 s, 8 s (``2 ** (attempt + 1)``).
 - On ``ForbiddenError`` or ``NotFoundError`` the task fails immediately
   without retrying — the essay/version no longer belongs to the expected
   teacher or has been deleted.
@@ -131,7 +131,7 @@ def compute_essay_embedding(
                     "attempt": attempt,
                 },
             )
-            raise self.retry(exc=exc, countdown=2**attempt) from exc  # type: ignore[attr-defined]
+            raise self.retry(exc=exc, countdown=2 ** (attempt + 1)) from exc  # type: ignore[attr-defined]
 
         logger.error(
             "Embedding task failed — retries exhausted",

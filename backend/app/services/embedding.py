@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import NotFoundError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
@@ -50,29 +50,29 @@ async def compute_and_store_embedding(
         The computed embedding vector as a ``list[float]``.
 
     Raises:
-        NotFoundError: ``EssayVersion`` does not exist.
-        ForbiddenError: ``EssayVersion`` belongs to a different teacher.
+        NotFoundError: ``EssayVersion`` does not exist, or belongs to a
+            different teacher (both treated the same to avoid information
+            disclosure).
         LLMError: OpenAI call failed after all retries (raised from
             :func:`app.llm.client.call_embedding`).
     """
     from app.llm.client import call_embedding  # noqa: PLC0415 — lazy import
 
-    # Ownership-aware load: JOIN ensures teacher_id scoping in a single query.
+    # Ownership-aware load: JOIN + teacher_id filter ensure tenant isolation in
+    # a single query.  If the version doesn't exist *or* belongs to a different
+    # teacher, the row will be absent — both cases raise NotFoundError so that
+    # the existence of another teacher's resources is not disclosed.
     result = await db.execute(
-        select(EssayVersion, Class.teacher_id.label("class_teacher_id"))
+        select(EssayVersion)
         .join(Essay, EssayVersion.essay_id == Essay.id)
         .join(Assignment, Essay.assignment_id == Assignment.id)
         .join(Class, Assignment.class_id == Class.id)
-        .where(EssayVersion.id == essay_version_id)
+        .where(EssayVersion.id == essay_version_id, Class.teacher_id == teacher_id)
     )
-    row = result.one_or_none()
+    version = result.scalars().one_or_none()
 
-    if row is None:
+    if version is None:
         raise NotFoundError("EssayVersion not found.")
-
-    version, class_teacher_id = row
-    if class_teacher_id != teacher_id:
-        raise ForbiddenError("EssayVersion does not belong to this teacher.")
 
     # Call the OpenAI embeddings API — may raise LLMError on failure.
     embedding = await call_embedding(version.content)
@@ -124,14 +124,15 @@ async def flag_similar_essays(
 
     threshold = settings.integrity_similarity_threshold
 
+    embedding_literal = literal(embedding, type_=Vector(1536))
+
     # Cosine distance via pgvector's <=> operator:
-    #   func.cosine_distance(a, b) returns distance in [0, 2]; we want
+    #   cosine_distance(a, b) returns distance in [0, 2]; we want
     #   similarity = 1 − distance.  Flag when similarity >= threshold,
-    #   i.e. distance <= (1 − threshold).
-    cosine_dist = func.cosine_distance(
-        EssayVersion.embedding,
-        literal(embedding, type_=Vector(1536)),
-    ).label("cosine_dist")
+    #   i.e. distance <= (1 − threshold).  Push the filter into Postgres
+    #   so only candidate pairs are transferred over the network.
+    cosine_dist_expr = func.cosine_distance(EssayVersion.embedding, embedding_literal)
+    cosine_dist = cosine_dist_expr.label("cosine_dist")
 
     result = await db.execute(
         select(EssayVersion.id, cosine_dist)
@@ -143,6 +144,7 @@ async def flag_similar_essays(
             Class.teacher_id == teacher_id,
             EssayVersion.id != essay_version_id,
             EssayVersion.embedding.is_not(None),
+            cosine_dist_expr <= (1.0 - threshold),
         )
     )
     rows = result.all()
@@ -152,9 +154,6 @@ async def flag_similar_essays(
         other_version_id: uuid.UUID = row[0]
         dist: float = float(row[1])
         similarity = 1.0 - dist
-
-        if similarity < threshold:
-            continue
 
         report = IntegrityReport(
             essay_version_id=essay_version_id,

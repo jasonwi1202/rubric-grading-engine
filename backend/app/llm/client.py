@@ -344,9 +344,13 @@ async def call_embedding(text: str) -> list[float]:
     """Generate a text embedding vector using the configured OpenAI model.
 
     The embedding is computed via ``openai.AsyncOpenAI.embeddings.create``.
-    Transport-level errors (timeouts, API errors) are retried with exponential
-    back-off up to ``settings.llm_max_retries`` times before raising
-    :exc:`~app.exceptions.LLMError`.
+    Transport-level errors (timeouts, API errors, connection errors, rate
+    limits) are retried with exponential back-off up to
+    ``settings.llm_max_retries`` times before raising
+    :exc:`~app.exceptions.LLMError`.  The retry logic mirrors
+    :func:`_chat_with_retry` — ``openai.APIError`` (the base class for all
+    OpenAI API exceptions including ``APIConnectionError`` and
+    ``RateLimitError``) is caught on every attempt.
 
     Args:
         text: The plain-text content to embed.  Must not be empty.
@@ -362,6 +366,9 @@ async def call_embedding(text: str) -> list[float]:
         The text argument is never logged — callers must not pass log-visible
         content and should use entity IDs in their own log calls instead.
     """
+    if not text.strip():
+        raise ValueError("text must not be empty")
+
     client = _get_openai_client()
     max_attempts = settings.llm_max_retries + 1
     last_exc: LLMError | None = None

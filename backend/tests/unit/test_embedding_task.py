@@ -226,13 +226,11 @@ class TestComputeAndStoreEmbedding:
 
         version_mock = _make_version_mock(essay_version_id)
 
-        # Simulate result row: (EssayVersion, class_teacher_id)
-        row_mock = MagicMock()
-        row_mock.__iter__ = MagicMock(return_value=iter([version_mock, teacher_id]))
-
+        scalars_mock = MagicMock()
+        scalars_mock.one_or_none = MagicMock(return_value=version_mock)
         db_mock = AsyncMock()
         result_mock = MagicMock()
-        result_mock.one_or_none = MagicMock(return_value=row_mock)
+        result_mock.scalars = MagicMock(return_value=scalars_mock)
         db_mock.execute = AsyncMock(return_value=result_mock)
         db_mock.commit = AsyncMock()
 
@@ -251,34 +249,33 @@ class TestComputeAndStoreEmbedding:
         """NotFoundError raised when the essay version does not exist."""
         from app.services.embedding import compute_and_store_embedding
 
+        scalars_mock = MagicMock()
+        scalars_mock.one_or_none = MagicMock(return_value=None)
         db_mock = AsyncMock()
         result_mock = MagicMock()
-        result_mock.one_or_none = MagicMock(return_value=None)
+        result_mock.scalars = MagicMock(return_value=scalars_mock)
         db_mock.execute = AsyncMock(return_value=result_mock)
 
         with pytest.raises(NotFoundError):
             await compute_and_store_embedding(db_mock, uuid.uuid4(), uuid.uuid4())
 
     @pytest.mark.asyncio
-    async def test_raises_forbidden_when_wrong_teacher(self) -> None:
-        """ForbiddenError raised when the version belongs to a different teacher."""
+    async def test_raises_not_found_when_wrong_teacher(self) -> None:
+        """NotFoundError raised when the version belongs to a different teacher.
+
+        The SQL query includes ``Class.teacher_id == teacher_id`` so unauthorized
+        access returns no row — indistinguishable from a version that doesn't
+        exist — preventing information disclosure.
+        """
         from app.services.embedding import compute_and_store_embedding
-
-        essay_version_id = uuid.uuid4()
-        teacher_id = uuid.uuid4()
-        other_teacher_id = uuid.uuid4()
-
-        version_mock = _make_version_mock(essay_version_id)
-        row_mock = MagicMock()
-        row_mock.__iter__ = MagicMock(return_value=iter([version_mock, other_teacher_id]))
 
         db_mock = AsyncMock()
         result_mock = MagicMock()
-        result_mock.one_or_none = MagicMock(return_value=row_mock)
+        result_mock.scalars = MagicMock(return_value=MagicMock(one_or_none=MagicMock(return_value=None)))
         db_mock.execute = AsyncMock(return_value=result_mock)
 
-        with pytest.raises(ForbiddenError):
-            await compute_and_store_embedding(db_mock, essay_version_id, teacher_id)
+        with pytest.raises(NotFoundError):
+            await compute_and_store_embedding(db_mock, uuid.uuid4(), uuid.uuid4())
 
 
 class TestFlagSimilarEssays:
@@ -329,17 +326,21 @@ class TestFlagSimilarEssays:
 
     @pytest.mark.asyncio
     async def test_below_threshold_pair_not_flagged(self) -> None:
-        """An essay pair below the similarity threshold does NOT create a report."""
+        """An essay pair below the similarity threshold does NOT create a report.
+
+        The SQL WHERE clause filters out below-threshold candidates so they are
+        never returned by the query.  The mock simulates this by returning an
+        empty result set, as Postgres would.
+        """
         from app.services.embedding import flag_similar_essays
 
         essay_version_id = uuid.uuid4()
-        other_version_id = uuid.uuid4()
         assignment_id = uuid.uuid4()
         teacher_id = uuid.uuid4()
         embedding = _fake_embedding()
 
-        # cosine_distance = 0.9 → similarity = 0.1 (below threshold 0.25)
-        rows = [(other_version_id, 0.9)]
+        # Postgres filters out the below-threshold row — no rows returned.
+        rows: list[tuple[uuid.UUID, float]] = []
 
         db_mock = AsyncMock()
         result_mock = MagicMock()

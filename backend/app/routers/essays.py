@@ -141,10 +141,10 @@ async def upload_essays_endpoint(
                 str(essay.assignment_id),
                 str(teacher.id),
             )
-        except Exception as _embed_exc:
+        except Exception as embed_exc:
             logger.warning(
                 "Failed to enqueue embedding task — essay is still ingested",
-                extra={"essay_version_id": str(version.id), "error_type": type(_embed_exc).__name__},
+                extra={"essay_version_id": str(version.id), "error_type": type(embed_exc).__name__},
             )
 
         results.append(
