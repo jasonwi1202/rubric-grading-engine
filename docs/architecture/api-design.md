@@ -529,6 +529,43 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
 | POST | `/grades/{gradeId}/lock` | Lock grade as final |
 | GET | `/grades/{gradeId}/audit` | View audit log for this grade |
 
+**GET /essays/{essayId}/grade response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "essay_version_id": "uuid",
+    "total_score": "7.00",
+    "max_possible_score": "10.00",
+    "summary_feedback": "Overall AI-generated feedback.",
+    "summary_feedback_edited": null,
+    "strictness": "balanced",
+    "ai_model": "gpt-4o",
+    "prompt_version": "grading-v2",
+    "is_locked": false,
+    "locked_at": null,
+    "overall_confidence": "high",
+    "created_at": "2026-04-01T00:00:00Z",
+    "criterion_scores": [
+      {
+        "id": "uuid",
+        "rubric_criterion_id": "uuid",
+        "ai_score": 4,
+        "teacher_score": null,
+        "final_score": 4,
+        "ai_justification": "The essay clearly states a thesis...",
+        "ai_feedback": "Strong thesis — try to connect it more explicitly to your evidence.",
+        "teacher_feedback": null,
+        "confidence": "high",
+        "created_at": "2026-04-01T00:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+`overall_confidence` is derived from the constituent criterion scores: `"low"` if any criterion is `"low"`; `"medium"` if any is `"medium"` (and none is `"low"`); `"high"` if all are `"high"`. `null` for grades produced before M4.1.
+
 **PATCH /grades/{id}/criteria/{criterionId} body:**
 ```json
 {
