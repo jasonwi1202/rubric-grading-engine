@@ -160,7 +160,7 @@ export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) 
   const statusMutation = useMutation({
     mutationFn: (status: "reviewed_clear" | "flagged") =>
       updateIntegrityStatus(report.id, { status }),
-    onSuccess: (updated) => {
+    onSuccess: (updated: IntegrityReportResponse) => {
       queryClient.invalidateQueries({ queryKey: ["integrity", updated.essay_version_id] });
       onStatusUpdate?.(updated);
     },
@@ -232,8 +232,8 @@ export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) 
             <ul className="space-y-2" aria-label="Flagged passages">
               {report.flagged_passages.map((passage, idx) => (
                 <FlaggedPassageItem
-                  key={`${idx}-${(passage as FlaggedPassage).text.slice(0, 20)}`}
-                  passage={passage as FlaggedPassage}
+                  key={`${idx}-${passage.text.slice(0, 20)}`}
+                  passage={passage}
                 />
               ))}
             </ul>

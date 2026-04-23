@@ -15,11 +15,10 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
-from app.exceptions import ForbiddenError, NotFoundError, ValidationError
+from app.exceptions import ForbiddenError, NotFoundError
 from app.main import create_app
 from app.models.integrity_report import IntegrityReportStatus
 from app.schemas.integrity import IntegrityReportResponse, IntegritySummaryResponse
