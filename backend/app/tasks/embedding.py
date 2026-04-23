@@ -18,7 +18,9 @@ Retry behaviour:
 - On ``ValidationError`` (empty essay content or misconfigured threshold),
   the task fails immediately without retrying — retrying would not help.
 - On ``NotFoundError`` the task fails immediately without retrying — the
-  essay/version has been deleted or never belonged to the expected teacher.
+  essay/version has been deleted.
+- On ``ForbiddenError`` the task fails immediately without retrying — the
+  essay/version exists but does not belong to the expected teacher.
 
 Security invariants:
 - No essay content is logged at any level.
@@ -108,7 +110,8 @@ def compute_essay_embedding(
 
     Raises:
         celery.exceptions.Retry: On ``LLMError`` (OpenAI transport failure),
-            with exponential back-off (``2 ** attempt`` seconds).
+            with exponential back-off (``2 ** (attempt + 1)`` seconds;
+            2 s, 4 s, 8 s).
         Exception: Re-raised after exhausted retries so Celery marks the
             task as ``FAILURE``.
     """

@@ -262,36 +262,53 @@ class TestComputeAndStoreEmbedding:
 
     @pytest.mark.asyncio
     async def test_raises_not_found_when_version_missing(self) -> None:
-        """NotFoundError raised when the essay version does not exist."""
+        """NotFoundError raised when the essay version does not exist at all."""
         from app.services.embedding import compute_and_store_embedding
 
-        scalars_mock = MagicMock()
-        scalars_mock.one_or_none = MagicMock(return_value=None)
+        essay_version_id = uuid.uuid4()
+
+        # First execute: tenant-scoped query returns no row.
+        tenant_result = MagicMock()
+        tenant_result.scalars = MagicMock(
+            return_value=MagicMock(one_or_none=MagicMock(return_value=None))
+        )
+        # Second execute: existence check also finds no row (truly missing).
+        exists_result = MagicMock()
+        exists_result.scalar_one_or_none = MagicMock(return_value=None)
+
         db_mock = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.scalars = MagicMock(return_value=scalars_mock)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = AsyncMock(side_effect=[tenant_result, exists_result])
 
         with pytest.raises(NotFoundError):
-            await compute_and_store_embedding(db_mock, uuid.uuid4(), uuid.uuid4())
+            await compute_and_store_embedding(db_mock, essay_version_id, uuid.uuid4())
 
     @pytest.mark.asyncio
     async def test_raises_not_found_when_wrong_teacher(self) -> None:
-        """NotFoundError raised when the version belongs to a different teacher.
+        """ForbiddenError raised when the version belongs to a different teacher.
 
-        The SQL query includes ``Class.teacher_id == teacher_id`` so unauthorized
-        access returns no row — indistinguishable from a version that doesn't
-        exist — preventing information disclosure.
+        The service first does a tenant-scoped query (returns None) and then
+        checks bare existence.  When the version exists but belongs to another
+        teacher, ``ForbiddenError`` is raised (not ``NotFoundError``) so the
+        caller receives a clear 403 rather than a misleading 404.
         """
         from app.services.embedding import compute_and_store_embedding
 
-        db_mock = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.scalars = MagicMock(return_value=MagicMock(one_or_none=MagicMock(return_value=None)))
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        essay_version_id = uuid.uuid4()
 
-        with pytest.raises(NotFoundError):
-            await compute_and_store_embedding(db_mock, uuid.uuid4(), uuid.uuid4())
+        # First execute: tenant-scoped query returns no row (wrong teacher).
+        tenant_result = MagicMock()
+        tenant_result.scalars = MagicMock(
+            return_value=MagicMock(one_or_none=MagicMock(return_value=None))
+        )
+        # Second execute: existence check finds the row (version does exist).
+        exists_result = MagicMock()
+        exists_result.scalar_one_or_none = MagicMock(return_value=essay_version_id)
+
+        db_mock = AsyncMock()
+        db_mock.execute = AsyncMock(side_effect=[tenant_result, exists_result])
+
+        with pytest.raises(ForbiddenError):
+            await compute_and_store_embedding(db_mock, essay_version_id, uuid.uuid4())
 
     @pytest.mark.asyncio
     async def test_skips_embedding_if_already_present(self) -> None:

@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import NotFoundError, ValidationError
+from app.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
@@ -51,18 +51,15 @@ async def compute_and_store_embedding(
         The computed embedding vector as a ``list[float]``.
 
     Raises:
-        NotFoundError: ``EssayVersion`` does not exist, or belongs to a
-            different teacher (both treated the same to avoid information
-            disclosure).
+        NotFoundError: ``EssayVersion`` does not exist.
+        ForbiddenError: ``EssayVersion`` exists but belongs to a different
+            teacher.
         LLMError: OpenAI call failed after all retries (raised from
             :func:`app.llm.client.call_embedding`).
     """
     from app.llm.client import call_embedding  # noqa: PLC0415 — lazy import
 
-    # Ownership-aware load: JOIN + teacher_id filter ensure tenant isolation in
-    # a single query.  If the version doesn't exist *or* belongs to a different
-    # teacher, the row will be absent — both cases raise NotFoundError so that
-    # the existence of another teacher's resources is not disclosed.
+    # Single tenant-scoped query: join + teacher_id filter.
     result = await db.execute(
         select(EssayVersion)
         .join(Essay, EssayVersion.essay_id == Essay.id)
@@ -73,7 +70,14 @@ async def compute_and_store_embedding(
     version = result.scalars().one_or_none()
 
     if version is None:
-        raise NotFoundError("EssayVersion not found.")
+        # Distinguish truly missing from cross-tenant access using a
+        # lightweight existence-only query (no data returned).
+        exists_result = await db.execute(
+            select(EssayVersion.id).where(EssayVersion.id == essay_version_id)
+        )
+        if exists_result.scalar_one_or_none() is None:
+            raise NotFoundError("EssayVersion not found.")
+        raise ForbiddenError("You do not have access to this essay version.")
 
     # Idempotency: if the embedding was already computed (e.g. task was
     # re-enqueued after a partial failure), return it without spending another
