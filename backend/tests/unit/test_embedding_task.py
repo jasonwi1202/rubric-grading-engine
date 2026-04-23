@@ -283,7 +283,7 @@ class TestComputeAndStoreEmbedding:
             await compute_and_store_embedding(db_mock, essay_version_id, uuid.uuid4())
 
     @pytest.mark.asyncio
-    async def test_raises_not_found_when_wrong_teacher(self) -> None:
+    async def test_raises_forbidden_when_wrong_teacher(self) -> None:
         """ForbiddenError raised when the version belongs to a different teacher.
 
         The service first does a tenant-scoped query (returns None) and then
