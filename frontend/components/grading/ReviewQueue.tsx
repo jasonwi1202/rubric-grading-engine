@@ -129,6 +129,9 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
   // Bulk-approve mutation — M4.2.
   // Locks high-confidence essays with bounded concurrency (max 5 in-flight at
   // once) so large batches don't flood the API.
+  // Partial failure: if a batch rejects, already-locked essays from earlier
+  // batches remain locked. The teacher should refresh to see the updated state
+  // and retry the remaining items.
   const BULK_CONCURRENCY = 5;
   const {
     mutate: executeBulkApprove,

@@ -91,6 +91,14 @@ const STATUS_ORDER: Record<ReviewStatus, number> = {
 };
 
 /**
+ * Stable tie-breaker: sort by ISO 8601 submitted_at ascending (earlier first).
+ * String comparison is correct for ISO dates without parsing overhead.
+ */
+function compareBySubmittedAt(a: ReviewQueueEssay, b: ReviewQueueEssay): number {
+  return a.submitted_at < b.submitted_at ? -1 : a.submitted_at > b.submitted_at ? 1 : 0;
+}
+
+/**
  * Numeric ordering for confidence sort (low-confidence first in ascending order).
  * Essays with null/missing confidence are always placed last.
  */
@@ -160,10 +168,7 @@ export function sortEssays(
         // Null/missing confidence always sorted last regardless of direction.
         const aConf = a.overall_confidence ?? null;
         const bConf = b.overall_confidence ?? null;
-        if (aConf === null && bConf === null) {
-          // Deterministic tie-break: earlier submission first.
-          return a.submitted_at < b.submitted_at ? -1 : a.submitted_at > b.submitted_at ? 1 : 0;
-        }
+        if (aConf === null && bConf === null) return compareBySubmittedAt(a, b);
         if (aConf === null) return 1;
         if (bConf === null) return -1;
         const aOrder = CONFIDENCE_ORDER[aConf];
@@ -171,7 +176,7 @@ export function sortEssays(
         const diff = aOrder - bOrder;
         if (diff !== 0) return diff * multiplier;
         // Within the same confidence level: deterministic tie-break by submitted_at.
-        return a.submitted_at < b.submitted_at ? -1 : a.submitted_at > b.submitted_at ? 1 : 0;
+        return compareBySubmittedAt(a, b);
       }
 
       default:
