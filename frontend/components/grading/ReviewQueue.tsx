@@ -203,8 +203,7 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
     } finally {
       setBulkApproving(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [essays, onBulkApproveSuccess]);
+  }, [highConfidenceUnlocked, onBulkApproveSuccess]);
 
   return (
     <div>
