@@ -22,7 +22,7 @@ class RegradeRequestCreate(BaseModel):
         ...,
         min_length=1,
         max_length=5000,
-        description="The student's stated justification for the regrade request.",
+        description="Teacher-entered rationale describing why the grade should be reconsidered.",
     )
     # Targets a specific criterion when set; targets the whole grade otherwise.
     criterion_score_id: uuid.UUID | None = Field(

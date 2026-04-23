@@ -154,10 +154,18 @@ class TestCreateRegradeRequest:
                 # no criterion_score_id, so no CS ownership check
             ]
         )
-        db.refresh = AsyncMock(side_effect=lambda obj: None)
-        # After refresh, the mock object retains the fields set before commit.
-        rr_mock = _make_regrade_request(grade_id=grade.id, teacher_id=teacher_id)
-        db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", rr_mock.id) or setattr(obj, "created_at", rr_mock.created_at) or setattr(obj, "status", RegradeRequestStatus.open) or setattr(obj, "criterion_score_id", None) or setattr(obj, "resolution_note", None) or setattr(obj, "resolved_at", None))
+
+        def _refresh_regrade_request(obj: object) -> None:
+            """Simulate db.refresh() for a newly created RegradeRequest."""
+            rr_stub = _make_regrade_request(grade_id=grade.id, teacher_id=teacher_id)
+            obj.id = rr_stub.id  # type: ignore[attr-defined]
+            obj.created_at = rr_stub.created_at  # type: ignore[attr-defined]
+            obj.status = RegradeRequestStatus.open  # type: ignore[attr-defined]
+            obj.criterion_score_id = None  # type: ignore[attr-defined]
+            obj.resolution_note = None  # type: ignore[attr-defined]
+            obj.resolved_at = None  # type: ignore[attr-defined]
+
+        db.refresh = AsyncMock(side_effect=_refresh_regrade_request)
 
         body = RegradeRequestCreate(dispute_text="Score seems too low.")
 
