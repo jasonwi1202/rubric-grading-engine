@@ -1,4 +1,4 @@
-"""Unit tests for app/tasks/embedding.py and app/services/embedding.py (M4.4).
+"""Unit tests for app/tasks/embedding.py (M4.4 → M4.5).
 
 All database and OpenAI calls are mocked — no real broker, no real PostgreSQL.
 Tests call the underlying async helpers directly (not via Celery worker),
@@ -8,9 +8,8 @@ No student PII in any fixture.
 
 Coverage:
 - Task is registered in Celery with the correct name and max_retries.
-- Happy path: embedding computed, stored, similarity scan runs.
-- Similarity pair above threshold: IntegrityReport written.
-- Similarity pair below threshold: IntegrityReport NOT written.
+- Happy path: run_integrity_check is called and passage count returned.
+- NotFoundError propagates when essay version is missing.
 - LLMError triggers retry with exponential backoff.
 - ForbiddenError / NotFoundError do not trigger retry.
 - OpenAI client is always mocked — no real API calls.
@@ -24,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.exceptions import ForbiddenError, LLMError, NotFoundError, ValidationError
+from app.services.integrity import IntegrityResult
 from app.tasks.celery_app import celery
 from app.tasks.embedding import _run_compute_essay_embedding, compute_essay_embedding
 
@@ -71,27 +71,41 @@ class TestComputeEssayEmbeddingTaskRegistration:
 
 
 class TestRunComputeEssayEmbedding:
+    def _make_text_db(self, content: str | None = "Sample essay text for testing.") -> AsyncMock:
+        """Return a DB mock whose execute() returns the given essay content."""
+        db = AsyncMock()
+        text_result = MagicMock()
+        text_result.scalar_one_or_none = MagicMock(return_value=content)
+        db.execute = AsyncMock(return_value=text_result)
+        return db
+
+    def _make_cm(self, db_mock: AsyncMock) -> AsyncMock:
+        """Wrap a DB mock in an async context-manager mock."""
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        return cm
+
     @pytest.mark.asyncio
-    async def test_happy_path_calls_service_and_returns_flagged_count(self) -> None:
-        """_run_compute_essay_embedding calls both service functions and returns count."""
+    async def test_happy_path_calls_integrity_check_and_returns_passage_count(self) -> None:
+        """_run_compute_essay_embedding calls run_integrity_check and returns len(flagged_passages)."""
         essay_version_id = str(uuid.uuid4())
         assignment_id = str(uuid.uuid4())
         teacher_id = str(uuid.uuid4())
-        embedding = _fake_embedding()
 
-        cm = AsyncMock()
-        cm.__aenter__ = AsyncMock(return_value=AsyncMock())
-        cm.__aexit__ = AsyncMock(return_value=False)
+        db_mock = self._make_text_db()
+        cm = self._make_cm(db_mock)
+
+        expected = IntegrityResult(
+            provider="internal",
+            flagged_passages=[{"text": "s1"}, {"text": "s2"}],
+        )
 
         with (
             patch("app.tasks.embedding.AsyncSessionLocal", return_value=cm),
             patch(
-                "app.services.embedding.compute_and_store_embedding",
-                new=AsyncMock(return_value=embedding),
-            ),
-            patch(
-                "app.services.embedding.flag_similar_essays",
-                new=AsyncMock(return_value=2),
+                "app.services.integrity.run_integrity_check",
+                new=AsyncMock(return_value=expected),
             ),
         ):
             result = await _run_compute_essay_embedding(
@@ -101,20 +115,35 @@ class TestRunComputeEssayEmbedding:
         assert result == 2
 
     @pytest.mark.asyncio
-    async def test_llm_error_propagates(self) -> None:
-        """LLMError raised by compute_and_store_embedding propagates upward."""
+    async def test_not_found_when_essay_version_missing(self) -> None:
+        """NotFoundError is raised when the essay version cannot be fetched."""
         essay_version_id = str(uuid.uuid4())
         assignment_id = str(uuid.uuid4())
         teacher_id = str(uuid.uuid4())
 
-        cm = AsyncMock()
-        cm.__aenter__ = AsyncMock(return_value=AsyncMock())
-        cm.__aexit__ = AsyncMock(return_value=False)
+        db_mock = self._make_text_db(content=None)
+        cm = self._make_cm(db_mock)
+
+        with (
+            patch("app.tasks.embedding.AsyncSessionLocal", return_value=cm),
+            pytest.raises(NotFoundError),
+        ):
+            await _run_compute_essay_embedding(essay_version_id, assignment_id, teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_llm_error_propagates(self) -> None:
+        """LLMError raised by run_integrity_check propagates upward."""
+        essay_version_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        db_mock = self._make_text_db()
+        cm = self._make_cm(db_mock)
 
         with (
             patch("app.tasks.embedding.AsyncSessionLocal", return_value=cm),
             patch(
-                "app.services.embedding.compute_and_store_embedding",
+                "app.services.integrity.run_integrity_check",
                 new=AsyncMock(side_effect=LLMError("OpenAI timed out")),
             ),
             pytest.raises(LLMError),

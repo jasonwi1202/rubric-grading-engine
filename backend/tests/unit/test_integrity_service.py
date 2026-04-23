@@ -43,15 +43,18 @@ def _make_uuid() -> uuid.UUID:
 
 
 def _make_db() -> AsyncMock:
-    """Minimal async DB session mock (tenant check passes by default)."""
+    """Minimal async DB session mock (tenant check passes, no existing report)."""
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
-    # Default: ownership query finds a row (UUID) → passes the tenant check.
-    _ownership_result = MagicMock()
-    _ownership_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4())
-    db.execute = AsyncMock(return_value=_ownership_result)
+    # First call: tenant-scoped ownership check → passes (returns a UUID).
+    ownership_result = MagicMock()
+    ownership_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4())
+    # Second call: idempotency check → no existing report (returns None).
+    idempotency_result = MagicMock()
+    idempotency_result.scalar_one_or_none = MagicMock(return_value=None)
+    db.execute = AsyncMock(side_effect=[ownership_result, idempotency_result])
     return db
 
 
@@ -708,10 +711,109 @@ class TestOriginalityAiProvider:
 
         db.rollback.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_idempotency_returns_existing_report_without_api_call(self) -> None:
+        """When an IntegrityReport already exists, the API is not called again."""
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
 
-# ---------------------------------------------------------------------------
-# run_integrity_check — fallback behaviour
-# ---------------------------------------------------------------------------
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.rollback = AsyncMock()
+
+        # First call: ownership check → passes.
+        ownership_result = MagicMock()
+        ownership_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4())
+
+        # Second call: idempotency check → existing report found.
+        existing_report = MagicMock()
+        existing_report.ai_likelihood = 0.77
+        existing_report.similarity_score = None
+        existing_report.flagged_passages = [{"text": "cached passage", "ai_probability": 0.9}]
+        idempotency_result = MagicMock()
+        idempotency_result.scalar_one_or_none = MagicMock(return_value=existing_report)
+
+        db.execute = AsyncMock(side_effect=[ownership_result, idempotency_result])
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock()
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            result = await provider.check(
+                db=db,
+                essay_version_id=essay_version_id,
+                assignment_id=assignment_id,
+                teacher_id=teacher_id,
+                essay_text="Some text.",
+            )
+
+        # API must not have been called.
+        mock_client.post.assert_not_called()
+        # Cached values are returned.
+        assert result.provider == "originality_ai"
+        assert result.ai_likelihood == pytest.approx(0.77)
+        assert len(result.flagged_passages) == 1
+        assert result.flagged_passages[0]["text"] == "cached passage"
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_response_raises_provider_unavailable(self) -> None:
+        """A JSON decode error from response.json() raises IntegrityProviderUnavailableError."""
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
+        db = _make_db()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(side_effect=ValueError("No JSON content"))
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            with pytest.raises(IntegrityProviderUnavailableError):
+                await provider.check(
+                    db=db,
+                    essay_version_id=essay_version_id,
+                    assignment_id=assignment_id,
+                    teacher_id=teacher_id,
+                    essay_text="Sample text.",
+                )
+
+    @pytest.mark.asyncio
+    async def test_non_dict_json_response_raises_provider_unavailable(self) -> None:
+        """A non-dict JSON response (e.g. a list) raises IntegrityProviderUnavailableError."""
+        essay_version_id = _make_uuid()
+        assignment_id = _make_uuid()
+        teacher_id = _make_uuid()
+        db = _make_db()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        # API returns a JSON array instead of an object.
+        mock_response.json = MagicMock(return_value=[{"score": 0.5}])
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            provider = OriginalityAiProvider(api_key="fake-key-for-testing")
+            with pytest.raises(IntegrityProviderUnavailableError):
+                await provider.check(
+                    db=db,
+                    essay_version_id=essay_version_id,
+                    assignment_id=assignment_id,
+                    teacher_id=teacher_id,
+                    essay_text="Sample text.",
+                )
 
 
 class TestRunIntegrityCheck:

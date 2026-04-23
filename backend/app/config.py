@@ -204,7 +204,7 @@ class Settings(BaseSettings):
         provider = (self.integrity_provider or "internal").lower()
         if provider in _known_third_party and not self.integrity_api_key:
             raise ValueError(
-                "INTEGRITY_API_KEY is required when INTEGRITY_PROVIDER is not 'internal'"
+                "INTEGRITY_API_KEY is required when INTEGRITY_PROVIDER is 'originality_ai'"
             )
         return self
 

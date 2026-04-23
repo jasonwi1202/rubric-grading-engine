@@ -217,22 +217,55 @@ class OriginalityAiProvider(IntegrityProvider):
         teacher_id: uuid.UUID,
         essay_text: str,
     ) -> IntegrityResult:
-        # Verify essay version exists and is owned by the requesting teacher
-        # before spending an API credit (tenant isolation).
+        # Verify essay version exists under the provided assignment and is owned
+        # by the requesting teacher before spending an API credit (tenant
+        # isolation).
         ownership_result = await db.execute(
             select(EssayVersion.id)
             .join(Essay, EssayVersion.essay_id == Essay.id)
             .join(Assignment, Essay.assignment_id == Assignment.id)
             .join(Class, Assignment.class_id == Class.id)
-            .where(EssayVersion.id == essay_version_id, Class.teacher_id == teacher_id)
+            .where(
+                EssayVersion.id == essay_version_id,
+                Essay.assignment_id == assignment_id,
+                Class.teacher_id == teacher_id,
+            )
         )
         if ownership_result.scalar_one_or_none() is None:
             exists_result = await db.execute(
-                select(EssayVersion.id).where(EssayVersion.id == essay_version_id)
+                select(EssayVersion.id)
+                .join(Essay, EssayVersion.essay_id == Essay.id)
+                .where(
+                    EssayVersion.id == essay_version_id,
+                    Essay.assignment_id == assignment_id,
+                )
             )
             if exists_result.scalar_one_or_none() is None:
                 raise NotFoundError("EssayVersion not found.")
             raise ForbiddenError("You do not have access to this essay version.")
+
+        # Idempotency guard: if a report for this version already exists, return
+        # it immediately without spending an API credit.
+        idempotency_check = await db.execute(
+            select(IntegrityReport)
+            .where(
+                IntegrityReport.essay_version_id == essay_version_id,
+                IntegrityReport.provider == "originality_ai",
+                IntegrityReport.teacher_id == teacher_id,
+            )
+        )
+        existing = idempotency_check.scalar_one_or_none()
+        if existing is not None:
+            logger.info(
+                "OriginalityAiProvider: existing report found — skipping API call",
+                extra={"essay_version_id": str(essay_version_id)},
+            )
+            return IntegrityResult(
+                provider="originality_ai",
+                ai_likelihood=existing.ai_likelihood,
+                similarity_score=existing.similarity_score,
+                flagged_passages=existing.flagged_passages or [],
+            )
 
         ai_likelihood: float | None = None
         similarity_score: float | None = None
@@ -246,7 +279,25 @@ class OriginalityAiProvider(IntegrityProvider):
                     json={"content": essay_text, "aiModelVersion": "1"},
                 )
                 response.raise_for_status()
-                data: dict[str, Any] = response.json()
+                try:
+                    raw_data = response.json()
+                except Exception:
+                    logger.warning(
+                        "OriginalityAiProvider: could not decode JSON from response",
+                        extra={"essay_version_id": str(essay_version_id)},
+                    )
+                    raise IntegrityProviderUnavailableError(
+                        "Originality.ai returned invalid JSON"
+                    ) from None
+                if not isinstance(raw_data, dict):
+                    logger.warning(
+                        "OriginalityAiProvider: unexpected response type (not a JSON object)",
+                        extra={"essay_version_id": str(essay_version_id)},
+                    )
+                    raise IntegrityProviderUnavailableError(
+                        "Originality.ai returned unexpected response type"
+                    )
+                data: dict[str, Any] = raw_data
 
         except (httpx.TransportError, httpx.TimeoutException) as exc:
             logger.warning(
