@@ -883,16 +883,49 @@ describe("ReviewQueue — fast-review mode", () => {
 
   it("filter dropdown reflects low_confidence when fast-review is on", async () => {
     const user = userEvent.setup();
-    render(
-      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
-      { wrapper },
-    );
+    // Must use essays that include confidence data — fast-review checkbox is only
+    // rendered when at least one essay has overall_confidence (hasConfidenceData).
+    const essays = [
+      makeEssay({
+        essay_id: "e-low-fr-sync",
+        status: "graded",
+        overall_confidence: "low",
+        student_name: "Student Low",
+      }),
+      makeEssay({
+        essay_id: "e-high-fr-sync",
+        status: "graded",
+        overall_confidence: "high",
+        student_name: "Student High",
+      }),
+    ];
+    render(<ReviewQueue essays={essays} assignmentId={ASSIGNMENT_ID} />, { wrapper });
 
     const fastReviewCheckbox = screen.getByRole("checkbox", { name: /fast review/i });
     await user.click(fastReviewCheckbox);
 
     const select = screen.getByRole("combobox", { name: /filter/i });
     expect((select as HTMLSelectElement).value).toBe("low_confidence");
+  });
+
+  it("fast-review checkbox is not shown when no essay has confidence data", () => {
+    // BASE_ESSAYS have no overall_confidence — fast-review should be hidden
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    expect(screen.queryByRole("checkbox", { name: /fast review/i })).not.toBeInTheDocument();
+  });
+
+  it("low_confidence option is not in filter dropdown when no confidence data", () => {
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    const select = screen.getByRole("combobox", { name: /filter/i });
+    // The low_confidence option should not exist in the dropdown
+    const options = Array.from((select as HTMLSelectElement).options).map((o) => o.value);
+    expect(options).not.toContain("low_confidence");
   });
 });
 

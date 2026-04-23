@@ -6,9 +6,10 @@
  *
  * Features:
  * - Status badges: Unreviewed / In review / Locked
- * - Confidence badges: high / medium / low (M4.2)
+ * - Confidence badges: high / medium / low (M4.2, when backend returns overall_confidence)
  * - Sort by: confidence (default, low first), status, score, student name
- * - Filter by status; fast-review mode filters to low-confidence only (M4.2)
+ * - Filter by status; fast-review mode and low-confidence filter are shown only
+ *   when the backend essay list includes overall_confidence (M4.2)
  * - Bulk-approve: lock all high-confidence, non-locked essays at once (M4.2)
  * - Keyboard navigation (ArrowUp / ArrowDown to move focus, Enter to open)
  * - Links to individual essay review interface (M3.21)
@@ -112,6 +113,16 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
   const filterId = useId();
   const fastReviewId = useId();
 
+  // True when the backend has returned at least one essay with overall_confidence.
+  // The essay list endpoint (GET /assignments/{id}/essays) does not yet include
+  // overall_confidence; when it does, confidence-specific UI elements
+  // (fast-review toggle, low-confidence filter option, bulk-approve) will
+  // activate automatically without any code change.
+  const hasConfidenceData = useMemo(
+    () => essays.some((e) => e.overall_confidence != null),
+    [essays],
+  );
+
   // High-confidence essays that are not yet locked and have a grade_id.
   // These are the candidates for bulk-approve and are the single source of
   // truth used both for rendering the button and for the mutation call.
@@ -155,7 +166,10 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
   }, [highConfidenceUnlocked, executeBulkApprove, onBulkApproveSuccess]);
 
   // Derive the displayed list: apply fast-review override then status filter, then sort.
-  const activeFilter: StatusFilter = fastReview ? "low_confidence" : filter;
+  // fast-review is only active when confidence data is actually available from the backend;
+  // when no essay has overall_confidence the fast-review state is ignored so teachers
+  // never see a permanently-empty list.
+  const activeFilter: StatusFilter = (fastReview && hasConfidenceData) ? "low_confidence" : filter;
   const displayed = sortEssays(
     filterEssays(essays, activeFilter),
     sortKey,
@@ -226,7 +240,7 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
           </label>
           <select
             id={filterId}
-            value={fastReview ? "low_confidence" : filter}
+            value={fastReview && hasConfidenceData ? "low_confidence" : filter}
             onChange={(e) => {
               const val = e.target.value as StatusFilter;
               if (val === "low_confidence") {
@@ -239,7 +253,9 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
             className="rounded-md border border-gray-300 bg-white py-1.5 pl-2 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             {(
-              ["all", "unreviewed", "in_review", "locked", "low_confidence"] as StatusFilter[]
+              (hasConfidenceData
+                ? ["all", "unreviewed", "in_review", "locked", "low_confidence"]
+                : ["all", "unreviewed", "in_review", "locked"]) as StatusFilter[]
             ).map((f) => (
               <option key={f} value={f}>
                 {FILTER_LABELS[f]}
@@ -248,19 +264,21 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
           </select>
         </div>
 
-        {/* Fast-review mode toggle — M4.2 */}
-        <div className="flex items-center gap-2">
-          <input
-            id={fastReviewId}
-            type="checkbox"
-            checked={fastReview}
-            onChange={(e) => setFastReview(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-          <label htmlFor={fastReviewId} className="text-sm font-medium text-gray-700">
-            Fast review
-          </label>
-        </div>
+        {/* Fast-review mode toggle — only available when backend returns confidence data (M4.2) */}
+        {hasConfidenceData && (
+          <div className="flex items-center gap-2">
+            <input
+              id={fastReviewId}
+              type="checkbox"
+              checked={fastReview}
+              onChange={(e) => setFastReview(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor={fastReviewId} className="text-sm font-medium text-gray-700">
+              Fast review
+            </label>
+          </div>
+        )}
 
         {/* Sort buttons */}
         <div
