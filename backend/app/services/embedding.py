@@ -120,7 +120,7 @@ async def flag_similar_essays(
         new ``IntegrityReport`` rows inserted).
     """
     from pgvector.sqlalchemy import Vector  # noqa: PLC0415 — lazy import
-    from sqlalchemy import func  # noqa: PLC0415
+    from sqlalchemy import func, literal  # noqa: PLC0415
 
     threshold = settings.integrity_similarity_threshold
 
@@ -130,7 +130,7 @@ async def flag_similar_essays(
     #   i.e. distance <= (1 − threshold).
     cosine_dist = func.cosine_distance(
         EssayVersion.embedding,
-        func.cast(embedding, Vector(1536)),
+        literal(embedding, type_=Vector(1536)),
     ).label("cosine_dist")
 
     result = await db.execute(

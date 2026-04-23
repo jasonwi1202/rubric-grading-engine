@@ -127,6 +127,7 @@ module = [
     "testcontainers.*",
     "rapidfuzz.*",
     "fpdf.*",
+    "pgvector.*",
 ]
 ignore_missing_imports = true
 
