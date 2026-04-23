@@ -31,10 +31,15 @@ from typing import Any
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import AsyncSessionLocal
+from app.exceptions import ForbiddenError, NotFoundError
+from app.models.assignment import Assignment
+from app.models.class_ import Class
+from app.models.essay import Essay, EssayVersion
 from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
 
 logger = logging.getLogger(__name__)
@@ -212,6 +217,23 @@ class OriginalityAiProvider(IntegrityProvider):
         teacher_id: uuid.UUID,
         essay_text: str,
     ) -> IntegrityResult:
+        # Verify essay version exists and is owned by the requesting teacher
+        # before spending an API credit (tenant isolation).
+        ownership_result = await db.execute(
+            select(EssayVersion.id)
+            .join(Essay, EssayVersion.essay_id == Essay.id)
+            .join(Assignment, Essay.assignment_id == Assignment.id)
+            .join(Class, Assignment.class_id == Class.id)
+            .where(EssayVersion.id == essay_version_id, Class.teacher_id == teacher_id)
+        )
+        if ownership_result.scalar_one_or_none() is None:
+            exists_result = await db.execute(
+                select(EssayVersion.id).where(EssayVersion.id == essay_version_id)
+            )
+            if exists_result.scalar_one_or_none() is None:
+                raise NotFoundError("EssayVersion not found.")
+            raise ForbiddenError("You do not have access to this essay version.")
+
         ai_likelihood: float | None = None
         similarity_score: float | None = None
         flagged_passages: list[dict[str, Any]] = []
@@ -237,6 +259,21 @@ class OriginalityAiProvider(IntegrityProvider):
             raise IntegrityProviderUnavailableError(
                 "Originality.ai is unavailable"
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code >= 500 or status_code == 429:
+                logger.warning(
+                    "OriginalityAiProvider HTTP error — provider unavailable",
+                    extra={
+                        "essay_version_id": str(essay_version_id),
+                        "error_type": type(exc).__name__,
+                        "status_code": status_code,
+                    },
+                )
+                raise IntegrityProviderUnavailableError(
+                    "Originality.ai is unavailable"
+                ) from exc
+            raise
 
         # Normalise response fields; ignore unrecognised keys gracefully.
         raw_score = data.get("score", {})
@@ -290,7 +327,11 @@ class OriginalityAiProvider(IntegrityProvider):
             status=IntegrityReportStatus.pending,
         )
         db.add(report)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise
 
         logger.info(
             "OriginalityAiProvider check complete",
