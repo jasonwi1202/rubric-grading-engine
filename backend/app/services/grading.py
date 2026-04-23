@@ -43,6 +43,7 @@ from app.exceptions import (
     ValidationError,
 )
 from app.llm.client import CriterionInfo, call_grading
+from app.llm.parsers import ParsedCriterionScore
 from app.models.assignment import Assignment
 from app.models.audit_log import AuditLog
 from app.models.class_ import Class
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 def _derive_overall_confidence(
-    criterion_scores: list,
+    criterion_scores: list[ParsedCriterionScore],
 ) -> ConfidenceLevel:
     """Derive overall essay confidence from per-criterion confidence levels.
 
@@ -65,7 +66,7 @@ def _derive_overall_confidence(
     An empty criterion list returns ``"low"`` (safest default).
 
     Args:
-        criterion_scores: List of :class:`ParsedCriterionScore` objects from
+        criterion_scores: list of :class:`ParsedCriterionScore` objects from
             the parser.  Uses the ``.confidence`` attribute (string).
 
     Returns:
