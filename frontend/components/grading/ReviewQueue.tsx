@@ -188,13 +188,17 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
 
   /** Bulk-approve: lock all high-confidence, non-locked essays. */
   const handleBulkApprove = useCallback(async () => {
-    if (highConfidenceUnlocked.length === 0) return;
+    const eligible = essays.filter(
+      (e) =>
+        e.overall_confidence === "high" &&
+        getReviewStatus(e.status) !== "locked" &&
+        e.grade_id != null,
+    );
+    if (eligible.length === 0) return;
     setBulkApproving(true);
     setBulkApproveError(null);
     try {
-      await Promise.all(
-        highConfidenceUnlocked.map((e) => lockGrade(e.grade_id!)),
-      );
+      await Promise.all(eligible.map((e) => lockGrade(e.grade_id!)));
       onBulkApproveSuccess?.();
     } catch {
       setBulkApproveError(
@@ -203,7 +207,7 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
     } finally {
       setBulkApproving(false);
     }
-  }, [highConfidenceUnlocked, onBulkApproveSuccess]);
+  }, [essays, onBulkApproveSuccess]);
 
   return (
     <div>

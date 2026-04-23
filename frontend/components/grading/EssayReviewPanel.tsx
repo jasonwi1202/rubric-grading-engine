@@ -376,7 +376,6 @@ function CriterionCard({
       {criterionScore.confidence === "low" && (
         <p
           role="note"
-          aria-label="Low confidence explanation"
           className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700"
         >
           <span className="font-semibold">Why low confidence? </span>
