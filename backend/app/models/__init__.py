@@ -19,6 +19,7 @@ and so application code can import individual models cleanly::
     from app.models.essay import Essay, EssayVersion
     from app.models.grade import Grade, CriterionScore
     from app.models.comment_bank import CommentBankEntry
+    from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
 """
 
 from app.models import assignment as assignment  # noqa: F401 ΓÇö registers mapped class
@@ -30,6 +31,7 @@ from app.models import contact as contact  # noqa: F401 ΓÇö registers mapped 
 from app.models import dpa_request as dpa_request  # noqa: F401 ΓÇö registers mapped class
 from app.models import essay as essay  # noqa: F401 ΓÇö registers mapped class
 from app.models import grade as grade  # noqa: F401 ΓÇö registers mapped class
+from app.models import integrity_report as integrity_report  # noqa: F401 ΓÇö registers mapped class
 from app.models import rubric as rubric  # noqa: F401 ΓÇö registers mapped class
 from app.models import student as student  # noqa: F401 ΓÇö registers mapped class
 from app.models import user as user  # noqa: F401 ΓÇö registers mapped class
@@ -44,6 +46,7 @@ __all__ = [
     "dpa_request",
     "essay",
     "grade",
+    "integrity_report",
     "rubric",
     "student",
     "user",
