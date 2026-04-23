@@ -106,48 +106,29 @@ def upgrade() -> None:
         ),
     )
 
-    # Indexes are created CONCURRENTLY to avoid locking the table during
-    # deployment.  CONCURRENTLY cannot run inside a transaction, so these
-    # calls are wrapped in autocommit_block() which commits the preceding
-    # create_table transaction before issuing each CREATE INDEX CONCURRENTLY.
-    with op.get_context().autocommit_block():
-        op.create_index(
-            "ix_regrade_requests_grade_id",
-            "regrade_requests",
-            ["grade_id"],
-            postgresql_concurrently=True,
-        )
-        op.create_index(
-            "ix_regrade_requests_criterion_score_id",
-            "regrade_requests",
-            ["criterion_score_id"],
-            postgresql_concurrently=True,
-        )
-        op.create_index(
-            "ix_regrade_requests_teacher_id",
-            "regrade_requests",
-            ["teacher_id"],
-            postgresql_concurrently=True,
-        )
+    # This table is created in the same migration, so create indexes
+    # transactionally to keep the migration atomic and safely re-runnable.
+    op.create_index(
+        "ix_regrade_requests_grade_id",
+        "regrade_requests",
+        ["grade_id"],
+    )
+    op.create_index(
+        "ix_regrade_requests_criterion_score_id",
+        "regrade_requests",
+        ["criterion_score_id"],
+    )
+    op.create_index(
+        "ix_regrade_requests_teacher_id",
+        "regrade_requests",
+        ["teacher_id"],
+    )
 
 
 def downgrade() -> None:
-    with op.get_context().autocommit_block():
-        op.drop_index(
-            "ix_regrade_requests_teacher_id",
-            table_name="regrade_requests",
-            postgresql_concurrently=True,
-        )
-        op.drop_index(
-            "ix_regrade_requests_criterion_score_id",
-            table_name="regrade_requests",
-            postgresql_concurrently=True,
-        )
-        op.drop_index(
-            "ix_regrade_requests_grade_id",
-            table_name="regrade_requests",
-            postgresql_concurrently=True,
-        )
+    op.drop_index("ix_regrade_requests_teacher_id", table_name="regrade_requests")
+    op.drop_index("ix_regrade_requests_criterion_score_id", table_name="regrade_requests")
+    op.drop_index("ix_regrade_requests_grade_id", table_name="regrade_requests")
     op.drop_table("regrade_requests")
 
     bind = op.get_bind()

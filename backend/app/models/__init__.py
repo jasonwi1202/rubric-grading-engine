@@ -33,7 +33,7 @@ from app.models import dpa_request as dpa_request  # noqa: F401 ΓÇö registers
 from app.models import essay as essay  # noqa: F401 ΓÇö registers mapped class
 from app.models import grade as grade  # noqa: F401 ΓÇö registers mapped class
 from app.models import integrity_report as integrity_report  # noqa: F401 ΓÇö registers mapped class
-from app.models import regrade_request as regrade_request  # noqa: F401 ΓÇö registers mapped class
+from app.models import regrade_request as regrade_request  # noqa: F401 — registers mapped class
 from app.models import rubric as rubric  # noqa: F401 ΓÇö registers mapped class
 from app.models import student as student  # noqa: F401 ΓÇö registers mapped class
 from app.models import user as user  # noqa: F401 ΓÇö registers mapped class

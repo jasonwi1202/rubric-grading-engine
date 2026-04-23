@@ -7,8 +7,10 @@ grade (or a specific criterion score within that grade).  The teacher supplies a
 and ``resolved_at``.
 
 ``criterion_score_id`` is nullable — a request may target the grade as a whole
-or a single criterion.  When present it references a ``CriterionScore`` row that
-belongs to the same ``grade_id`` grade.
+or a single criterion.  When present it references a ``CriterionScore`` row.
+The additional invariant that the referenced criterion score corresponds to the
+same ``grade_id`` is an application-level guarantee that must be validated in
+the service layer; it is not enforced by this model definition alone.
 """
 
 from __future__ import annotations
