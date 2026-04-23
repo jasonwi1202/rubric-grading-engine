@@ -99,9 +99,9 @@ async def flag_similar_essays(
     """Compare the essay against same-assignment versions and flag similar pairs.
 
     Queries all other ``EssayVersion`` rows that belong to the same assignment
-    and have a stored embedding.  For each pair whose cosine similarity exceeds
-    ``settings.integrity_similarity_threshold``, an ``IntegrityReport`` record
-    with ``provider="internal"`` is written.
+    and have a stored embedding.  For each pair whose cosine similarity meets
+    or exceeds ``settings.integrity_similarity_threshold``, an
+    ``IntegrityReport`` record with ``provider="internal"`` is written.
 
     Cosine similarity is computed as ``1 - cosine_distance`` where the
     ``<=>`` pgvector operator provides the cosine distance.

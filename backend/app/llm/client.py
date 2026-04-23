@@ -397,7 +397,9 @@ async def call_embedding(text: str) -> list[float]:
     raise last_exc or LLMError("Embedding call failed after retries")
 
 
-
+# ---------------------------------------------------------------------------
+# Type alias exported for consumers
+# ---------------------------------------------------------------------------
 
 __all__ = [
     "call_grading",

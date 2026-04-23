@@ -3,12 +3,12 @@
 The :func:`compute_essay_embedding` task runs after a new essay version is
 created (triggered by the essay upload router).  It:
 
-1. Calls the OpenAI Embeddings API to produce a 1 536-dimension vector for
+1. Calls the OpenAI Embeddings API to produce a 1536-dimension vector for
    the essay text.
 2. Stores the vector in the ``essay_versions.embedding`` column.
 3. Queries cosine similarity against all other embedded essay versions in the
    same assignment and writes ``IntegrityReport`` records (``provider="internal"``)
-   for any pair whose similarity exceeds ``INTEGRITY_SIMILARITY_THRESHOLD``.
+   for any pair whose similarity meets or exceeds ``INTEGRITY_SIMILARITY_THRESHOLD``.
 
 Retry behaviour:
 - On ``LLMError`` (OpenAI transport failure), the task retries up to 3 times
