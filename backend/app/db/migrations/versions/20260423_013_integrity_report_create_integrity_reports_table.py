@@ -80,6 +80,7 @@ def upgrade() -> None:
                 create_type=False,
             ),
             nullable=False,
+            server_default=sa.text("'pending'::integritystatus"),
         ),
         sa.Column(
             "created_at",
