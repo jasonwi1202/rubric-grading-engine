@@ -14,6 +14,7 @@ Endpoints (``essay_router``, prefix ``/essays``):
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -31,6 +32,9 @@ from app.schemas.batch_grading import RetryGradingRequest
 from app.schemas.essay import AssignEssayRequest, EssayListItemResponse, EssayUploadItemResponse
 from app.services.batch_grading import retry_essay_grading
 from app.services.essay import assign_essay_to_student, ingest_essay, list_essays_for_assignment
+from app.tasks.embedding import compute_essay_embedding as _compute_embedding_task
+
+logger = logging.getLogger(__name__)
 
 #: Router for assignment-scoped essay operations.
 router = APIRouter(prefix="/assignments", tags=["essays"])
@@ -126,6 +130,22 @@ async def upload_essays_endpoint(
             data=raw,
             student_id=student_id,
         )
+
+        # Enqueue the embedding + similarity task.  Fire-and-forget — the
+        # upload response is not blocked on embedding completion.  A broker
+        # outage is non-fatal: the essay is persisted and can be re-enqueued
+        # manually.
+        try:
+            _compute_embedding_task.delay(
+                str(version.id),
+                str(essay.assignment_id),
+                str(teacher.id),
+            )
+        except Exception as embed_exc:
+            logger.warning(
+                "Failed to enqueue embedding task — essay is still ingested",
+                extra={"essay_version_id": str(version.id), "error_type": type(embed_exc).__name__},
+            )
 
         results.append(
             EssayUploadItemResponse(

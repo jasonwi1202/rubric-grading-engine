@@ -31,7 +31,7 @@ import types
 import openai
 
 from app.config import settings
-from app.exceptions import LLMError, LLMParseError
+from app.exceptions import LLMError, LLMParseError, ValidationError
 from app.llm.parsers import (
     CriterionInfo,
     ParsedFeedbackResponse,
@@ -340,6 +340,72 @@ async def call_instruction(
         return parse_instruction_response(retry_raw)
 
 
+async def call_embedding(text: str) -> list[float]:
+    """Generate a text embedding vector using the configured OpenAI model.
+
+    The embedding is computed via ``openai.AsyncOpenAI.embeddings.create``.
+    Transport-level errors (timeouts, API errors, connection errors, rate
+    limits) are retried with exponential back-off up to
+    ``settings.llm_max_retries`` times before raising
+    :exc:`~app.exceptions.LLMError`.  The retry logic mirrors
+    :func:`_chat_with_retry` — ``openai.APIError`` (the base class for all
+    OpenAI API exceptions including ``APIConnectionError`` and
+    ``RateLimitError``) is caught on every attempt.
+
+    Args:
+        text: The plain-text content to embed.  Must not be empty or
+            whitespace-only.
+
+    Returns:
+        A ``list[float]`` of ``settings.openai_embedding_model`` dimensions
+        (1 536 for ``text-embedding-3-small``).
+
+    Raises:
+        ValidationError: If ``text`` is empty or whitespace-only.
+        LLMError: On timeout or unrecoverable API failure after all retries.
+
+    Security note:
+        The text argument is never logged — callers must not pass log-visible
+        content and should use entity IDs in their own log calls instead.
+    """
+    if not text.strip():
+        raise ValidationError("text must not be empty or whitespace-only")
+
+    client = _get_openai_client()
+    max_attempts = settings.llm_max_retries + 1
+    last_exc: LLMError | None = None
+
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            wait = 2**attempt
+            logger.info(
+                "Retrying embedding call after transport error",
+                extra={"attempt": attempt, "wait_seconds": wait},
+            )
+            await asyncio.sleep(wait)
+
+        try:
+            response = await client.embeddings.create(
+                model=settings.openai_embedding_model,
+                input=text,
+            )
+            return response.data[0].embedding
+        except openai.APITimeoutError as exc:
+            logger.warning(
+                "Embedding request timed out",
+                extra={"attempt": attempt, "error_type": type(exc).__name__},
+            )
+            last_exc = LLMError("Embedding request timed out")
+        except openai.APIError as exc:
+            logger.warning(
+                "Embedding API error",
+                extra={"attempt": attempt, "error_type": type(exc).__name__},
+            )
+            last_exc = LLMError("Embedding API error")
+
+    raise last_exc or LLMError("Embedding call failed after retries")
+
+
 # ---------------------------------------------------------------------------
 # Type alias exported for consumers
 # ---------------------------------------------------------------------------
@@ -348,6 +414,7 @@ __all__ = [
     "call_grading",
     "call_feedback",
     "call_instruction",
+    "call_embedding",
     "CriterionInfo",
     "ParsedGradingResponse",
     "ParsedFeedbackResponse",
