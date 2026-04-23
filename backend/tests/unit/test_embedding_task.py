@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.exceptions import ForbiddenError, LLMError, NotFoundError
+from app.exceptions import ForbiddenError, LLMError, NotFoundError, ValidationError
 from app.tasks.celery_app import celery
 from app.tasks.embedding import _run_compute_essay_embedding, compute_essay_embedding
 
@@ -176,6 +176,22 @@ class TestComputeEssayEmbeddingTask:
 
         assert result.failed(), "Task should fail immediately on ForbiddenError"
 
+    def test_validation_error_does_not_retry(self) -> None:
+        """ValidationError (empty essay content) fails immediately without consuming retries."""
+        essay_version_id = str(uuid.uuid4())
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        with patch(
+            "app.tasks.embedding._run_compute_essay_embedding",
+            new=AsyncMock(side_effect=ValidationError("No text content")),
+        ):
+            result = compute_essay_embedding.apply(
+                args=[essay_version_id, assignment_id, teacher_id]
+            )
+
+        assert result.failed()
+
     def test_not_found_error_does_not_retry(self) -> None:
         """NotFoundError fails immediately without consuming retries."""
         essay_version_id = str(uuid.uuid4())
@@ -277,6 +293,57 @@ class TestComputeAndStoreEmbedding:
         with pytest.raises(NotFoundError):
             await compute_and_store_embedding(db_mock, uuid.uuid4(), uuid.uuid4())
 
+    @pytest.mark.asyncio
+    async def test_skips_embedding_if_already_present(self) -> None:
+        """compute_and_store_embedding returns early when embedding already exists (idempotency)."""
+        from app.services.embedding import compute_and_store_embedding
+
+        essay_version_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+        existing_embedding = _fake_embedding()
+
+        version_mock = _make_version_mock(essay_version_id)
+        version_mock.embedding = existing_embedding  # already populated
+
+        scalars_mock = MagicMock()
+        scalars_mock.one_or_none = MagicMock(return_value=version_mock)
+        db_mock = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalars = MagicMock(return_value=scalars_mock)
+        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.commit = AsyncMock()
+
+        with patch(
+            "app.llm.client.call_embedding",
+            new=AsyncMock(return_value=_fake_embedding()),
+        ) as mock_embed:
+            returned = await compute_and_store_embedding(db_mock, essay_version_id, teacher_id)
+
+        assert returned == existing_embedding
+        mock_embed.assert_not_called()  # no OpenAI call made
+        db_mock.commit.assert_not_called()  # no DB write made
+
+    @pytest.mark.asyncio
+    async def test_raises_validation_error_for_empty_content(self) -> None:
+        """ValidationError raised when essay version has no text content."""
+        from app.services.embedding import compute_and_store_embedding
+
+        essay_version_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+
+        version_mock = _make_version_mock(essay_version_id, content="   ")  # whitespace only
+        version_mock.embedding = None
+
+        scalars_mock = MagicMock()
+        scalars_mock.one_or_none = MagicMock(return_value=version_mock)
+        db_mock = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalars = MagicMock(return_value=scalars_mock)
+        db_mock.execute = AsyncMock(return_value=result_mock)
+
+        with pytest.raises(ValidationError):
+            await compute_and_store_embedding(db_mock, essay_version_id, teacher_id)
+
 
 class TestFlagSimilarEssays:
     @pytest.mark.asyncio
@@ -294,10 +361,15 @@ class TestFlagSimilarEssays:
         # cosine_distance = 0.1 → similarity = 0.9 (above default threshold 0.25)
         rows = [(other_version_id, 0.1)]
 
+        # First execute: similarity scan returning above-threshold pair.
+        # Second execute: deduplication check returning None (no existing report).
+        similarity_result = MagicMock()
+        similarity_result.all = MagicMock(return_value=rows)
+        dedup_result = MagicMock()
+        dedup_result.scalar_one_or_none = MagicMock(return_value=None)
+
         db_mock = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.all = MagicMock(return_value=rows)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = AsyncMock(side_effect=[similarity_result, dedup_result])
         db_mock.add = MagicMock()
         db_mock.commit = AsyncMock()
 
@@ -309,7 +381,7 @@ class TestFlagSimilarEssays:
 
         db_mock.add.side_effect = _capture_add
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.services.embedding.settings") as mock_settings:
             mock_settings.integrity_similarity_threshold = 0.25
             flagged = await flag_similar_essays(
                 db_mock, essay_version_id, assignment_id, teacher_id, embedding
@@ -349,7 +421,7 @@ class TestFlagSimilarEssays:
         db_mock.add = MagicMock()
         db_mock.commit = AsyncMock()
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.services.embedding.settings") as mock_settings:
             mock_settings.integrity_similarity_threshold = 0.25
             flagged = await flag_similar_essays(
                 db_mock, essay_version_id, assignment_id, teacher_id, embedding
@@ -371,7 +443,7 @@ class TestFlagSimilarEssays:
         db_mock.add = MagicMock()
         db_mock.commit = AsyncMock()
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.services.embedding.settings") as mock_settings:
             mock_settings.integrity_similarity_threshold = 0.25
             flagged = await flag_similar_essays(
                 db_mock, uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), _fake_embedding()
@@ -393,14 +465,17 @@ class TestFlagSimilarEssays:
         # cosine_distance = 1 - threshold → similarity == threshold
         rows = [(other_version_id, 1.0 - threshold)]
 
+        similarity_result = MagicMock()
+        similarity_result.all = MagicMock(return_value=rows)
+        dedup_result = MagicMock()
+        dedup_result.scalar_one_or_none = MagicMock(return_value=None)
+
         db_mock = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.all = MagicMock(return_value=rows)
-        db_mock.execute = AsyncMock(return_value=result_mock)
+        db_mock.execute = AsyncMock(side_effect=[similarity_result, dedup_result])
         db_mock.add = MagicMock()
         db_mock.commit = AsyncMock()
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.services.embedding.settings") as mock_settings:
             mock_settings.integrity_similarity_threshold = threshold
             flagged = await flag_similar_essays(
                 db_mock, essay_version_id, uuid.uuid4(), uuid.uuid4(), embedding
@@ -408,3 +483,36 @@ class TestFlagSimilarEssays:
 
         assert flagged == 1
         db_mock.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_deduplication_skips_existing_report(self) -> None:
+        """flag_similar_essays skips insertion when a report already exists (idempotency)."""
+        from app.services.embedding import flag_similar_essays
+
+        essay_version_id = uuid.uuid4()
+        other_version_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+        embedding = _fake_embedding()
+        rows = [(other_version_id, 0.1)]
+
+        similarity_result = MagicMock()
+        similarity_result.all = MagicMock(return_value=rows)
+        # Dedup check: existing report found → should skip insert.
+        dedup_result = MagicMock()
+        dedup_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4())
+
+        db_mock = AsyncMock()
+        db_mock.execute = AsyncMock(side_effect=[similarity_result, dedup_result])
+        db_mock.add = MagicMock()
+        db_mock.commit = AsyncMock()
+
+        with patch("app.services.embedding.settings") as mock_settings:
+            mock_settings.integrity_similarity_threshold = 0.25
+            flagged = await flag_similar_essays(
+                db_mock, essay_version_id, assignment_id, teacher_id, embedding
+            )
+
+        assert flagged == 0
+        db_mock.add.assert_not_called()
+        db_mock.commit.assert_not_called()

@@ -31,7 +31,7 @@ import types
 import openai
 
 from app.config import settings
-from app.exceptions import LLMError, LLMParseError
+from app.exceptions import LLMError, LLMParseError, ValidationError
 from app.llm.parsers import (
     CriterionInfo,
     ParsedFeedbackResponse,
@@ -353,13 +353,15 @@ async def call_embedding(text: str) -> list[float]:
     ``RateLimitError``) is caught on every attempt.
 
     Args:
-        text: The plain-text content to embed.  Must not be empty.
+        text: The plain-text content to embed.  Must not be empty or
+            whitespace-only.
 
     Returns:
         A ``list[float]`` of ``settings.openai_embedding_model`` dimensions
         (1 536 for ``text-embedding-3-small``).
 
     Raises:
+        ValidationError: If ``text`` is empty or whitespace-only.
         LLMError: On timeout or unrecoverable API failure after all retries.
 
     Security note:
@@ -367,7 +369,7 @@ async def call_embedding(text: str) -> list[float]:
         content and should use entity IDs in their own log calls instead.
     """
     if not text.strip():
-        raise ValueError("text must not be empty or whitespace-only")
+        raise ValidationError("text must not be empty or whitespace-only")
 
     client = _get_openai_client()
     max_attempts = settings.llm_max_retries + 1

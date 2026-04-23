@@ -8,14 +8,17 @@ created (triggered by the essay upload router).  It:
 2. Stores the vector in the ``essay_versions.embedding`` column.
 3. Queries cosine similarity against all other embedded essay versions in the
    same assignment and writes ``IntegrityReport`` records (``provider="internal"``)
-   for any pair whose similarity meets or exceeds ``INTEGRITY_SIMILARITY_THRESHOLD``.
+   for any pair whose similarity meets or exceeds
+   ``settings.integrity_similarity_threshold``
+   (env var ``INTEGRITY_SIMILARITY_THRESHOLD``).
 
 Retry behaviour:
 - On ``LLMError`` (OpenAI transport failure), the task retries up to 3 times
   with exponential back-off: 2 s, 4 s, 8 s (``2 ** (attempt + 1)``).
-- On ``ForbiddenError`` or ``NotFoundError`` the task fails immediately
-  without retrying — the essay/version no longer belongs to the expected
-  teacher or has been deleted.
+- On ``ValidationError`` (empty essay content or misconfigured threshold),
+  the task fails immediately without retrying — retrying would not help.
+- On ``NotFoundError`` the task fails immediately without retrying — the
+  essay/version has been deleted or never belonged to the expected teacher.
 
 Security invariants:
 - No essay content is logged at any level.
@@ -29,7 +32,7 @@ import logging
 import uuid
 
 from app.db.session import AsyncSessionLocal
-from app.exceptions import ForbiddenError, LLMError, NotFoundError
+from app.exceptions import ForbiddenError, LLMError, NotFoundError, ValidationError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
@@ -80,7 +83,7 @@ async def _run_compute_essay_embedding(
 # ---------------------------------------------------------------------------
 
 
-@celery.task(  # type: ignore[untyped-decorator]
+@celery.task(  # type: ignore[untyped-decorator]  # Celery stubs are incomplete
     name="tasks.embedding.compute_essay_embedding",
     bind=True,
     max_retries=3,
@@ -118,6 +121,16 @@ def compute_essay_embedding(
         logger.warning(
             "Embedding task skipped — essay version not found or forbidden",
             extra={"essay_version_id": essay_version_id},
+        )
+        raise
+    except ValidationError as exc:
+        # Empty essay content or misconfigured threshold — retrying won't help.
+        logger.warning(
+            "Embedding task skipped — validation error (empty content or bad config)",
+            extra={
+                "essay_version_id": essay_version_id,
+                "error_type": type(exc).__name__,
+            },
         )
         raise
     except LLMError as exc:

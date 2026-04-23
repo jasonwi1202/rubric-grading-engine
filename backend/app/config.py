@@ -129,6 +129,13 @@ class Settings(BaseSettings):
     # Validators
     # -------------------------------------------------------------------------
 
+    @field_validator("integrity_similarity_threshold")
+    @classmethod
+    def integrity_similarity_threshold_in_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("INTEGRITY_SIMILARITY_THRESHOLD must be between 0.0 and 1.0")
+        return v
+
     @field_validator("jwt_secret_key")
     @classmethod
     def jwt_secret_key_min_length(cls, v: str) -> str:

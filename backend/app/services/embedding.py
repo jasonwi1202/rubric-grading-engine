@@ -4,7 +4,8 @@ Implements M4.4:
 1. Computes and stores a text-embedding vector on an ``EssayVersion`` record.
 2. Queries cosine similarity against all other essay versions in the same
    assignment and writes ``IntegrityReport`` records for pairs whose similarity
-   exceeds ``settings.integrity_similarity_threshold``.
+   exceeds ``settings.integrity_similarity_threshold``
+   (env var ``INTEGRITY_SIMILARITY_THRESHOLD``).
 
 Security invariants:
 - No essay content is logged at any level.
@@ -21,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import NotFoundError
+from app.exceptions import NotFoundError, ValidationError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
@@ -74,6 +75,22 @@ async def compute_and_store_embedding(
     if version is None:
         raise NotFoundError("EssayVersion not found.")
 
+    # Idempotency: if the embedding was already computed (e.g. task was
+    # re-enqueued after a partial failure), return it without spending another
+    # OpenAI API call.
+    if version.embedding is not None:
+        logger.info(
+            "Essay embedding already exists — skipping recomputation",
+            extra={"essay_version_id": str(essay_version_id)},
+        )
+        return list(version.embedding)
+
+    # Gracefully handle essays with no extractable text (e.g. failed OCR).
+    if not (version.content or "").strip():
+        raise ValidationError(
+            "EssayVersion has no text content — cannot compute embedding."
+        )
+
     # Call the OpenAI embeddings API — may raise LLMError on failure.
     embedding = await call_embedding(version.content)
 
@@ -103,8 +120,9 @@ async def flag_similar_essays(
     or exceeds ``settings.integrity_similarity_threshold``, an
     ``IntegrityReport`` record with ``provider="internal"`` is written.
 
-    Cosine similarity is computed as ``1 - cosine_distance`` where the
-    ``<=>`` pgvector operator provides the cosine distance.
+    Cosine similarity is computed as ``1 - cosine_distance`` using
+    SQLAlchemy's ``func.cosine_distance(...)`` which maps to pgvector's
+    ``cosine_distance()`` SQL function.
 
     Args:
         db: Async database session.
@@ -123,6 +141,10 @@ async def flag_similar_essays(
     from sqlalchemy import func, literal  # noqa: PLC0415
 
     threshold = settings.integrity_similarity_threshold
+    if not (0.0 <= threshold <= 1.0):
+        raise ValidationError(
+            f"integrity_similarity_threshold must be in [0, 1]; got {threshold}"
+        )
 
     embedding_literal = literal(embedding, type_=Vector(1536))
 
@@ -153,17 +175,38 @@ async def flag_similar_essays(
     for row in rows:
         other_version_id: uuid.UUID = row[0]
         dist: float = float(row[1])
-        similarity = 1.0 - dist
+        # pgvector cosine distance is in [0, 2]; clamp similarity to [0, 1]
+        # to match IntegrityReport.similarity_score's documented range.
+        similarity = max(0.0, min(1.0, 1.0 - dist))
+        rounded_similarity = round(similarity, 4)
+
+        # Deduplication guard: skip if an internal report for this source
+        # version already exists (guards against Celery redelivery and
+        # manual re-enqueueing).
+        existing = await db.execute(
+            select(IntegrityReport.id)
+            .where(
+                IntegrityReport.essay_version_id == essay_version_id,
+                IntegrityReport.provider == "internal",
+            )
+            .limit(1)
+        )
+        if existing.scalar_one_or_none() is not None:
+            logger.info(
+                "IntegrityReport already exists for this source version — skipping",
+                extra={"essay_version_id": str(essay_version_id)},
+            )
+            break
 
         report = IntegrityReport(
             essay_version_id=essay_version_id,
             teacher_id=teacher_id,
             provider="internal",
-            similarity_score=round(similarity, 4),
+            similarity_score=rounded_similarity,
             flagged_passages=[
                 {
                     "matched_essay_version_id": str(other_version_id),
-                    "similarity": round(similarity, 4),
+                    "similarity": rounded_similarity,
                 }
             ],
             status=IntegrityReportStatus.pending,
