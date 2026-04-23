@@ -23,6 +23,7 @@ Security invariants:
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -281,7 +282,7 @@ class OriginalityAiProvider(IntegrityProvider):
                 response.raise_for_status()
                 try:
                     raw_data = response.json()
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     logger.warning(
                         "OriginalityAiProvider: could not decode JSON from response",
                         extra={"essay_version_id": str(essay_version_id)},

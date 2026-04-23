@@ -761,6 +761,8 @@ class TestOriginalityAiProvider:
     @pytest.mark.asyncio
     async def test_invalid_json_response_raises_provider_unavailable(self) -> None:
         """A JSON decode error from response.json() raises IntegrityProviderUnavailableError."""
+        import json as _json
+
         essay_version_id = _make_uuid()
         assignment_id = _make_uuid()
         teacher_id = _make_uuid()
@@ -768,7 +770,7 @@ class TestOriginalityAiProvider:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
-        mock_response.json = MagicMock(side_effect=ValueError("No JSON content"))
+        mock_response.json = MagicMock(side_effect=_json.JSONDecodeError("No JSON content", "", 0))
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
