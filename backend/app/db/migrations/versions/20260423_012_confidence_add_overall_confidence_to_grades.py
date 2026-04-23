@@ -23,6 +23,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "012_confidence_scoring"
@@ -38,7 +39,7 @@ def upgrade() -> None:
         "grades",
         sa.Column(
             "overall_confidence",
-            sa.Enum("high", "medium", "low", name="confidencelevel", create_type=False),
+            postgresql.ENUM("high", "medium", "low", name="confidencelevel", create_type=False),
             nullable=True,
         ),
     )
