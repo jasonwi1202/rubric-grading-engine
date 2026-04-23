@@ -21,7 +21,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 |---|---|---|---|---|
 | **M1** | Project Scaffold | Monorepo, CI, Docker Compose, authentication, and local dev environment. No product features — everything else depends on this. | 10 | ✅ Complete |
 | **M2** | Public Website & Onboarding | Marketing site, legal pages, pricing, AI transparency page, sign-up, and trial onboarding wizard. Can be built in parallel with M3 once M1.2 and M1.3 are done. | 10 | ✅ Complete |
-| **M3** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 | 🔲 Planned |
+| **M3** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 | ✅ Complete |
 | **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | 🔲 Planned |
 | **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | 🔲 Planned |
 | **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | 🔲 Planned |
@@ -69,7 +69,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M3 — Foundation
+## M3 — Foundation ✅ Complete
 
 > Best-in-class rubric-based grading with transparent, editable AI feedback. This milestone produces the core product.
 
@@ -77,72 +77,72 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.1 | **[BLOCKER]** Write initial Alembic migration: core schema | Create tables: `users`, `classes`, `class_enrollments`, `students`, `rubrics`, `rubric_criteria`, `assignments`, `essays`, `essay_versions`, `grades`, `criterion_scores`, `audit_logs`. All relationships, indexes, and constraints per the data model doc. |
+| ~~M3.1~~ | ~~**[BLOCKER]** Write initial Alembic migration: core schema~~ | ✅ Done — PR #79. Tables: `users`, `classes`, `class_enrollments`, `students`, `rubrics`, `rubric_criteria`, `assignments`, `essays`, `essay_versions`, `grades`, `criterion_scores`, `audit_logs` with all relationships, indexes, and constraints. |
 
 ### Rubric Builder
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.2 | Rubric CRUD API | `GET/POST /rubrics`, `GET/PATCH/DELETE /rubrics/{id}`, `POST /rubrics/{id}/duplicate`. Rubric service with weight-sum validation (must equal 100%). Rubric snapshot logic. |
-| M3.3 | Rubric Builder UI | Criterion list with add/edit/delete/reorder (drag-and-drop). Per-criterion name, description, weight, min/max score, anchor descriptions. Weight sum indicator. Save/cancel flow. |
-| M3.4 | Rubric templates | 3 system-provided starter templates (5-paragraph essay, argumentative, research paper). Teacher can save any rubric as a personal template. Template picker in rubric builder and assignment creation. |
+| ~~M3.2~~ | ~~Rubric CRUD API~~ | ✅ Done — PR #80. `GET/POST /rubrics`, `GET/PATCH/DELETE /rubrics/{id}`, `POST /rubrics/{id}/duplicate`; weight-sum validation; snapshot logic. |
+| ~~M3.3~~ | ~~Rubric Builder UI~~ | ✅ Done — PR #81. Criterion list with add/edit/delete/reorder (drag-and-drop); weight indicator; save/cancel. |
+| ~~M3.4~~ | ~~Rubric templates~~ | ✅ Done — PR #82. 3 system templates; personal template saving; template picker in builder and assignment creation. |
 
 ### Class & Student Management
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.5 | Class CRUD API | `GET/POST /classes`, `GET/PATCH /classes/{id}`, `POST /classes/{id}/archive`. Scoped to authenticated teacher. Academic year field. |
-| M3.6 | Student & enrollment API | `GET/POST /classes/{id}/students`, `DELETE /classes/{id}/students/{studentId}`, `GET/PATCH /students/{id}`. Student persistence model (students independent of classes). ClassEnrollment join table with soft removal. |
-| M3.7 | CSV roster import | `POST /classes/{id}/students/import` with CSV upload. Parse `full_name`, `external_id` columns. Duplicate detection. Return diff (new / updated / skipped) for teacher confirmation before committing. |
-| M3.8 | Class and roster management UI | Class creation form. Roster list view. Add student manually. CSV import flow with diff confirmation screen. Remove student (soft). |
+| ~~M3.5~~ | ~~Class CRUD API~~ | ✅ Done — PR #83. |
+| ~~M3.6~~ | ~~Student & enrollment API~~ | ✅ Done — PR #84. |
+| ~~M3.7~~ | ~~CSV roster import~~ | ✅ Done — PR #85. |
+| ~~M3.8~~ | ~~Class and roster management UI~~ | ✅ Done — PR #86. |
 
 ### Essay Input & Ingestion
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.9 | Essay upload API and file extraction | `POST /assignments/{id}/essays` multipart upload. MIME validation, size limit. Store raw file to S3. Extract text from PDF (`pdfplumber`), DOCX (`python-docx`), TXT. Normalize extracted text. Compute word count. Create `Essay` + `EssayVersion` records. |
-| M3.10 | Student auto-assignment on upload | Fuzzy match essay filename, DOCX author metadata, and header text against class roster. Auto-assign when confidence ≥ 0.85 and only one student matches. All others go to unassigned queue. Flag name collisions. |
-| M3.11 | Essay input UI | Single and multi-file upload with drag-and-drop. Text paste input. Upload progress. Auto-assignment results review screen (show matches, flag uncertain, allow manual correction before proceeding). |
+| ~~M3.9~~ | ~~Essay upload API and file extraction~~ | ✅ Done — PR #87. |
+| ~~M3.10~~ | ~~Student auto-assignment on upload~~ | ✅ Done — PR #88. |
+| ~~M3.11~~ | ~~Essay input UI~~ | ✅ Done — PR #89. |
 
 ### Assignment Management
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.12 | Assignment CRUD API | `GET/POST /classes/{id}/assignments`, `GET/PATCH /assignments/{id}`. Status state machine (`draft → open → grading → review → complete → returned`). Rubric snapshot written at creation time. |
-| M3.13 | Assignment UI | Assignment creation form (title, prompt, rubric picker, due date). Assignment overview page showing submission status per student (submitted / pending / graded / returned). Status transition controls. |
+| ~~M3.12~~ | ~~Assignment CRUD API~~ | ✅ Done — PR #90. Status state machine; rubric snapshot at creation. |
+| ~~M3.13~~ | ~~Assignment UI~~ | ✅ Done — PR #91. |
 
 ### AI Grading Engine
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.14 | **[BLOCKER]** LLM client and prompt infrastructure | `llm/client.py` OpenAI wrapper with retry, timeout, error normalization. Versioned prompt templates in `llm/prompts/`. Prompt injection defenses: essay content in user role, system prompt instructs model to ignore directives in essay. |
-| M3.15 | Grading Celery task | `grade_essay` task: load essay + rubric snapshot + strictness config, construct grading prompt, call LLM, parse and validate structured response, write `Grade` + `CriterionScore` records. Handle all LLM failure modes (parse error, missing criterion, out-of-range score, timeout). |
-| M3.16 | Batch grading API and progress tracking | `POST /assignments/{id}/grade` enqueues one task per essay. Returns 202. Redis progress counter per assignment. `GET /assignments/{id}/grading-status` reads from Redis. Assignment status transitions. Per-essay retry endpoint. |
-| M3.17 | Batch grading UI | "Grade now" trigger button. Real-time progress bar (polls every 3 seconds, stops on completion). Per-essay status list. Failed essay display with retry action. In-app notification on completion. |
+| ~~M3.14~~ | ~~**[BLOCKER]** LLM client and prompt infrastructure~~ | ✅ Done — PR #93. |
+| ~~M3.15~~ | ~~Grading Celery task~~ | ✅ Done — PR #94. |
+| ~~M3.16~~ | ~~Batch grading API and progress tracking~~ | ✅ Done — PR #95. |
+| ~~M3.17~~ | ~~Batch grading UI~~ | ✅ Done — PR #96. |
 
 ### Feedback Generator
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.18 | Feedback generation in grading task | Extend grading prompt/response to include: per-criterion feedback note, overall summary feedback paragraph. Tone parameter (encouraging / direct / academic) injected from assignment config. Both AI score and feedback stored on `CriterionScore` and `Grade`. |
-| M3.19 | Comment bank API | `GET/POST /comment-bank`, `DELETE /comment-bank/{id}`. Save any feedback snippet. Suggest saved comments when grading similar issues (fuzzy match). Scoped to teacher. |
+| ~~M3.18~~ | ~~Feedback generation in grading task~~ | ✅ Done — PR #97. Per-criterion feedback, overall summary, tone parameter. |
+| ~~M3.19~~ | ~~Comment bank API~~ | ✅ Done — PR #98. |
 
 ### Teacher Review & Control
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.20 | Grade read and edit API | `GET /essays/{id}/grade`, `PATCH /grades/{id}/feedback`, `PATCH /grades/{id}/criteria/{criterionId}`, `POST /grades/{id}/lock`. All edits write to audit log (before/after values). Locked grades reject further edits. |
-| M3.21 | Essay review interface (core) | Two-panel layout: essay text left, rubric scores + feedback right. Display per-criterion score, AI justification, feedback. Inline score override control. Inline feedback text editor. Weighted total recalculates on override. Lock grade button. |
-| M3.22 | Review queue UI | List view of all essays in an assignment. Status badges (unreviewed / in-review / locked). Sort/filter by status, score range, student name. Keyboard navigation. Link through to individual essay review. |
-| M3.23 | Audit log API | `GET /grades/{id}/audit`. Returns full change history for a grade with timestamps, actor, before/after values. |
+| ~~M3.20~~ | ~~Grade read and edit API~~ | ✅ Done — PR #99. Score override, feedback edit, lock; all edits audit-logged. |
+| ~~M3.21~~ | ~~Essay review interface (core)~~ | ✅ Done — PR #101. Two-panel layout: essay text left, rubric scores + feedback right. Inline score override, feedback editor, lock grade button. |
+| ~~M3.22~~ | ~~Review queue UI~~ | ✅ Done — PR #102. List view with status badges, sort/filter, keyboard nav, link-through to essay review. |
+| ~~M3.23~~ | ~~Audit log API~~ | ✅ Done — PR #103. `GET /grades/{id}/audit` returns full change history with timestamps, actor, before/after values. |
 
 ### Export
 
 | # | Issue Title | Description |
 |---|---|---|
-| M3.24 | Export API and Celery task | `POST /assignments/{id}/export` enqueues export task. Task generates per-student feedback PDFs using a template, packages as ZIP, uploads to S3. `GET /exports/{taskId}/status` polls progress. `GET /exports/{taskId}/download` returns pre-signed S3 URL. |
-| M3.25 | CSV grade export | `GET /assignments/{id}/grades.csv` — synchronous export of all locked grades: student name, per-criterion scores, total. Compatible with LMS gradebook import formats. |
-| M3.26 | Export UI | "Export" button on assignment view. Options: PDF batch ZIP, CSV grades, copy individual student feedback to clipboard. Download flow for async ZIP export. |
+| ~~M3.24~~ | ~~Export API and Celery task~~ | ✅ Done — PR #104. Async PDF ZIP export via Celery; S3 storage; polling and pre-signed download URL. |
+| ~~M3.25~~ | ~~CSV grade export~~ | ✅ Done — PR #105. Synchronous CSV export of all locked grades; LMS-compatible format. |
+| ~~M3.26~~ | ~~Export UI~~ | ✅ Done — PR #106. Export button, PDF ZIP + CSV + clipboard options, async download flow. |
 
 ---
 
