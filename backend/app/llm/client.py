@@ -367,7 +367,7 @@ async def call_embedding(text: str) -> list[float]:
         content and should use entity IDs in their own log calls instead.
     """
     if not text.strip():
-        raise ValueError("text must not be empty")
+        raise ValueError("text must not be empty or whitespace-only")
 
     client = _get_openai_client()
     max_attempts = settings.llm_max_retries + 1

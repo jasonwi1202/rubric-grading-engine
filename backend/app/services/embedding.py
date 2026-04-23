@@ -128,8 +128,8 @@ async def flag_similar_essays(
 
     # Cosine distance via pgvector's <=> operator:
     #   cosine_distance(a, b) returns distance in [0, 2]; we want
-    #   similarity = 1 − distance.  Flag when similarity >= threshold,
-    #   i.e. distance <= (1 − threshold).  Push the filter into Postgres
+    #   similarity = 1 - distance.  Flag when similarity >= threshold,
+    #   i.e. distance <= (1 - threshold).  Push the filter into Postgres
     #   so only candidate pairs are transferred over the network.
     cosine_dist_expr = func.cosine_distance(EssayVersion.embedding, embedding_literal)
     cosine_dist = cosine_dist_expr.label("cosine_dist")
