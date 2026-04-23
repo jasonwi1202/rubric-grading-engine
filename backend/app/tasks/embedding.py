@@ -1,16 +1,14 @@
-"""Embedding Celery task for internal cross-submission similarity (M4.4).
+"""Embedding / integrity Celery task (M4.4 → M4.5).
 
 The :func:`compute_essay_embedding` task runs after a new essay version is
 created (triggered by the essay upload router).  It:
 
-1. Calls the OpenAI Embeddings API to produce a 1536-dimension vector for
-   the essay text.
-2. Stores the vector in the ``essay_versions.embedding`` column.
-3. Queries cosine similarity against all other embedded essay versions in the
-   same assignment and writes ``IntegrityReport`` records (``provider="internal"``)
-   for any pair whose similarity meets or exceeds
-   ``settings.integrity_similarity_threshold``
-   (env var ``INTEGRITY_SIMILARITY_THRESHOLD``).
+1. Fetches the essay text from the database.
+2. Calls :func:`app.services.integrity.run_integrity_check`, which selects the
+   active :class:`~app.services.integrity.IntegrityProvider` based on the
+   ``INTEGRITY_PROVIDER`` environment variable (default: ``"internal"``).
+3. The internal provider computes a pgvector embedding and flags similar essays;
+   the Originality.ai provider posts to the third-party REST API instead.
 
 Retry behaviour:
 - On ``LLMError`` (OpenAI transport failure), the task retries up to 3 times
@@ -50,34 +48,63 @@ async def _run_compute_essay_embedding(
     assignment_id: str,
     teacher_id: str,
 ) -> int:
-    """Compute and store an embedding, then flag similar pairs.
+    """Run the configured integrity provider for the given essay version.
 
-    Returns the number of similarity pairs flagged.
+    Calls :func:`app.services.integrity.run_integrity_check` so the active
+    provider is determined by the ``INTEGRITY_PROVIDER`` environment variable.
+
+    Returns:
+        The number of flagged passages surfaced by the provider.
     """
-    from app.services.embedding import (  # noqa: PLC0415
-        compute_and_store_embedding,
-        flag_similar_essays,
-    )
+    from sqlalchemy import select  # noqa: PLC0415
 
+    from app.models.assignment import Assignment  # noqa: PLC0415 — lazy import
+    from app.models.class_ import Class  # noqa: PLC0415 — lazy import
+    from app.models.essay import Essay, EssayVersion  # noqa: PLC0415 — lazy import
+    from app.services.integrity import run_integrity_check  # noqa: PLC0415
+
+    # Tenant-scoped fetch — prevents loading another teacher's essay content
+    # into memory before any ownership check runs.
     async with AsyncSessionLocal() as db:
-        embedding = await compute_and_store_embedding(
-            db=db,
-            essay_version_id=uuid.UUID(essay_version_id),
-            teacher_id=uuid.UUID(teacher_id),
+        text_row = await db.execute(
+            select(EssayVersion.content)
+            .join(Essay, EssayVersion.essay_id == Essay.id)
+            .join(Assignment, Essay.assignment_id == Assignment.id)
+            .join(Class, Assignment.class_id == Class.id)
+            .where(
+                EssayVersion.id == uuid.UUID(essay_version_id),
+                Essay.assignment_id == uuid.UUID(assignment_id),
+                Class.teacher_id == uuid.UUID(teacher_id),
+            )
         )
+        content = text_row.scalar_one_or_none()
+        if content is None:
+            # Distinguish 404 (version doesn't exist) from 403 (wrong teacher).
+            exists_row = await db.execute(
+                select(EssayVersion.id)
+                .join(Essay, EssayVersion.essay_id == Essay.id)
+                .where(
+                    EssayVersion.id == uuid.UUID(essay_version_id),
+                    Essay.assignment_id == uuid.UUID(assignment_id),
+                )
+            )
+            if exists_row.scalar_one_or_none() is None:
+                raise NotFoundError("EssayVersion not found")
+            raise ForbiddenError("You do not have access to this essay version.")
+        if not content.strip():
+            raise ValidationError("Essay content must not be empty or whitespace-only")
+        essay_text: str = content
 
-    # Run the similarity scan in a fresh session so the embedding commit above
-    # is visible to the similarity query.
     async with AsyncSessionLocal() as db:
-        flagged = await flag_similar_essays(
+        result = await run_integrity_check(
             db=db,
             essay_version_id=uuid.UUID(essay_version_id),
             assignment_id=uuid.UUID(assignment_id),
             teacher_id=uuid.UUID(teacher_id),
-            embedding=embedding,
+            essay_text=essay_text,
         )
 
-    return flagged
+    return len(result.flagged_passages)
 
 
 # ---------------------------------------------------------------------------
@@ -96,17 +123,22 @@ def compute_essay_embedding(
     assignment_id: str,
     teacher_id: str,
 ) -> int:
-    """Compute an essay embedding and flag similar submissions.
+    """Run the configured integrity provider for the given essay version.
+
+    Determines the active provider via the ``INTEGRITY_PROVIDER`` env var
+    (default ``"internal"``).  The internal provider computes a pgvector
+    embedding and flags similar essays; external providers (e.g.
+    ``originality_ai``) post to a third-party REST API instead.
 
     Args:
-        essay_version_id: UUID string of the ``EssayVersion`` to embed.
+        essay_version_id: UUID string of the ``EssayVersion`` to check.
         assignment_id: UUID string of the parent assignment.  Used to scope
-            the cosine-similarity search to the same assignment.
+            the integrity check to the same assignment.
         teacher_id: UUID string of the owning teacher.  Used for tenant
             isolation in every database query.
 
     Returns:
-        The number of similarity pairs written to ``integrity_reports``.
+        The number of flagged passages returned by the active provider.
 
     Raises:
         celery.exceptions.Retry: On ``LLMError`` (OpenAI transport failure),

@@ -193,10 +193,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def integrity_api_key_required(self) -> "Settings":
-        """Require INTEGRITY_API_KEY when provider is not 'internal'."""
-        if self.integrity_provider != "internal" and not self.integrity_api_key:
+        """Require INTEGRITY_API_KEY only for known third-party providers.
+
+        Unknown/misspelt provider names fall back to InternalProvider (see
+        ``get_provider()`` in ``app.services.integrity``) and therefore do not
+        require an API key.  Only explicitly recognised third-party providers
+        that make external API calls should gate on the key.
+        """
+        _known_third_party: frozenset[str] = frozenset({"originality_ai"})
+        provider = (self.integrity_provider or "internal").lower()
+        if provider in _known_third_party and not self.integrity_api_key:
             raise ValueError(
-                "INTEGRITY_API_KEY is required when INTEGRITY_PROVIDER is not 'internal'"
+                "INTEGRITY_API_KEY is required when INTEGRITY_PROVIDER is 'originality_ai'"
             )
         return self
 

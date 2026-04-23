@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -40,6 +40,15 @@ class IntegrityReport(Base):
     """AI-integrity or plagiarism check result for a specific essay version."""
 
     __tablename__ = "integrity_reports"
+    __table_args__ = (
+        # At most one report per (essay_version, provider) pair — enforces
+        # idempotency at the DB level and prevents duplicate API credits.
+        UniqueConstraint(
+            "essay_version_id",
+            "provider",
+            name="uq_integrity_reports_version_provider",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
