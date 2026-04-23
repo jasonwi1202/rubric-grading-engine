@@ -48,12 +48,13 @@ export function getReviewStatus(status: string): ReviewStatus {
 // ---------------------------------------------------------------------------
 
 /** Which subset of essays to show in the queue. */
-export type StatusFilter = "all" | "unreviewed" | "in_review" | "locked";
+export type StatusFilter = "all" | "unreviewed" | "in_review" | "locked" | "low_confidence";
 
 /**
  * Filter an essay list by review status.
  *
  * "all" passes every essay through without modification.
+ * "low_confidence" includes only essays whose overall_confidence is "low".
  * Other values include only essays whose review status matches.
  */
 export function filterEssays(
@@ -61,6 +62,8 @@ export function filterEssays(
   filter: StatusFilter,
 ): ReviewQueueEssay[] {
   if (filter === "all") return essays;
+  if (filter === "low_confidence")
+    return essays.filter((e) => e.overall_confidence === "low");
   return essays.filter((e) => getReviewStatus(e.status) === filter);
 }
 
@@ -69,7 +72,7 @@ export function filterEssays(
 // ---------------------------------------------------------------------------
 
 /** Column the teacher has chosen to sort by. */
-export type SortKey = "status" | "score" | "student_name";
+export type SortKey = "status" | "score" | "student_name" | "confidence";
 
 /** Sort direction. */
 export type SortDirection = "asc" | "desc";
@@ -87,6 +90,16 @@ const STATUS_ORDER: Record<ReviewStatus, number> = {
 };
 
 /**
+ * Numeric ordering for confidence sort (low-confidence first in ascending order).
+ * Essays with null/missing confidence are always placed last.
+ */
+const CONFIDENCE_ORDER: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+/**
  * Sort essays by the given key and direction. Returns a new array; the input
  * array is not mutated.
  *
@@ -95,6 +108,9 @@ const STATUS_ORDER: Record<ReviewStatus, number> = {
  *
  * Student name sort: case-insensitive. Essays with a null `student_name`
  * (unassigned) sort after named essays.
+ *
+ * Confidence sort: low-confidence first (ascending). Essays with a null or
+ * missing `overall_confidence` are always placed last regardless of direction.
  */
 export function sortEssays(
   essays: ReviewQueueEssay[],
@@ -137,6 +153,18 @@ export function sortEssays(
           .toLowerCase()
           .localeCompare(b.student_name.toLowerCase());
         return diff * multiplier;
+      }
+
+      case "confidence": {
+        // Null/missing confidence always sorted last regardless of direction.
+        const aConf = a.overall_confidence ?? null;
+        const bConf = b.overall_confidence ?? null;
+        if (aConf === null && bConf === null) return 0;
+        if (aConf === null) return 1;
+        if (bConf === null) return -1;
+        const aOrder = CONFIDENCE_ORDER[aConf] ?? 3;
+        const bOrder = CONFIDENCE_ORDER[bConf] ?? 3;
+        return (aOrder - bOrder) * multiplier;
       }
 
       default:
