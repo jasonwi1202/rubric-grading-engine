@@ -604,13 +604,24 @@ async def get_integrity_report_for_essay(
             raise NotFoundError("Essay not found.")
         raise ForbiddenError("You do not have access to this essay.")
 
-    # Fetch the latest IntegrityReport for any version of this essay,
-    # scoped to the teacher.
+    # Fetch the latest IntegrityReport for the latest version of this essay,
+    # scoped to the teacher.  First resolve the highest-numbered EssayVersion
+    # to avoid returning a report for an older version even if its report was
+    # created more recently.
+    version_result = await db.execute(
+        select(EssayVersion.id)
+        .where(EssayVersion.essay_id == essay_id)
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    latest_version_id = version_result.scalar_one_or_none()
+    if latest_version_id is None:
+        raise NotFoundError("No integrity report found for this essay.")
+
     report_result = await db.execute(
         select(IntegrityReport)
-        .join(EssayVersion, IntegrityReport.essay_version_id == EssayVersion.id)
         .where(
-            EssayVersion.essay_id == essay_id,
+            IntegrityReport.essay_version_id == latest_version_id,
             IntegrityReport.teacher_id == teacher_id,
         )
         .order_by(IntegrityReport.created_at.desc())
@@ -622,6 +633,7 @@ async def get_integrity_report_for_essay(
 
     return IntegrityReportResponse(
         id=report.id,
+        essay_id=essay.id,
         essay_version_id=report.essay_version_id,
         provider=report.provider,
         ai_likelihood=report.ai_likelihood,
@@ -682,6 +694,12 @@ async def update_integrity_report_status(
     await db.commit()
     await db.refresh(report)
 
+    # Resolve essay_id via the report's essay version so the response includes it.
+    version_result = await db.execute(
+        select(EssayVersion.essay_id).where(EssayVersion.id == report.essay_version_id)
+    )
+    essay_id = version_result.scalar_one()
+
     logger.info(
         "Integrity report status updated",
         extra={"report_id": str(report_id), "status": status.value},
@@ -689,6 +707,7 @@ async def update_integrity_report_status(
 
     return IntegrityReportResponse(
         id=report.id,
+        essay_id=essay_id,
         essay_version_id=report.essay_version_id,
         provider=report.provider,
         ai_likelihood=report.ai_likelihood,

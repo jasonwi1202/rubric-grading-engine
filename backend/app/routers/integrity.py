@@ -20,6 +20,7 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
@@ -47,6 +48,18 @@ assignment_integrity_router = APIRouter(prefix="/assignments", tags=["integrity"
 integrity_reports_router = APIRouter(prefix="/integrity-reports", tags=["integrity"])
 
 
+class _IntegrityReportResponseEnvelope(BaseModel):
+    """Standard data envelope wrapping an IntegrityReportResponse."""
+
+    data: IntegrityReportResponse
+
+
+class _IntegritySummaryResponseEnvelope(BaseModel):
+    """Standard data envelope wrapping an IntegritySummaryResponse."""
+
+    data: IntegritySummaryResponse
+
+
 # ---------------------------------------------------------------------------
 # GET /essays/{essayId}/integrity
 # ---------------------------------------------------------------------------
@@ -55,7 +68,7 @@ integrity_reports_router = APIRouter(prefix="/integrity-reports", tags=["integri
 @essay_integrity_router.get(
     "/{essay_id}/integrity",
     summary="Get the latest integrity report for an essay",
-    response_model=IntegrityReportResponse,
+    response_model=_IntegrityReportResponseEnvelope,
 )
 async def get_essay_integrity_endpoint(
     essay_id: uuid.UUID,
@@ -94,7 +107,7 @@ async def get_essay_integrity_endpoint(
 @assignment_integrity_router.get(
     "/{assignment_id}/integrity/summary",
     summary="Get class-level integrity signal counts for an assignment",
-    response_model=IntegritySummaryResponse,
+    response_model=_IntegritySummaryResponseEnvelope,
 )
 async def get_assignment_integrity_summary_endpoint(
     assignment_id: uuid.UUID,
@@ -131,7 +144,7 @@ async def get_assignment_integrity_summary_endpoint(
 @integrity_reports_router.patch(
     "/{report_id}/status",
     summary="Update the teacher review status of an integrity report",
-    response_model=IntegrityReportResponse,
+    response_model=_IntegrityReportResponseEnvelope,
 )
 async def patch_integrity_status_endpoint(
     report_id: uuid.UUID,

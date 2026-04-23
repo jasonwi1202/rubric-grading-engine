@@ -38,11 +38,13 @@ def _make_teacher(teacher_id: uuid.UUID | None = None) -> MagicMock:
 
 def _make_report(
     report_id: uuid.UUID | None = None,
+    essay_id: uuid.UUID | None = None,
     essay_version_id: uuid.UUID | None = None,
     status: IntegrityReportStatus = IntegrityReportStatus.pending,
 ) -> IntegrityReportResponse:
     return IntegrityReportResponse(
         id=report_id or uuid.uuid4(),
+        essay_id=essay_id or uuid.uuid4(),
         essay_version_id=essay_version_id or uuid.uuid4(),
         provider="internal",
         ai_likelihood=0.25,

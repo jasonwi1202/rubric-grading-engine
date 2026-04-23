@@ -67,6 +67,7 @@ function makeReport(
 ): IntegrityReportResponse {
   return {
     id: "report-test-001",
+    essay_id: "essay-test-001",
     essay_version_id: "ev-test-001",
     provider: "internal",
     ai_likelihood: 0.25,

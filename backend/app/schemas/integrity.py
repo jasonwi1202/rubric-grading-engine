@@ -1,14 +1,15 @@
 """Pydantic schemas for the integrity report API endpoints.
 
-No student PII is collected, processed, or stored here — only entity IDs
-and integrity signal values.
+Responses may include flagged passage excerpts from student essays.  Because
+excerpt text can contain student PII, any such response data must be handled
+as FERPA-protected student data.  Student PII must not be logged from these
+schemas; use entity IDs and integrity signal values in logs instead.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,13 +27,14 @@ class FlaggedPassage(BaseModel):
     signal_type: str | None = None
     source: str | None = None
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "extra": "ignore"}
 
 
 class IntegrityReportResponse(BaseModel):
     """Integrity report returned by GET /essays/{essayId}/integrity."""
 
     id: uuid.UUID
+    essay_id: uuid.UUID
     essay_version_id: uuid.UUID
     provider: str
     # Probability [0.0, 1.0] that the text is AI-generated; None if not available.
@@ -40,7 +42,7 @@ class IntegrityReportResponse(BaseModel):
     # Overall similarity score [0.0, 1.0]; None if not available.
     similarity_score: float | None
     # Zero or more flagged passage excerpts. Never None — empty list when absent.
-    flagged_passages: list[dict[str, Any]]
+    flagged_passages: list[FlaggedPassage]
     status: IntegrityReportStatus
     reviewed_at: datetime | None
     created_at: datetime

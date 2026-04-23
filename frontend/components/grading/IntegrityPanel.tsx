@@ -157,11 +157,14 @@ export interface IntegrityPanelProps {
 export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) {
   const queryClient = useQueryClient();
 
+  const integrityQueryKey = ["integrity", report.essay_id] as const;
+
   const statusMutation = useMutation({
     mutationFn: (status: "reviewed_clear" | "flagged") =>
       updateIntegrityStatus(report.id, { status }),
     onSuccess: (updated: IntegrityReportResponse) => {
-      queryClient.invalidateQueries({ queryKey: ["integrity", updated.essay_version_id] });
+      queryClient.setQueryData(integrityQueryKey, updated);
+      queryClient.invalidateQueries({ queryKey: integrityQueryKey });
       onStatusUpdate?.(updated);
     },
   });
@@ -273,7 +276,7 @@ export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) 
               className="w-full rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Mark as reviewed — no concern"
             >
-              {isPending && report.status !== "flagged"
+              {isPending && statusMutation.variables === "reviewed_clear"
                 ? "Saving\u2026"
                 : "Mark as reviewed \u2014 no concern"}
             </button>
@@ -285,7 +288,7 @@ export function IntegrityPanel({ report, onStatusUpdate }: IntegrityPanelProps) 
               className="w-full rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Flag for follow-up"
             >
-              {isPending && report.status !== "reviewed_clear"
+              {isPending && statusMutation.variables === "flagged"
                 ? "Saving\u2026"
                 : "Flag for follow-up"}
             </button>

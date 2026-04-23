@@ -44,6 +44,8 @@ export interface FlaggedPassage {
  */
 export interface IntegrityReportResponse {
   id: string;
+  /** Essay UUID — used as the React Query cache key for this report. */
+  essay_id: string;
   essay_version_id: string;
   provider: string;
   /** Probability [0.0, 1.0] that the text is AI-generated; null if not available. */
