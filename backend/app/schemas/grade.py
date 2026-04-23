@@ -46,6 +46,8 @@ class GradeResponse(BaseModel):
     prompt_version: str
     is_locked: bool
     locked_at: datetime | None
+    # Derived from criterion confidence levels. Nullable for pre-M4.1 grades.
+    overall_confidence: ConfidenceLevel | None
     created_at: datetime
     criterion_scores: list[CriterionScoreResponse]
 

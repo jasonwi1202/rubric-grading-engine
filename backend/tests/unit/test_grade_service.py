@@ -66,6 +66,7 @@ def _make_grade(
     essay_version_id: uuid.UUID | None = None,
     is_locked: bool = False,
     summary_feedback_edited: str | None = None,
+    overall_confidence: ConfidenceLevel | None = ConfidenceLevel.high,
 ) -> MagicMock:
     g = MagicMock()
     g.id = grade_id or _make_uuid()
@@ -79,6 +80,7 @@ def _make_grade(
     g.prompt_version = "grading-v1"
     g.is_locked = is_locked
     g.locked_at = None
+    g.overall_confidence = overall_confidence
     g.created_at = datetime.now(UTC)
     return g
 
@@ -178,6 +180,8 @@ class TestGetGradeForEssay:
         assert response.id == grade.id
         assert len(response.criterion_scores) == 1
         assert response.criterion_scores[0].id == criterion_score.id
+        # M4.1: overall_confidence is included in the response.
+        assert response.overall_confidence == grade.overall_confidence
 
     @pytest.mark.asyncio
     async def test_essay_not_found_raises_not_found(self) -> None:

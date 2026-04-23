@@ -125,6 +125,7 @@ function makeGrade(overrides: Partial<GradeResponse> = {}): GradeResponse {
     prompt_version: "test-v1",
     is_locked: false,
     locked_at: null,
+    overall_confidence: "high",
     created_at: "2026-04-01T00:00:00Z",
     criterion_scores: [cs1, cs2],
     ...overrides,

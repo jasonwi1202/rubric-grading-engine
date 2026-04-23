@@ -392,6 +392,7 @@ function makeGrade(
     prompt_version: "v1",
     is_locked: true,
     locked_at: "2026-04-01T00:00:00Z",
+    overall_confidence: "high",
     created_at: "2026-04-01T00:00:00Z",
     criterion_scores: [],
     ...overrides,

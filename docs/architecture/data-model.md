@@ -195,6 +195,7 @@ The grading result for a specific essay version. One grade per essay version.
 | prompt_version | VARCHAR(100) | Prompt version string that produced this grade (e.g. `grading-v1`) |
 | is_locked | BOOLEAN | Default false |
 | locked_at | TIMESTAMPTZ | Nullable |
+| overall_confidence | ENUM (`confidencelevel`) | Nullable — derived from criterion confidence levels: `low` if any criterion is `low`; `medium` if any is `medium` (and none is `low`); `high` if all are `high`. NULL for grades produced before M4.1. |
 | created_at | TIMESTAMPTZ | |
 
 ---
