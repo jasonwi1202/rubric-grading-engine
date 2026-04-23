@@ -201,6 +201,11 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.essays import router as essays_router
     from app.routers.exports import router as exports_router
     from app.routers.grades import essay_grade_router, grades_router
+    from app.routers.regrade_requests import (
+        assignments_regrade_router,
+        grades_regrade_router,
+        regrade_requests_router,
+    )
     from app.routers.health import router as health_router
     from app.routers.integrity import (
         assignment_integrity_router,
@@ -228,6 +233,9 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(assignment_integrity_router, prefix="/api/v1")
     application.include_router(assignments_router, prefix="/api/v1")
     application.include_router(grades_router, prefix="/api/v1")
+    application.include_router(grades_regrade_router, prefix="/api/v1")
+    application.include_router(assignments_regrade_router, prefix="/api/v1")
+    application.include_router(regrade_requests_router, prefix="/api/v1")
     application.include_router(integrity_reports_router, prefix="/api/v1")
     application.include_router(comment_bank_router, prefix="/api/v1")
     application.include_router(exports_router, prefix="/api/v1")

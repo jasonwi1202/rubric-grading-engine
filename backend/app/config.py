@@ -98,6 +98,16 @@ class Settings(BaseSettings):
     integrity_ai_likelihood_threshold: float = 0.7
 
     # -------------------------------------------------------------------------
+    # Regrade Requests
+    # -------------------------------------------------------------------------
+    # Number of days after a grade is created within which regrade requests may
+    # be submitted.  Requests submitted after this window are rejected.
+    regrade_window_days: int = 7
+    # Maximum number of regrade requests allowed per grade.  Once this limit is
+    # reached, no further requests are accepted for that grade.
+    regrade_max_per_grade: int = 1
+
+    # -------------------------------------------------------------------------
     # Application
     # -------------------------------------------------------------------------
     environment: str = "development"
