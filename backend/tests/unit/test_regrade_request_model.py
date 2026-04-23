@@ -12,6 +12,7 @@ Tests verify:
 
 import importlib
 
+import app.models.grade  # noqa: F401 — ensures Grade/CriterionScore are registered so relationship targets resolve
 from app.models.base import Base
 from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
 

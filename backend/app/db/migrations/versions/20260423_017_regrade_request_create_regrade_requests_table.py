@@ -15,7 +15,10 @@ A new ENUM type ``regraderequeststatus`` (values: open, approved, denied) is
 created in upgrade() and dropped in downgrade().
 
 Zero-downtime notes:
-- Creating a new table and a new ENUM type does not lock any existing table.
+- Creating the new table and ENUM avoids rewriting existing tables, but adding
+  FK constraints still acquires brief locks on the referenced ``grades``,
+  ``criterion_scores``, and ``users`` tables while the constraints are
+  created.
 - The FK ``criterion_score_id`` uses ``ON DELETE SET NULL`` so that deleting a
   criterion score does not cascade-delete the regrade request, preserving the
   audit trail.
