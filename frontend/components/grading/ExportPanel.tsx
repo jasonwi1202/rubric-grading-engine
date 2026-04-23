@@ -165,15 +165,14 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
   // Sync the download URL into component state so we can display it.
   // It is intentionally NOT stored in browser storage.
   useEffect(() => {
-    if (downloadData?.download_url) {
-      setDownloadUrl(downloadData.download_url);
+    if (downloadData?.url) {
+      setDownloadUrl(downloadData.url);
     }
   }, [downloadData]);
 
   // ----- Start PDF export -----
   const startExportMutation = useMutation({
-    mutationFn: () =>
-      startExport(assignmentId, { format: "pdf", student_ids: "all" }),
+    mutationFn: () => startExport(assignmentId),
     onSuccess: (data) => {
       setPdfError(null);
       setDownloadUrl(null);
@@ -266,10 +265,10 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
         </svg>
       </button>
 
-      {/* Dropdown menu */}
+      {/* Dropdown panel */}
       {menuOpen && (
         <div
-          role="menu"
+          data-testid="export-panel-menu"
           aria-label="Export options menu"
           className="absolute right-0 z-10 mt-2 w-72 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg focus:outline-none"
         >
@@ -289,7 +288,6 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
             <div className="mb-2">
               <button
                 type="button"
-                role="menuitem"
                 disabled={pdfDisabled}
                 onClick={handleStartPdfExport}
                 aria-label="Export feedback as PDF ZIP"
@@ -352,8 +350,8 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
                     />
                   </svg>
                   <span>
-                    {exportStatus?.progress != null
-                      ? `Exporting… ${exportStatus.progress}%`
+                    {exportStatus != null && exportStatus.total > 0
+                      ? `Exporting… ${Math.round((exportStatus.complete / exportStatus.total) * 100)}%`
                       : "Preparing export…"}
                   </span>
                 </div>
@@ -411,7 +409,6 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
             {/* CSV grades export */}
             <button
               type="button"
-              role="menuitem"
               disabled={csvDisabled}
               onClick={handleCsvExport}
               aria-label="Export grades as CSV"

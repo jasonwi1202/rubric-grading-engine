@@ -114,7 +114,7 @@ describe("ExportPanel — Export button", () => {
       />,
       { wrapper },
     );
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-panel-menu")).not.toBeInTheDocument();
   });
 
   it("opens the dropdown menu when clicked", async () => {
@@ -127,7 +127,7 @@ describe("ExportPanel — Export button", () => {
       { wrapper },
     );
     await user.click(screen.getByRole("button", { name: /export options/i }));
-    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByTestId("export-panel-menu")).toBeInTheDocument();
   });
 });
 
@@ -155,14 +155,14 @@ describe("ExportPanel — disabled when no locked grades", () => {
   });
 
   it("PDF export menu item is disabled", () => {
-    const pdfItem = screen.getByRole("menuitem", {
+    const pdfItem = screen.getByRole("button", {
       name: /export feedback as pdf zip/i,
     });
     expect(pdfItem).toBeDisabled();
   });
 
   it("CSV export menu item is disabled", () => {
-    const csvItem = screen.getByRole("menuitem", {
+    const csvItem = screen.getByRole("button", {
       name: /export grades as csv/i,
     });
     expect(csvItem).toBeDisabled();
@@ -191,14 +191,14 @@ describe("ExportPanel — enabled when has locked grades", () => {
   });
 
   it("PDF export menu item is enabled", () => {
-    const pdfItem = screen.getByRole("menuitem", {
+    const pdfItem = screen.getByRole("button", {
       name: /export feedback as pdf zip/i,
     });
     expect(pdfItem).not.toBeDisabled();
   });
 
   it("CSV export menu item is enabled", () => {
-    const csvItem = screen.getByRole("menuitem", {
+    const csvItem = screen.getByRole("button", {
       name: /export grades as csv/i,
     });
     expect(csvItem).not.toBeDisabled();
@@ -211,11 +211,12 @@ describe("ExportPanel — enabled when has locked grades", () => {
 
 describe("ExportPanel — PDF export", () => {
   it("calls startExport with the assignment ID when PDF item is clicked", async () => {
-    mockStartExport.mockResolvedValue({ task_id: "task-pdf-001" });
+    mockStartExport.mockResolvedValue({ task_id: "task-pdf-001", assignment_id: ASSIGNMENT_ID, status: "pending" });
     mockGetExportStatus.mockResolvedValue({
       task_id: "task-pdf-001",
       status: "pending",
-      progress: null,
+      total: 0,
+      complete: 0,
       error: null,
     });
 
@@ -226,25 +227,23 @@ describe("ExportPanel — PDF export", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
-    const pdfItem = screen.getByRole("menuitem", {
+    const pdfItem = screen.getByRole("button", {
       name: /export feedback as pdf zip/i,
     });
     await user.click(pdfItem);
 
     await waitFor(() =>
-      expect(mockStartExport).toHaveBeenCalledWith(ASSIGNMENT_ID, {
-        format: "pdf",
-        student_ids: "all",
-      }),
+      expect(mockStartExport).toHaveBeenCalledWith(ASSIGNMENT_ID),
     );
   });
 
   it("shows 'Export in progress…' while the export task is active", async () => {
-    mockStartExport.mockResolvedValue({ task_id: "task-pdf-002" });
+    mockStartExport.mockResolvedValue({ task_id: "task-pdf-002", assignment_id: ASSIGNMENT_ID, status: "pending" });
     mockGetExportStatus.mockResolvedValue({
       task_id: "task-pdf-002",
       status: "processing",
-      progress: 40,
+      total: 10,
+      complete: 4,
       error: null,
     });
 
@@ -256,7 +255,7 @@ describe("ExportPanel — PDF export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("menuitem", { name: /export feedback as pdf zip/i }),
+      screen.getByRole("button", { name: /export feedback as pdf zip/i }),
     );
 
     await waitFor(() =>
@@ -265,16 +264,17 @@ describe("ExportPanel — PDF export", () => {
   });
 
   it("shows download link when export is complete", async () => {
-    mockStartExport.mockResolvedValue({ task_id: "task-pdf-003" });
+    mockStartExport.mockResolvedValue({ task_id: "task-pdf-003", assignment_id: ASSIGNMENT_ID, status: "pending" });
     mockGetExportStatus.mockResolvedValue({
       task_id: "task-pdf-003",
       status: "complete",
-      progress: 100,
+      total: 10,
+      complete: 10,
       error: null,
     });
     mockGetExportDownloadUrl.mockResolvedValue({
-      download_url: "https://s3.example.com/export-test-zip",
-      expires_at: "2026-04-23T01:00:00Z",
+      url: "https://s3.example.com/export-test-zip",
+      expires_in_seconds: 900,
     });
 
     const user = userEvent.setup();
@@ -285,7 +285,7 @@ describe("ExportPanel — PDF export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("menuitem", { name: /export feedback as pdf zip/i }),
+      screen.getByRole("button", { name: /export feedback as pdf zip/i }),
     );
 
     await waitFor(() =>
@@ -312,7 +312,7 @@ describe("ExportPanel — PDF export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("menuitem", { name: /export feedback as pdf zip/i }),
+      screen.getByRole("button", { name: /export feedback as pdf zip/i }),
     );
 
     await waitFor(() =>
@@ -338,7 +338,7 @@ describe("ExportPanel — CSV export", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
-    const csvItem = screen.getByRole("menuitem", {
+    const csvItem = screen.getByRole("button", {
       name: /export grades as csv/i,
     });
     await user.click(csvItem);
@@ -361,7 +361,7 @@ describe("ExportPanel — CSV export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("menuitem", { name: /export grades as csv/i }),
+      screen.getByRole("button", { name: /export grades as csv/i }),
     );
 
     await waitFor(() =>

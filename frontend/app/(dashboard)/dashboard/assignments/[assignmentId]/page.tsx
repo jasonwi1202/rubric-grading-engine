@@ -94,11 +94,8 @@ export default function AssignmentOverviewPage() {
     staleTime: 30_000,
   });
 
-  // At least one essay has a locked or returned grade → export is available.
-  const hasLockedGrades =
-    essays?.some(
-      (e) => e.status === "locked" || e.status === "returned",
-    ) ?? false;
+  // At least one essay has a locked grade → export is available.
+  const hasLockedGrades = essays?.some((e) => e.status === "locked") ?? false;
 
   const transitionMutation = useMutation({
     mutationFn: (nextStatus: AssignmentStatus) =>

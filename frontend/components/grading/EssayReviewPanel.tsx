@@ -164,14 +164,19 @@ export function buildClipboardText(
   for (const cs of grade.criterion_scores) {
     const criterion = criteriaMap.get(cs.rubric_criterion_id);
     const name = criterion?.name ?? "Criterion";
-    const maxScore = criterion?.max_score ?? cs.final_score;
+    const scoreDisplay =
+      criterion?.max_score != null
+        ? `${cs.final_score} / ${criterion.max_score}`
+        : `${cs.final_score}`;
     const feedback = (
       cs.teacher_feedback ?? cs.ai_feedback ?? ""
     ).trim();
 
-    lines.push("");
+    if (lines.length > 0) {
+      lines.push("");
+    }
     lines.push(`--- ${name} ---`);
-    lines.push(`Score: ${cs.final_score} / ${maxScore}`);
+    lines.push(`Score: ${scoreDisplay}`);
     if (feedback) {
       lines.push(feedback);
     }

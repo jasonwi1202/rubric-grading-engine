@@ -20,16 +20,11 @@ import { apiGet, apiGetBlob, apiPost } from "@/lib/api/client";
 // Types
 // ---------------------------------------------------------------------------
 
-/** Request body for POST /assignments/{assignmentId}/export. */
-export interface StartExportRequest {
-  format: "pdf";
-  /** UUIDs of students to include, or "all" to export every locked grade. */
-  student_ids?: string[] | "all";
-}
-
 /** Response from POST /assignments/{assignmentId}/export (202 Accepted). */
 export interface StartExportResponse {
   task_id: string;
+  assignment_id: string;
+  status: string;
 }
 
 /** Status of an async export task. */
@@ -39,8 +34,10 @@ export type ExportTaskStatus = "pending" | "processing" | "complete" | "failed";
 export interface ExportStatusResponse {
   task_id: string;
   status: ExportTaskStatus;
-  /** Progress percentage 0–100, or null when not yet determined. */
-  progress: number | null;
+  /** Total number of essays to export. */
+  total: number;
+  /** Number of essays exported so far. */
+  complete: number;
   /**
    * Error type code (e.g. "STORAGE_ERROR") when status is "failed".
    * Never contains raw exception messages or student PII.
@@ -51,9 +48,9 @@ export interface ExportStatusResponse {
 /** Response from GET /exports/{taskId}/download. */
 export interface ExportDownloadResponse {
   /** Short-lived pre-signed S3 URL — do not store in browser storage. */
-  download_url: string;
-  /** ISO 8601 timestamp when the URL expires. */
-  expires_at: string;
+  url: string;
+  /** Seconds until the URL expires (typically 900 = 15 min). */
+  expires_in_seconds: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,14 +61,15 @@ export interface ExportDownloadResponse {
  * Enqueue an async PDF batch export for an assignment.
  * Calls POST /api/v1/assignments/{assignmentId}/export.
  * Returns a task_id immediately (202 Accepted).
+ *
+ * The backend endpoint takes no request body.
  */
 export async function startExport(
   assignmentId: string,
-  data: StartExportRequest = { format: "pdf", student_ids: "all" },
 ): Promise<StartExportResponse> {
   return apiPost<StartExportResponse>(
     `/assignments/${assignmentId}/export`,
-    data,
+    {},
   );
 }
 
