@@ -868,9 +868,9 @@ export function RegradeQueue({
                 <span className="text-sm text-gray-600">
                   Close the regrade window? No new requests will be accepted.
                 </span>
-                {/* Confirm is disabled — the backend endpoint does not yet exist.
-                    Clicking it calls the stub which immediately maps to the
-                    "coming soon" message so teachers get clear feedback. */}
+                {/* The Confirm button calls the mutation which calls closeRegradeWindow.
+                    The stub always throws (backend endpoint not yet implemented),
+                    so onError fires and shows the "coming soon" message via closeError. */}
                 <button
                   type="button"
                   onClick={() => closeMutation.mutate()}

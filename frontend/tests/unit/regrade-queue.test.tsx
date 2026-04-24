@@ -808,13 +808,15 @@ describe("RegradeQueue — close regrade window", () => {
       );
     });
 
-    // Raw error message must NOT be displayed verbatim.
-    // Verify the component uses a safe static string, not the stub's message directly.
-    expect(
-      screen.getByRole("alert").textContent,
-    ).not.toContain("throw");
-    expect(
-      screen.getByRole("alert").textContent,
-    ).not.toContain("Error:");
+    // The component must show its own static string, not the raw error message
+    // thrown by the stub. Verify the stub's own message text is not rendered
+    // verbatim — the component must rephrase it, not echo it.
+    const alertText = screen.getByRole("alert").textContent ?? "";
+    // "This feature is coming soon." is both the stub message and the mapped
+    // message, so assert the component produces its mapped suffix as the signal:
+    expect(alertText).toContain("not yet available");
+    // And raw Error artifacts must not appear:
+    expect(alertText).not.toMatch(/error:/i);
+    expect(alertText).not.toContain("throw");
   });
 });
