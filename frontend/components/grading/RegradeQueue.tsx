@@ -44,6 +44,7 @@ import type { GradeResponse } from "@/lib/api/grades";
 import { ApiError } from "@/lib/api/errors";
 import type { EssayListItem } from "@/lib/api/essays";
 import type { RubricSnapshotCriterion } from "@/components/grading/EssayReviewPanel";
+import { useFocusTrap } from "@/lib/utils/focus-trap";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -81,8 +82,10 @@ function createErrorMessage(err: unknown): string {
         return "You do not have permission to submit this request.";
       case "NOT_FOUND":
         return "Grade not found. Please refresh the page.";
-      case "CONFLICT":
-        return "The regrade window has closed or the request limit has been reached.";
+      case "REGRADE_WINDOW_CLOSED":
+        return "The regrade submission window has closed. No new requests can be submitted.";
+      case "REGRADE_REQUEST_LIMIT_REACHED":
+        return "The maximum number of regrade requests for this grade has been reached.";
       default:
         return "Failed to submit the regrade request. Please try again.";
     }
@@ -97,7 +100,7 @@ function resolveErrorMessage(err: unknown): string {
         return "You do not have permission to resolve this request.";
       case "NOT_FOUND":
         return "Regrade request not found. Please refresh.";
-      case "UNPROCESSABLE_ENTITY":
+      case "VALIDATION_ERROR":
         return "A resolution note is required when denying a request.";
       default:
         return "Failed to resolve the request. Please try again.";
@@ -160,6 +163,12 @@ function ReviewPanel({
 
   const resolveId = useId();
 
+  // Focus trap: captures focus on mount, traps Tab/Shift+Tab, Escape closes.
+  const { dialogRef, handleKeyDown: trapKeyDown } = useFocusTrap({
+    open: true,
+    onClose,
+  });
+
   const resolveMutation = useMutation({
     mutationFn: (body: RegradeRequestResolveRequest) =>
       resolveRegradeRequest(request.id, body),
@@ -186,10 +195,15 @@ function ReviewPanel({
     };
 
     if (resolution === "approved" && scoreOverride.trim() !== "") {
-      const parsed = parseInt(scoreOverride, 10);
-      if (!isNaN(parsed)) {
-        body.new_criterion_score = parsed;
+      const trimmedScoreOverride = scoreOverride.trim();
+      const parsed = Number(trimmedScoreOverride);
+
+      if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+        setResolveError("Score override must be a whole number.");
+        return;
       }
+
+      body.new_criterion_score = parsed;
     }
 
     resolveMutation.mutate(body);
@@ -199,12 +213,20 @@ function ReviewPanel({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={`${resolveId}-title`}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${resolveId}-title`}
+        className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        onKeyDown={trapKeyDown}
+        tabIndex={-1}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2
@@ -371,6 +393,7 @@ function ReviewPanel({
                       <input
                         id={`${resolveId}-score`}
                         type="number"
+                        step={1}
                         value={scoreOverride}
                         onChange={(e) => setScoreOverride(e.target.value)}
                         placeholder="Leave blank to keep current score"
@@ -748,6 +771,10 @@ export function RegradeQueue({
       setCloseConfirming(false);
       setWindowClosed(true);
       setCloseError(null);
+      // Switch to queue tab — the log tab is removed when the window is closed,
+      // and leaving activeTab === "log" would keep the log panel visible with
+      // aria-labelledby pointing to a non-existent element.
+      setActiveTab("queue");
     },
     onError: (err) => {
       setCloseError(closeWindowErrorMessage(err));
@@ -770,12 +797,37 @@ export function RegradeQueue({
     (created: RegradeRequest) => {
       queryClient.setQueryData<RegradeRequest[]>(
         ["regrade-requests", assignmentId],
-        (prev) => [created, ...(prev ?? [])],
+        // Append to keep oldest-first ordering consistent with the server response.
+        (prev) => [...(prev ?? []), created],
       );
       setActiveTab("queue");
     },
     [assignmentId, queryClient],
   );
+
+  // Arrow-key navigation between tabs (ARIA tab pattern with roving tabIndex).
+  const handleTabKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    currentTab: "queue" | "log",
+  ) => {
+    const availableTabs = (windowClosed ? ["queue"] : ["queue", "log"]) as Array<"queue" | "log">;
+    const currentIndex = availableTabs.indexOf(currentTab);
+    let nextIndex = currentIndex;
+
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      nextIndex = (currentIndex + 1) % availableTabs.length;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      nextIndex = (currentIndex - 1 + availableTabs.length) % availableTabs.length;
+    } else {
+      return;
+    }
+
+    const nextTab = availableTabs[nextIndex];
+    setActiveTab(nextTab);
+    document.getElementById(`${tabId}-${nextTab}-tab`)?.focus();
+  };
 
   // Filtered requests
   const filteredRequests = requests.filter((r) => {
@@ -858,7 +910,9 @@ export function RegradeQueue({
           aria-selected={activeTab === "queue"}
           aria-controls={`${tabId}-queue-panel`}
           id={`${tabId}-queue-tab`}
+          tabIndex={activeTab === "queue" ? 0 : -1}
           onClick={() => setActiveTab("queue")}
+          onKeyDown={(e) => handleTabKeyDown(e, "queue")}
           className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
             activeTab === "queue"
               ? "border-b-2 border-blue-600 text-blue-600"
@@ -873,7 +927,9 @@ export function RegradeQueue({
             aria-selected={activeTab === "log"}
             aria-controls={`${tabId}-log-panel`}
             id={`${tabId}-log-tab`}
+            tabIndex={activeTab === "log" ? 0 : -1}
             onClick={() => setActiveTab("log")}
+            onKeyDown={(e) => handleTabKeyDown(e, "log")}
             className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
               activeTab === "log"
                 ? "border-b-2 border-blue-600 text-blue-600"
@@ -1047,26 +1103,29 @@ export function RegradeQueue({
         )}
       </div>
 
-      {/* Log request tab panel */}
-      <div
-        role="tabpanel"
-        id={`${tabId}-log-panel`}
-        aria-labelledby={`${tabId}-log-tab`}
-        hidden={activeTab !== "log"}
-      >
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-sm font-semibold text-gray-900">
-            Log a regrade request
-          </h3>
-          <LogRequestForm
-            assignmentId={assignmentId}
-            essays={essays}
-            rubricCriteria={rubricCriteria}
-            onSuccess={handleLogSuccess}
-            onCancel={() => setActiveTab("queue")}
-          />
+      {/* Log request tab panel — only rendered while the window is open so that
+          aria-labelledby always points to the existing log tab button. */}
+      {!windowClosed && (
+        <div
+          role="tabpanel"
+          id={`${tabId}-log-panel`}
+          aria-labelledby={`${tabId}-log-tab`}
+          hidden={activeTab !== "log"}
+        >
+          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+            <h3 className="mb-4 text-sm font-semibold text-gray-900">
+              Log a regrade request
+            </h3>
+            <LogRequestForm
+              assignmentId={assignmentId}
+              essays={essays}
+              rubricCriteria={rubricCriteria}
+              onSuccess={handleLogSuccess}
+              onCancel={() => setActiveTab("queue")}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Review panel modal */}
       {selectedRequest && (

@@ -117,15 +117,14 @@ export async function resolveRegradeRequest(
 
 /**
  * Close the regrade submission window for an assignment.
- * Calls POST /api/v1/assignments/{assignmentId}/close-regrade-window.
  *
- * After this call, no new regrade requests can be submitted for the assignment.
+ * Backend support for this action has not been implemented yet, so this helper
+ * is intentionally stubbed to avoid issuing a guaranteed 404 request.
+ * Wire this helper to the real endpoint once the backend route ships.
  */
 export async function closeRegradeWindow(
   assignmentId: string,
 ): Promise<void> {
-  return apiPost<void>(
-    `/assignments/${assignmentId}/close-regrade-window`,
-    {},
-  );
+  void assignmentId;
+  throw new Error("Closing the regrade window is not available yet.");
 }
