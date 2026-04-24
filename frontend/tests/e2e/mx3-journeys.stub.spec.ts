@@ -71,8 +71,12 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
     state.assignmentTitle = `E2E Assignment ${ts}`;
 
     // Create a single browser context + page shared by all five serial steps.
-    // This keeps the refresh_token cookie (httpOnly) alive across test boundaries.
-    state.context = await browser.newContext();
+    // Pass baseURL so that relative goto() calls (e.g. "/dashboard") resolve
+    // correctly — browser.newContext() does not inherit use.baseURL from the
+    // Playwright config automatically (that only applies to the built-in page fixture).
+    state.context = await browser.newContext({
+      baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    });
     state.page = await state.context.newPage();
   });
 

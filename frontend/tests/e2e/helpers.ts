@@ -55,9 +55,15 @@ export function extractLinkFromEmail(body: string): string {
   return match[0].trim().replace(/[>)\]'"]+$/, ""); // strip trailing punctuation
 }
 
-/** Generate a unique test email to avoid collisions between test runs. */
+/** Generate a unique test email to avoid collisions between test runs.
+ *
+ * Combines the epoch millisecond timestamp with a random alphanumeric suffix so
+ * that two suites starting within the same millisecond (e.g. parallel CI shards)
+ * still produce distinct addresses for the same `tag`.
+ */
 export function testEmail(tag: string): string {
-  return `e2e-${tag}-${Date.now()}@example.com`;
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `e2e-${tag}-${Date.now()}-${suffix}@example.com`;
 }
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:8000";
