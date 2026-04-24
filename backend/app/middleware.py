@@ -8,11 +8,18 @@ SecurityHeadersMiddleware
     and would conflict if also set on the backend API.
 
 RateLimitMiddleware
-    Enforces per-IP request limits on sensitive public endpoints using Redis
-    INCR / EXPIRE counters.  Covers the auth endpoints (login, signup,
-    refresh) and the public contact/DPA form endpoints.  A 429 JSON response
-    is returned immediately when the limit is exceeded — the route handler is
+    Enforces per-IP request limits on the auth endpoints (login, signup,
+    refresh) using Redis INCR / EXPIRE counters.  A 429 JSON response is
+    returned immediately when the limit is exceeded — the route handler is
     never called.
+
+    The public contact/DPA form endpoints are intentionally **excluded** from
+    this middleware.  Those routes already enforce their own Redis rate limits
+    inside ``app.services.contact`` and ``app.services.dpa_request`` using
+    ``request.client.host`` directly.  Adding a second middleware-level counter
+    would create duplicate keys and, more importantly, inconsistent IP keying
+    when running behind a trusted proxy (the middleware may use CF/XFF while
+    the service layer always uses the direct TCP address).
 """
 
 from __future__ import annotations

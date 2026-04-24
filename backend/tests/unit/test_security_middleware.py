@@ -10,6 +10,7 @@ Tests verify that:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,9 +29,10 @@ class TestSecurityHeadersMiddleware:
     """All responses must include every security header."""
 
     @pytest.fixture()
-    def client(self) -> TestClient:
+    def client(self) -> Generator[TestClient, None, None]:
         app = create_app()
-        return TestClient(app, raise_server_exceptions=False)
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
 
     def test_x_frame_options_present_on_200(self, client: TestClient) -> None:
         resp = client.get("/api/v1/health")
