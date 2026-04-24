@@ -79,14 +79,14 @@ class MockMediaRecorder {
 
 const mockGetUserMedia = vi.fn();
 
-Object.defineProperty(global.navigator, "mediaDevices", {
-  value: { getUserMedia: mockGetUserMedia },
-  writable: true,
-  configurable: true,
-});
-
-// Stub URL.createObjectURL so audio <src> doesn't throw in jsdom.
-URL.createObjectURL = vi.fn(() => "blob:stub-url");
+// Save original global values so they can be restored in afterEach and
+// do not leak into other test files running in the same Vitest worker.
+const _origMediaDevicesDescriptor = Object.getOwnPropertyDescriptor(
+  global.navigator,
+  "mediaDevices",
+);
+const _origCreateObjectURL = URL.createObjectURL;
+const _origRevokeObjectURL = URL.revokeObjectURL;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -134,13 +134,42 @@ beforeEach(() => {
   // Default: getUserMedia succeeds.
   const stream = makeMockStream();
   mockGetUserMedia.mockResolvedValue(stream);
-  // Install MockMediaRecorder globally.
-  // @ts-expect-error — jsdom doesn't have MediaRecorder
-  global.MediaRecorder = MockMediaRecorder;
+
+  // Stub navigator.mediaDevices — restored in afterEach so the mutation does
+  // not bleed into other test files in the same Vitest worker.
+  Object.defineProperty(global.navigator, "mediaDevices", {
+    value: { getUserMedia: mockGetUserMedia },
+    writable: true,
+    configurable: true,
+  });
+
+  // Stub URL methods — restored in afterEach.
+  URL.createObjectURL = vi.fn(() => "blob:stub-url");
+  URL.revokeObjectURL = vi.fn();
+
+  // Install MockMediaRecorder globally — removed in afterEach.
+  vi.stubGlobal("MediaRecorder", MockMediaRecorder);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // Remove the MediaRecorder stub set with vi.stubGlobal.
+  vi.unstubAllGlobals();
+
+  // Restore URL methods.
+  URL.createObjectURL = _origCreateObjectURL;
+  URL.revokeObjectURL = _origRevokeObjectURL;
+
+  // Restore navigator.mediaDevices to its original state.
+  if (_origMediaDevicesDescriptor) {
+    Object.defineProperty(global.navigator, "mediaDevices", _origMediaDevicesDescriptor);
+  } else {
+    Object.defineProperty(global.navigator, "mediaDevices", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -224,6 +253,32 @@ describe("AudioRecorder — record/stop toggle", () => {
       expect(
         screen.getByRole("alert"),
       ).toHaveTextContent(/microphone access was denied/i);
+    });
+  });
+
+  it("shows not-supported error when MediaRecorder constructor throws", async () => {
+    // Simulate a browser that does not support MediaRecorder (e.g. old Safari).
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        constructor() {
+          throw new Error("MediaRecorder is not supported");
+        }
+      },
+    );
+
+    const user = userEvent.setup();
+    render(
+      <AudioRecorder gradeId="grade-test-001" isLocked={false} />,
+      { wrapper },
+    );
+
+    await user.click(screen.getByRole("button", { name: /start recording/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("alert"),
+      ).toHaveTextContent(/not supported in this browser/i);
     });
   });
 });

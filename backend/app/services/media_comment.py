@@ -46,6 +46,25 @@ ALLOWED_MIME_TYPES = frozenset(
     ]
 )
 
+# Mapping from base MIME type to S3 object key extension.
+# Keys must be a subset of the base MIME types derived from ALLOWED_MIME_TYPES;
+# the router validates the MIME type before calling any service function, so
+# a type outside this mapping should never reach create_media_comment.
+# Used to ensure the stored file has the correct extension even when the
+# client sends a non-webm recording (e.g. Safari sends audio/mp4).
+_MIME_TO_EXT: dict[str, str] = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".mp4",
+}
+
+# Sanity-check: every base MIME type in ALLOWED_MIME_TYPES must have an entry
+# in _MIME_TO_EXT, so adding a new allowed type without a corresponding
+# extension mapping is caught immediately at import time.
+assert all(
+    m.split(";")[0].strip() in _MIME_TO_EXT for m in ALLOWED_MIME_TYPES
+), "All base MIME types in ALLOWED_MIME_TYPES must have an entry in _MIME_TO_EXT"
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -155,7 +174,13 @@ async def create_media_comment(
     await _load_grade_tenant_scoped(db, grade_id, teacher_id)
 
     comment_id = uuid.uuid4()
-    s3_key = f"media/{teacher_id}/{grade_id}/{comment_id}.webm"
+    base_mime = mime_type.split(";")[0].strip()
+    # The router validates the MIME type against ALLOWED_MIME_TYPES before
+    # calling this function, so base_mime is guaranteed to be in _MIME_TO_EXT.
+    # A KeyError here indicates a programming error (e.g. a new MIME type was
+    # added to ALLOWED_MIME_TYPES without a matching entry in _MIME_TO_EXT).
+    ext = _MIME_TO_EXT[base_mime]
+    s3_key = f"media/{teacher_id}/{grade_id}/{comment_id}{ext}"
     loop = asyncio.get_running_loop()
 
     # Upload to S3 in a thread pool so the sync boto3 call does not block the

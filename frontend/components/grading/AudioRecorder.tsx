@@ -302,7 +302,19 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
     }
 
     chunksRef.current = [];
-    const recorder = new MediaRecorder(stream);
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream);
+    } catch (err) {
+      // MediaRecorder is not supported in this browser (e.g. some Safari versions).
+      // Log for debugging without exposing PII — the error is a DOMException.
+      console.error("MediaRecorder initialization failed:", err);
+      stream.getTracks().forEach((t) => t.stop());
+      setPermissionError(
+        "Audio recording is not supported in this browser. Please try a different browser.",
+      );
+      return;
+    }
     mediaRecorderRef.current = recorder;
 
     recorder.ondataavailable = (e) => {
