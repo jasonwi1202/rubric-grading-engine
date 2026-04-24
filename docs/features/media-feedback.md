@@ -1,7 +1,24 @@
 # Feature: Media Feedback
 
 **Phase:** 2 — Workflow
-**Status:** Planned
+**Status:** Partially Implemented (M4.10)
+
+**Shipped (M4.10 — audio comments):**
+- In-browser audio recording via MediaRecorder API with a 3-minute max and live countdown (`AudioRecorder` component in `EssayReviewPanel`)
+- Post-recording preview playback before saving — teacher can discard and re-record
+- `POST /grades/{id}/media-comments` — multipart upload → S3 → `media_comments` DB record
+- `GET /grades/{id}/media-comments` — list all audio comments for a grade
+- `DELETE /media-comments/{id}` — removes DB row and S3 object
+- `GET /media-comments/{id}/url` — returns access-controlled pre-signed URL for playback
+- S3 key format: `media/{teacher_id}/{grade_id}/{uuid}.webm` — no student PII in any key
+- Locked grades suppress the record button (read-only when `grade.is_locked`)
+- MIME type validation server-side; 50 MB size cap; graceful degradation on permission denial
+
+**Pending:**
+- Video comment recording (webcam / screen + webcam)
+- Media comment bank (pre-recorded reusable comments)
+- Export integration (PDF link / QR code to media file)
+- Auto-transcription for accessibility
 
 ---
 
