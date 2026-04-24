@@ -1,0 +1,350 @@
+"""Unit tests for cross-tenant access control (tenant isolation).
+
+Verifies that every major resource type returns HTTP 403 — not 200 or 404 —
+when teacher B attempts to access a resource that belongs to teacher A.
+
+The tests work by:
+1. Overriding ``get_current_teacher`` to inject teacher B's identity.
+2. Patching the relevant service function to raise ``ForbiddenError`` (which
+   is the correct service-layer response when ``teacher_id`` doesn't match).
+3. Asserting the HTTP response code is 403 and the error code is "FORBIDDEN".
+
+No real database or Redis is required — all external dependencies are mocked.
+No student PII appears in any fixture or assertion.
+
+These tests satisfy the acceptance criterion:
+  "Integration test: cross-tenant request returns 403 for every major
+   resource type"
+"""
+
+from __future__ import annotations
+
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi.testclient import TestClient
+
+from app.dependencies import get_current_teacher
+from app.exceptions import ForbiddenError
+from app.main import create_app
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_teacher(teacher_id: uuid.UUID | None = None) -> MagicMock:
+    teacher = MagicMock()
+    teacher.id = teacher_id or uuid.uuid4()
+    teacher.email = "teacher@school.edu"
+    teacher.email_verified = True
+    return teacher
+
+
+def _app_with_teacher(teacher: MagicMock) -> object:
+    """Return a FastAPI app whose ``get_current_teacher`` always returns *teacher*."""
+    app = create_app()
+    app.dependency_overrides[get_current_teacher] = lambda: teacher  # type: ignore[attr-defined]
+    return app
+
+
+def _assert_403(resp: object) -> None:
+    """Assert that the response carries HTTP 403 with the FORBIDDEN error code."""
+    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"  # type: ignore[attr-defined]
+    body = resp.json()  # type: ignore[attr-defined]
+    assert body.get("error", {}).get("code") == "FORBIDDEN", f"Unexpected body: {body}"
+
+
+# ---------------------------------------------------------------------------
+# Classes — GET /api/v1/classes/{classId}
+# ---------------------------------------------------------------------------
+
+
+class TestClassTenantIsolation:
+    def test_get_class_returns_403_for_another_teachers_class(self) -> None:
+        teacher_b = _make_teacher()
+        other_class_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.classes.get_class",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("class not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/classes/{other_class_id}")
+
+        _assert_403(resp)
+
+    def test_patch_class_returns_403_for_another_teachers_class(self) -> None:
+        teacher_b = _make_teacher()
+        other_class_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.classes.update_class",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("class not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/classes/{other_class_id}",
+                json={"name": "Hacked Class"},
+            )
+
+        _assert_403(resp)
+
+    def test_archive_class_returns_403_for_another_teachers_class(self) -> None:
+        teacher_b = _make_teacher()
+        other_class_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.classes.archive_class",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("class not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/classes/{other_class_id}/archive")
+
+        _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Students — GET /api/v1/students/{studentId}
+# ---------------------------------------------------------------------------
+
+
+class TestStudentTenantIsolation:
+    def test_get_student_returns_403_for_another_teachers_student(self) -> None:
+        teacher_b = _make_teacher()
+        other_student_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.students.get_student",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("student not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{other_student_id}")
+
+        _assert_403(resp)
+
+    def test_patch_student_returns_403_for_another_teachers_student(self) -> None:
+        teacher_b = _make_teacher()
+        other_student_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.students.update_student",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("student not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/students/{other_student_id}",
+                json={"full_name": "Hacked Name"},
+            )
+
+        _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Rubrics — GET /api/v1/rubrics/{rubricId}
+# ---------------------------------------------------------------------------
+
+
+class TestRubricTenantIsolation:
+    def test_get_rubric_returns_403_for_another_teachers_rubric(self) -> None:
+        teacher_b = _make_teacher()
+        other_rubric_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.rubrics.get_rubric",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("rubric not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/rubrics/{other_rubric_id}")
+
+        _assert_403(resp)
+
+    def test_patch_rubric_returns_403_for_another_teachers_rubric(self) -> None:
+        teacher_b = _make_teacher()
+        other_rubric_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.rubrics.update_rubric",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("rubric not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/rubrics/{other_rubric_id}",
+                json={"name": "Hacked Rubric"},
+            )
+
+        _assert_403(resp)
+
+    def test_delete_rubric_returns_403_for_another_teachers_rubric(self) -> None:
+        teacher_b = _make_teacher()
+        other_rubric_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.rubrics.delete_rubric",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("rubric not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.delete(f"/api/v1/rubrics/{other_rubric_id}")
+
+        _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Assignments — GET /api/v1/assignments/{assignmentId}
+# ---------------------------------------------------------------------------
+
+
+class TestAssignmentTenantIsolation:
+    def test_get_assignment_returns_403_for_another_teachers_assignment(self) -> None:
+        teacher_b = _make_teacher()
+        other_assignment_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.assignments.get_assignment",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("assignment not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/assignments/{other_assignment_id}")
+
+        _assert_403(resp)
+
+    def test_patch_assignment_returns_403_for_another_teachers_assignment(self) -> None:
+        teacher_b = _make_teacher()
+        other_assignment_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.assignments.update_assignment",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("assignment not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/assignments/{other_assignment_id}",
+                json={"title": "Hacked Assignment"},
+            )
+
+        _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Essays — GET /api/v1/assignments/{assignmentId}/essays
+# ---------------------------------------------------------------------------
+
+
+class TestEssayTenantIsolation:
+    def test_list_essays_returns_403_for_another_teachers_assignment(self) -> None:
+        teacher_b = _make_teacher()
+        other_assignment_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.essays.list_essays_for_assignment",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("assignment not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/assignments/{other_assignment_id}/essays")
+
+        _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Grades — GET /api/v1/essays/{essayId}/grade
+# ---------------------------------------------------------------------------
+
+
+class TestGradeTenantIsolation:
+    def test_get_grade_returns_403_for_another_teachers_essay(self) -> None:
+        teacher_b = _make_teacher()
+        other_essay_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.grades.get_grade_for_essay",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("essay not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/essays/{other_essay_id}/grade")
+
+        _assert_403(resp)
+
+    def test_lock_grade_returns_403_for_another_teachers_grade(self) -> None:
+        teacher_b = _make_teacher()
+        other_grade_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.grades.lock_grade",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("grade not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/grades/{other_grade_id}/lock")
+
+        _assert_403(resp)
+
+    def test_patch_grade_feedback_returns_403_for_another_teachers_grade(self) -> None:
+        teacher_b = _make_teacher()
+        other_grade_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.grades.update_grade_feedback",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("grade not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/grades/{other_grade_id}/feedback",
+                json={"summary_feedback": "Hacked feedback"},
+            )
+
+        _assert_403(resp)

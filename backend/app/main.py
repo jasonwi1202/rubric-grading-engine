@@ -11,6 +11,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -54,9 +55,49 @@ def create_app() -> FastAPI:
     )
 
     _register_exception_handlers(application)
+    _register_middleware(application)
     _register_routers(application)
 
     return application
+
+
+# ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
+
+
+def _register_middleware(application: FastAPI) -> None:
+    from app.config import settings
+    from app.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+
+    # Middleware registration order for FastAPI/Starlette (LIFO execution):
+    # add_middleware() inserts at the *front* of the middleware stack, so the
+    # last call here is the *outermost* middleware (runs first on a request,
+    # last on a response).
+    #
+    # Desired request flow:  CORS → SecurityHeaders → RateLimit → App
+    # Desired response flow: App → RateLimit → SecurityHeaders → CORS
+    #
+    # This ensures:
+    #   - CORS preflight requests are handled before anything else.
+    #   - Security headers are applied to ALL responses, including 429s from
+    #     the rate-limit layer.
+    #   - Rate-limit 429s are returned before the route handler is invoked.
+
+    # 1. Rate limiting — innermost (added first).
+    application.add_middleware(RateLimitMiddleware, redis_url=settings.redis_url)
+
+    # 2. Security headers — applied to every response including 429s.
+    application.add_middleware(SecurityHeadersMiddleware)
+
+    # 3. CORS — outermost (added last); handles preflight and response headers.
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
 # ---------------------------------------------------------------------------
