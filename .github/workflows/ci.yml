@@ -147,13 +147,12 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Audit dependencies
-        run: |
-          if [ -f "pyproject.toml" ]; then
-            pip-audit --requirement <(pip install -e ".[dev]" --dry-run 2>&1 | grep "^  " | awk '{print $1}') || true
-          else
-            echo "pyproject.toml not yet created — skipping"
-          fi
+      - name: Install project dependencies
+        run: pip install -e ".[dev]"
+        working-directory: backend
+
+      - name: Audit dependencies (fail on any reported CVE)
+        run: pip-audit --skip-editable --vulnerability-service pypi
         working-directory: backend
 
   # ─── Frontend: ESLint + TypeScript ───────────────────────────────────────────
@@ -245,10 +244,10 @@ jobs:
           fi
         working-directory: frontend
 
-      - name: npm audit
+      - name: npm audit (fail on high/critical CVEs)
         run: |
           if [ -f "package.json" ]; then
-            npm audit --audit-level=critical
+            npm audit --audit-level=high
           else
             echo "package.json not yet created — skipping"
           fi

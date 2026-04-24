@@ -9,11 +9,16 @@ Currently provides:
 - ``get_current_teacher_optional`` — like the above but returns ``None``
   instead of raising when no valid token is present.  Used internally by the
   logout endpoint for audit logging.
+- ``get_db_for_teacher`` — combines ``get_current_teacher`` + ``get_db`` and
+  calls ``set_tenant_context`` so PostgreSQL RLS policies are activated for
+  the authenticated teacher.  Use this instead of bare ``get_db`` in any
+  router that queries tenant-scoped tables.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, Request
@@ -21,7 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import get_db, set_tenant_context
 from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import decode_access_token
 
@@ -78,6 +83,13 @@ async def get_current_teacher(
     if not db_user.email_verified:
         raise UnauthorizedError("Email address is not verified.")
 
+    # Activate PostgreSQL RLS policies for this teacher.  This is done here
+    # (rather than only in get_db_for_teacher) so that all protected routers
+    # benefit automatically — regardless of whether they use get_db or
+    # get_db_for_teacher.  The context is session-level (not transaction-level)
+    # so it persists across commit/refresh cycles within the same request.
+    await set_tenant_context(db, db_user.id)
+
     return db_user
 
 
@@ -115,3 +127,32 @@ async def get_current_teacher_optional(
         return uuid.UUID(sub)
     except ValueError:
         return None
+
+
+async def get_db_for_teacher(
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> AsyncGenerator[AsyncSession, None]:
+    """Yield an authenticated, tenant-context-activated ``AsyncSession``.
+
+    ``get_current_teacher`` already calls ``set_tenant_context`` as part of
+    authentication, so by the time this dependency runs the RLS context is
+    already set on the session.  This dependency calls ``set_tenant_context``
+    a second time as defense-in-depth (idempotent — same session, same UUID).
+
+    Routers should declare ``get_current_teacher`` to receive the teacher
+    object and use this dependency to signal explicitly that the route
+    accesses tenant-scoped tables::
+
+        @router.get("/classes")
+        async def list_classes(
+            teacher: User = Depends(get_current_teacher),
+            db: AsyncSession = Depends(get_db_for_teacher),
+        ) -> ...:
+            ...
+
+    Both dependencies share the same underlying ``get_db`` session instance
+    (FastAPI deduplicates identical generator dependencies per request).
+    """
+    await set_tenant_context(db, teacher.id)
+    yield db

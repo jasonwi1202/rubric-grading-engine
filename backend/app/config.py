@@ -139,6 +139,25 @@ class Settings(BaseSettings):
     # Validators
     # -------------------------------------------------------------------------
 
+    @field_validator("cors_origins")
+    @classmethod
+    def cors_origins_no_wildcard(cls, v: str) -> str:
+        """Reject wildcard '*' in CORS_ORIGINS.
+
+        A wildcard origin disables the same-origin protections that CORS is
+        meant to provide and would allow any web page to make credentialed
+        cross-origin requests to the API.  All production and staging
+        deployments must use an explicit allowlist.
+        """
+        origins = [o.strip() for o in v.split(",") if o.strip()]
+        for origin in origins:
+            if origin == "*":
+                raise ValueError(
+                    "Wildcard '*' is not permitted in CORS_ORIGINS; "
+                    "specify an explicit list of allowed origins instead."
+                )
+        return v
+
     @field_validator("integrity_similarity_threshold")
     @classmethod
     def integrity_similarity_threshold_in_range(cls, v: float) -> float:

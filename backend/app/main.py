@@ -8,9 +8,12 @@ when starting the server::
 """
 
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -43,6 +46,16 @@ _HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
 }
 
 
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage resources that must be initialised once and cleaned up on shutdown."""
+    yield
+    # Graceful shutdown: close the Redis client used by RateLimitMiddleware.
+    redis_client = getattr(application.state, "rate_limit_redis", None)
+    if redis_client is not None:
+        await redis_client.aclose()
+
+
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     application = FastAPI(
@@ -51,12 +64,67 @@ def create_app() -> FastAPI:
         docs_url="/api/v1/docs",
         redoc_url="/api/v1/redoc",
         openapi_url="/api/v1/openapi.json",
+        lifespan=_lifespan,
     )
 
     _register_exception_handlers(application)
+    _register_middleware(application)
     _register_routers(application)
 
     return application
+
+
+# ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
+
+
+def _register_middleware(application: FastAPI) -> None:
+    from redis.asyncio import Redis
+
+    from app.config import settings
+    from app.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+
+    # Create a single Redis client for rate limiting.  Stored in app.state so
+    # the lifespan handler can call aclose() on graceful shutdown, preventing
+    # leaked connections in long-running processes and test teardown.
+    redis_client: Redis[str] = Redis.from_url(settings.redis_url, decode_responses=True)
+    application.state.rate_limit_redis = redis_client
+
+    # Middleware registration order for FastAPI/Starlette (LIFO execution):
+    # add_middleware() inserts at the *front* of the middleware stack, so the
+    # last call here is the *outermost* middleware (runs first on a request,
+    # last on a response).
+    #
+    # Desired request flow:  SecurityHeaders → CORS → RateLimit → App
+    # Desired response flow: App → RateLimit → CORS → SecurityHeaders
+    #
+    # This ensures:
+    #   - Security headers appear on ALL responses, including CORS preflight
+    #     responses (OPTIONS).  CORSMiddleware can short-circuit and return a
+    #     preflight response without calling the inner app; if SecurityHeaders
+    #     were inside CORS it would be skipped on those responses.
+    #   - CORS preflight and credentialed-request handling runs before the
+    #     rate-limit layer so that OPTIONS never counts against the limit.
+    #   - Rate-limit 429s are returned before the route handler is invoked.
+
+    # 1. Rate limiting — innermost (added first).
+    application.add_middleware(RateLimitMiddleware, redis_client=redis_client)
+
+    # 2. CORS — sits between RateLimit and SecurityHeaders so it handles
+    #    preflight and adds Access-Control-* headers before SecurityHeaders
+    #    wraps the final response.
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
+    # 3. Security headers — outermost (added last); headers are applied to
+    #    every response, including CORS preflight 200s and rate-limit 429s.
+    application.add_middleware(SecurityHeadersMiddleware)
 
 
 # ---------------------------------------------------------------------------
