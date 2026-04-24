@@ -118,13 +118,13 @@ export async function resolveRegradeRequest(
 /**
  * Close the regrade submission window for an assignment.
  *
- * Backend support for this action has not been implemented yet, so this helper
- * is intentionally stubbed to avoid issuing a guaranteed 404 request.
+ * Backend support for this action has not been implemented yet. This helper is
+ * intentionally stubbed — the UI catches this error and shows a static message.
  * Wire this helper to the real endpoint once the backend route ships.
  */
 export async function closeRegradeWindow(
   assignmentId: string,
 ): Promise<void> {
   void assignmentId;
-  throw new Error("Closing the regrade window is not available yet.");
+  throw new Error("This feature is coming soon.");
 }

@@ -198,7 +198,7 @@ function ReviewPanel({
       const trimmedScoreOverride = scoreOverride.trim();
       const parsed = Number(trimmedScoreOverride);
 
-      if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+      if (!Number.isInteger(parsed)) {
         setResolveError("Score override must be a whole number.");
         return;
       }
@@ -814,10 +814,10 @@ export function RegradeQueue({
     const currentIndex = availableTabs.indexOf(currentTab);
     let nextIndex = currentIndex;
 
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+    if (e.key === "ArrowRight") {
       e.preventDefault();
       nextIndex = (currentIndex + 1) % availableTabs.length;
-    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+    } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       nextIndex = (currentIndex - 1 + availableTabs.length) % availableTabs.length;
     } else {
