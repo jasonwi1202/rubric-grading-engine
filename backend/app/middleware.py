@@ -3,7 +3,9 @@
 SecurityHeadersMiddleware
     Adds mandatory security response headers to every HTTP response,
     regardless of the route.  Follows the header set documented in
-    ``docs/architecture/security.md#6-api-security``.
+    ``docs/architecture/security.md#6-api-security``.  Note: Content-Security-
+    Policy is intentionally omitted here — it is applied per-page by Next.js
+    and would conflict if also set on the backend API.
 
 RateLimitMiddleware
     Enforces per-IP request limits on sensitive public endpoints using Redis
@@ -140,11 +142,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             }
                         },
                     )
-            except Exception:
+            except Exception as exc:
                 # If Redis is unavailable, fail open so auth still works.
                 logger.error(
                     "Rate limit check failed — Redis unavailable; allowing request",
-                    extra={"path": path, "method": method},
+                    extra={
+                        "path": path,
+                        "method": method,
+                        "error_type": type(exc).__name__,
+                    },
                 )
 
             break  # Each request matches at most one rule (exact method + path).

@@ -151,7 +151,7 @@ jobs:
         run: pip install -e ".[dev]"
         working-directory: backend
 
-      - name: Audit dependencies (fail on high/critical CVEs)
+      - name: Audit dependencies (fail on any reported CVE)
         run: pip-audit --skip-editable --vulnerability-service pypi
         working-directory: backend
 

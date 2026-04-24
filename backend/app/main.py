@@ -75,22 +75,24 @@ def _register_middleware(application: FastAPI) -> None:
     # last call here is the *outermost* middleware (runs first on a request,
     # last on a response).
     #
-    # Desired request flow:  CORS → SecurityHeaders → RateLimit → App
-    # Desired response flow: App → RateLimit → SecurityHeaders → CORS
+    # Desired request flow:  SecurityHeaders → CORS → RateLimit → App
+    # Desired response flow: App → RateLimit → CORS → SecurityHeaders
     #
     # This ensures:
-    #   - CORS preflight requests are handled before anything else.
-    #   - Security headers are applied to ALL responses, including 429s from
-    #     the rate-limit layer.
+    #   - Security headers appear on ALL responses, including CORS preflight
+    #     responses (OPTIONS).  CORSMiddleware can short-circuit and return a
+    #     preflight response without calling the inner app; if SecurityHeaders
+    #     were inside CORS it would be skipped on those responses.
+    #   - CORS preflight and credentialed-request handling runs before the
+    #     rate-limit layer so that OPTIONS never counts against the limit.
     #   - Rate-limit 429s are returned before the route handler is invoked.
 
     # 1. Rate limiting — innermost (added first).
     application.add_middleware(RateLimitMiddleware, redis_url=settings.redis_url)
 
-    # 2. Security headers — applied to every response including 429s.
-    application.add_middleware(SecurityHeadersMiddleware)
-
-    # 3. CORS — outermost (added last); handles preflight and response headers.
+    # 2. CORS — sits between RateLimit and SecurityHeaders so it handles
+    #    preflight and adds Access-Control-* headers before SecurityHeaders
+    #    wraps the final response.
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -98,6 +100,10 @@ def _register_middleware(application: FastAPI) -> None:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+    # 3. Security headers — outermost (added last); headers are applied to
+    #    every response, including CORS preflight 200s and rate-limit 429s.
+    application.add_middleware(SecurityHeadersMiddleware)
 
 
 # ---------------------------------------------------------------------------

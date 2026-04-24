@@ -9,11 +9,16 @@ Currently provides:
 - ``get_current_teacher_optional`` — like the above but returns ``None``
   instead of raising when no valid token is present.  Used internally by the
   logout endpoint for audit logging.
+- ``get_db_for_teacher`` — combines ``get_current_teacher`` + ``get_db`` and
+  calls ``set_tenant_context`` so PostgreSQL RLS policies are activated for
+  the authenticated teacher.  Use this instead of bare ``get_db`` in any
+  router that queries tenant-scoped tables.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, Request
@@ -21,7 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import get_db, set_tenant_context
 from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import decode_access_token
 
@@ -115,3 +120,32 @@ async def get_current_teacher_optional(
         return uuid.UUID(sub)
     except ValueError:
         return None
+
+
+async def get_db_for_teacher(
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> AsyncGenerator[AsyncSession, None]:
+    """Yield an authenticated, tenant-context-activated ``AsyncSession``.
+
+    Combines authentication and RLS activation in a single dependency:
+    1. Validates the JWT and resolves the teacher (via ``get_current_teacher``).
+    2. Calls ``set_tenant_context`` so the PostgreSQL RLS policies for the
+       authenticated teacher become active for all queries in this session.
+
+    FastAPI caches ``get_db`` within a request, so the ``db`` instance here
+    is the same session used by ``get_current_teacher``.  Calling
+    ``set_tenant_context`` here therefore activates RLS for all queries
+    issued by the route handler (and any service functions it calls).
+
+    Usage::
+
+        @router.get("/classes")
+        async def list_classes(
+            teacher: User = Depends(get_current_teacher),
+            db: AsyncSession = Depends(get_db_for_teacher),
+        ) -> ...:
+            ...
+    """
+    await set_tenant_context(db, teacher.id)
+    yield db
