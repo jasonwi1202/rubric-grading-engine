@@ -30,6 +30,12 @@ from app.services.media_comment import (
 )
 from app.exceptions import ValidationError
 
+#: Pre-computed set of base MIME types (without codec parameters) for efficient
+#: per-request validation without rebuilding the set on every call.
+_ALLOWED_BASE_MIME_TYPES: frozenset[str] = frozenset(
+    m.split(";")[0].strip() for m in ALLOWED_MIME_TYPES
+)
+
 #: Router for grade-scoped media comment operations.
 grade_media_router = APIRouter(prefix="/grades", tags=["media-comments"])
 
@@ -68,7 +74,7 @@ async def create_media_comment_endpoint(
     # Normalise mime type (strip trailing whitespace / params for comparison).
     mime_type = (file.content_type or "").strip()
     base_mime = mime_type.split(";")[0].strip()
-    if base_mime not in {m.split(";")[0].strip() for m in ALLOWED_MIME_TYPES}:
+    if base_mime not in _ALLOWED_BASE_MIME_TYPES:
         raise ValidationError(
             f"MIME type {base_mime!r} is not allowed for media comments.",
             field="file",

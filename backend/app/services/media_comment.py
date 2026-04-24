@@ -210,7 +210,7 @@ async def delete_media_comment(
 
     s3_key = mc.s3_key  # captured before deletion
 
-    await db.delete(mc)
+    db.delete(mc)
     await db.commit()
 
     # Delete from S3 after the DB row is gone — if this fails the orphan

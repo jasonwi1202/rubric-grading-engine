@@ -91,7 +91,6 @@ function deleteErrorMessage(err: unknown): string {
 export interface AudioRecorderProps {
   /** UUID of the grade these comments are attached to. */
   gradeId: string;
-  /** UUID of the grade's essay (used only for query cache invalidation). */
   /** When true, recording and delete controls are disabled. */
   isLocked: boolean;
 }
