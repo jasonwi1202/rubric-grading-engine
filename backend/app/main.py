@@ -88,7 +88,7 @@ def _register_middleware(application: FastAPI) -> None:
     # Create a single Redis client for rate limiting.  Stored in app.state so
     # the lifespan handler can call aclose() on graceful shutdown, preventing
     # leaked connections in long-running processes and test teardown.
-    redis_client: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
+    redis_client: Redis[str] = Redis.from_url(settings.redis_url, decode_responses=True)
     application.state.rate_limit_redis = redis_client
 
     # Middleware registration order for FastAPI/Starlette (LIFO execution):

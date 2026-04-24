@@ -220,14 +220,16 @@ class TestCorsWildcardRejection:
         from app.config import Settings
 
         with pytest.raises(PydanticValidationError, match="not permitted"):
-            Settings(_env_file=None, **{**_SETTINGS_BASE, "cors_origins": "*"})  # type: ignore[call-arg]
+            Settings(  # type: ignore[call-arg]  # _env_file is a pydantic-settings internal kwarg not in the public type stub
+                _env_file=None, **{**_SETTINGS_BASE, "cors_origins": "*"}
+            )
 
     def test_explicit_origin_is_accepted(self) -> None:
         """A concrete origin string must not raise a validation error."""
         from app.config import Settings
 
         s = Settings(
-            _env_file=None,  # type: ignore[call-arg]
+            _env_file=None,  # type: ignore[call-arg]  # _env_file is a pydantic-settings internal kwarg not in the public type stub
             **{
                 **_SETTINGS_BASE,
                 "cors_origins": "http://localhost:3000,https://app.example.com",

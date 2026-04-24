@@ -73,15 +73,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         finally:
             # Best-effort reset to prevent stale tenant context leaking to the
             # next user of this pooled connection.
-            # sqlalchemy.exc cannot be imported at module level (AST constraint
-            # enforced by test_session.py).  We fetch the specific exception
-            # types at call-time and suppress them via contextlib.suppress.
-            # Unexpected exceptions are not suppressed so they surface normally.
+            # sqlalchemy.exc cannot be imported at module level (test_session.py
+            # enforces via AST analysis that only sqlalchemy.ext.asyncio is
+            # imported here).  Both __import__ calls are deferred to runtime.
+            _sa = __import__("sqlalchemy")
             _sa_exc = __import__("sqlalchemy.exc", fromlist=["InvalidRequestError"])
             with suppress(_sa_exc.InvalidRequestError):
-                await session.execute(
-                    __import__("sqlalchemy").text("SET app.current_teacher_id = ''"),
-                )
+                await session.execute(_sa.text("SET app.current_teacher_id = ''"))
 
 
 # ---------------------------------------------------------------------------
