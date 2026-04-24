@@ -19,7 +19,7 @@
  *   Journey 5 — GET /students/:id/profile, GET /students/:id/skill-history
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, BrowserContext, Page } from "@playwright/test";
 import { clearMailpit, seedTeacher } from "./helpers";
 
 const STUB = "Not yet implemented — requires M3 APIs";
@@ -29,21 +29,33 @@ const STUB = "Not yet implemented — requires M3 APIs";
 // ---------------------------------------------------------------------------
 test.describe("Journey 1 — Setup: login → class → students → rubric → assignment", () => {
   // All five steps depend on shared state (class ID, rubric name, etc.) and
-  // must run in order.  Serial mode keeps the browser context alive so the
-  // login session (refresh_token cookie) persists across tests.
+  // must run in order.  A single browser context is created in beforeAll so
+  // the refresh_token cookie (httpOnly) persists across all five test steps.
+  // Serial mode guarantees execution order within the describe block.
   test.describe.configure({ mode: "serial" });
 
   // Shared state populated in beforeAll / earlier tests
-  const state = {
+  const state: {
+    email: string;
+    password: string;
+    classId: string;
+    className: string;
+    rubricName: string;
+    assignmentTitle: string;
+    context: BrowserContext | null;
+    page: Page | null;
+  } = {
     email: "",
     password: "",
     classId: "",
     className: "",
     rubricName: "",
     assignmentTitle: "",
+    context: null,
+    page: null,
   };
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ browser }) => {
     // Clear stale emails so waitForEmail() picks up the right message.
     await clearMailpit();
 
@@ -57,11 +69,21 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
     state.className = `E2E Class ${ts}`;
     state.rubricName = `E2E Rubric ${ts}`;
     state.assignmentTitle = `E2E Assignment ${ts}`;
+
+    // Create a single browser context + page shared by all five serial steps.
+    // This keeps the refresh_token cookie (httpOnly) alive across test boundaries.
+    state.context = await browser.newContext();
+    state.page = await state.context.newPage();
+  });
+
+  test.afterAll(async () => {
+    await state.context?.close();
   });
 
   // ── Test 1: Login ─────────────────────────────────────────────────────────
 
-  test("teacher logs in successfully", async ({ page }) => {
+  test("teacher logs in successfully", async () => {
+    const page = state.page!;
     // Navigating to a protected route causes the middleware to redirect to
     // /login?next=/dashboard, which the login form honours after submit.
     await page.goto("/dashboard");
@@ -76,7 +98,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
   // ── Test 2: Create class ──────────────────────────────────────────────────
 
-  test("teacher creates a class", async ({ page }) => {
+  test("teacher creates a class", async () => {
+    const page = state.page!;
     await page.goto("/dashboard/classes/new");
 
     await page.getByLabel("Class name").fill(state.className);
@@ -101,7 +124,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
   // ── Test 3: Add two students ──────────────────────────────────────────────
 
-  test("teacher adds students to the class", async ({ page }) => {
+  test("teacher adds students to the class", async () => {
+    const page = state.page!;
     await page.goto(`/dashboard/classes/${state.classId}`);
 
     // Wait for the roster section to render before interacting.
@@ -111,6 +135,7 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
     // ── Add first student ──
     await rosterRegion.getByRole("button", { name: "Add student" }).click();
     const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
     await dialog.getByLabel(/full name/i).fill("Student Alpha");
     await dialog.getByRole("button", { name: "Add student" }).click();
 
@@ -120,6 +145,7 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
     // ── Add second student ──
     await rosterRegion.getByRole("button", { name: "Add student" }).click();
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
     await dialog.getByLabel(/full name/i).fill("Student Beta");
     await dialog.getByRole("button", { name: "Add student" }).click();
 
@@ -129,7 +155,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
   // ── Test 4: Create rubric ─────────────────────────────────────────────────
 
-  test("teacher creates a rubric with criteria", async ({ page }) => {
+  test("teacher creates a rubric with criteria", async () => {
+    const page = state.page!;
     await page.goto("/dashboard/rubrics/new");
 
     // Name the rubric
@@ -157,9 +184,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
   // ── Test 5: Create assignment ─────────────────────────────────────────────
 
-  test("teacher creates an assignment and attaches the rubric", async ({
-    page,
-  }) => {
+  test("teacher creates an assignment and attaches the rubric", async () => {
+    const page = state.page!;
     await page.goto(
       `/dashboard/classes/${state.classId}/assignments/new`,
     );
