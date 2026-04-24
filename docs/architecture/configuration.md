@@ -95,6 +95,8 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `MAX_ESSAY_FILE_SIZE_MB` | No | `10` | Max file size for essay uploads |
 | `MAX_BATCH_SIZE` | No | `100` | Max essays per grading batch |
 | `TRUST_PROXY_HEADERS` | No | `false` | When `true`, read the real client IP from `CF-Connecting-IP` / `X-Forwarded-For` (enable only in production behind a trusted proxy such as Cloudflare) |
+| `REGRADE_WINDOW_DAYS` | No | `7` | Number of days after a grade is created during which regrade requests are accepted. Requests submitted after this window return 409. |
+| `REGRADE_MAX_PER_GRADE` | No | `1` | Maximum number of regrade requests allowed per grade. Additional submissions after this limit return 409. |
 
 ### Email / SMTP
 

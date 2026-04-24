@@ -124,3 +124,20 @@ class FileTooLargeError(ValidationError):
 
 class FileTypeNotAllowedError(ValidationError):
     code = "FILE_TYPE_NOT_ALLOWED"
+
+
+# ---------------------------------------------------------------------------
+# Regrade request ConflictError subclasses
+# ---------------------------------------------------------------------------
+
+
+class RegradeWindowClosedError(ConflictError):
+    """Regrade request submission window has passed for this grade."""
+
+    code = "REGRADE_WINDOW_CLOSED"
+
+
+class RegradeRequestLimitReachedError(ConflictError):
+    """Per-grade regrade request limit has been reached."""
+
+    code = "REGRADE_REQUEST_LIMIT_REACHED"
