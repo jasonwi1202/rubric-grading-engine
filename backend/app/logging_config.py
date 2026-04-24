@@ -55,7 +55,10 @@ class CorrelationIdFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.correlation_id = correlation_id_var.get("")
+        # LogRecord does not declare correlation_id; we add it as a dynamic
+        # attribute so that JsonFormatter can include it without needing to call
+        # correlation_id_var.get() inside the formatter itself.
+        record.correlation_id = correlation_id_var.get("")  # type: ignore[attr-defined]
         return True
 
 
@@ -77,7 +80,7 @@ class JsonFormatter(logging.Formatter):
     app-defined structured fields appear alongside the fixed set above.
 
     Security: exception messages and tracebacks are **never** included.  Only
-    ``exc_type`` (the exception class name) is added when an exception is
+    ``error_type`` (the exception class name) is added when an exception is
     present.  This prevents student PII from leaking into log aggregation
     services via exception messages that may contain database query values or
     LLM response content.
@@ -135,7 +138,7 @@ class JsonFormatter(logging.Formatter):
         # Include exception *type* only — never the message or traceback.
         # Exception messages can contain student PII from upstream callers.
         if record.exc_info and record.exc_info[0] is not None:
-            payload["exc_type"] = record.exc_info[0].__name__
+            payload["error_type"] = record.exc_info[0].__name__
 
         return json.dumps(payload, default=str)
 

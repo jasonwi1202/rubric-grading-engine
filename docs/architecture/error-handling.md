@@ -211,7 +211,7 @@ All services (API and Celery workers) emit structured JSON log lines via `app.lo
 
 Additional fields from `extra=` keyword arguments are merged into the object. Only entity IDs (`essay_id`, `grade_id`, etc.) and operational metadata should appear there — **never student names, essay content, or scores**.
 
-Exception type (`exc_type`) is included when an exception is present, but **exception messages and tracebacks are never emitted** — they can contain student PII from database error messages or LLM response fragments.
+Exception type (`error_type`) is included when an exception is present, but **exception messages and tracebacks are never emitted** — they can contain student PII from database error messages or LLM response fragments.
 
 ---
 

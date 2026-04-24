@@ -194,7 +194,7 @@ class TestJsonFormatterPIISafety:
     def test_exception_type_name_is_in_output(self, formatter: JsonFormatter) -> None:
         record = self._make_exc_record("an error occurred", ValueError("boom"))
         output = json.loads(formatter.format(record))
-        assert output.get("exc_type") == "ValueError", f"Got: {output}"
+        assert output.get("error_type") == "ValueError", f"Got: {output}"
 
     def test_student_email_not_in_output_for_exc(self, formatter: JsonFormatter) -> None:
         email = "student@school.edu"
