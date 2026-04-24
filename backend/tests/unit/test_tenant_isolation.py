@@ -12,9 +12,13 @@ The tests work by:
 No real database or Redis is required — all external dependencies are mocked.
 No student PII appears in any fixture or assertion.
 
-These tests satisfy the acceptance criterion:
-  "Integration test: cross-tenant request returns 403 for every major
-   resource type"
+Scope: these are **unit tests** that validate the exception-to-HTTP mapping
+(i.e. that ``ForbiddenError`` from the service layer is correctly surfaced as
+HTTP 403 with ``FORBIDDEN`` code through the router/exception-handler chain).
+They do NOT exercise real database query scoping or PostgreSQL RLS behaviour.
+Integration tests that verify actual tenant isolation end-to-end (creating
+Teacher A resources in a real DB, authenticating as Teacher B, and asserting
+zero-row / 403 responses) are tracked separately and require testcontainers.
 """
 
 from __future__ import annotations

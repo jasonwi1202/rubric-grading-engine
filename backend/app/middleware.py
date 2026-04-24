@@ -17,6 +17,7 @@ RateLimitMiddleware
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -67,6 +68,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 # Each rule: (http_method, exact_path, max_requests, window_seconds)
 # Paths are matched exactly so that only the specified endpoints are covered.
+#
+# NOTE: the contact endpoints (/api/v1/contact/inquiry and
+# /api/v1/contact/dpa-request) intentionally do NOT appear here.  Both
+# services (app.services.contact and app.services.dpa_request) already
+# enforce their own Redis rate-limit counters using request.client.host
+# directly.  Adding a second middleware-level counter would create duplicate
+# keys and, more importantly, inconsistent IP keying between the two layers
+# (middleware might use CF/XFF while the service layer always uses the direct
+# TCP address).  Rate limiting for those routes is owned by the service layer.
 _RATE_LIMIT_RULES: list[tuple[str, str, int, int]] = [
     # Login: 10 attempts per IP per 15 minutes
     ("POST", "/api/v1/auth/login", 10, 900),
@@ -74,10 +84,6 @@ _RATE_LIMIT_RULES: list[tuple[str, str, int, int]] = [
     ("POST", "/api/v1/auth/refresh", 30, 3600),
     # Signup: 5 attempts per IP per hour
     ("POST", "/api/v1/auth/signup", 5, 3600),
-    # Contact inquiry: 5 per IP per hour
-    ("POST", "/api/v1/contact/inquiry", 5, 3600),
-    # DPA request: 3 per IP per hour
-    ("POST", "/api/v1/contact/dpa-request", 3, 3600),
 ]
 
 
@@ -93,14 +99,24 @@ def _get_client_ip(request: Request) -> str:
     from app.config import settings
 
     if settings.trust_proxy_headers:
-        cf_ip = request.headers.get("CF-Connecting-IP")
-        if cf_ip:
-            return cf_ip.strip()
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # X-Forwarded-For may be a comma-separated list; the leftmost
-            # address is the originating client.
-            return forwarded_for.split(",")[0].strip()
+        for raw in (
+            request.headers.get("CF-Connecting-IP", ""),
+            request.headers.get("X-Forwarded-For", "").split(",")[0],
+        ):
+            candidate = raw.strip()
+            if candidate:
+                try:
+                    # Validate that the header value is a real IP address.
+                    # This prevents untrusted/crafted header values from
+                    # producing unbounded Redis key cardinality or very large
+                    # keys.  An invalid value falls through to the TCP address.
+                    ipaddress.ip_address(candidate)
+                    return candidate
+                except ValueError:
+                    logger.warning(
+                        "Invalid IP in proxy header — falling back to TCP address",
+                        extra={"raw_value_length": len(candidate)},
+                    )
     if request.client:
         return request.client.host
     return "unknown"

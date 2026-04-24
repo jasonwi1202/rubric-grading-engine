@@ -11,17 +11,27 @@ Inject the session as a FastAPI dependency::
         result = await db.execute(select(MyModel))
         ...
 
-For one-off access outside a request (e.g. in Celery tasks)::
+For one-off access outside a request (e.g. in Celery tasks), use the
+``tenant_session`` async context manager so that the tenant context is set
+**before** any tenant-scoped query and reset **after** the session closes::
 
-    from app.db.session import AsyncSessionLocal
+    from app.db.session import tenant_session
 
-    async with AsyncSessionLocal() as session:
-        ...
+    async def my_celery_task(teacher_id: uuid.UUID) -> None:
+        async with tenant_session(teacher_id) as session:
+            result = await session.execute(select(MyModel))
+            ...
+
+Do **not** use ``AsyncSessionLocal`` directly in tasks unless the query is
+explicitly scoped to a non-tenant-isolated table (e.g. audit_logs, users).
+With FORCE ROW LEVEL SECURITY enabled, any query against a tenant-scoped
+table without a prior ``SET app.current_teacher_id`` call will return zero
+rows silently.
 """
 
 import uuid
-from collections.abc import AsyncGenerator
-from contextlib import suppress
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio import (
@@ -72,14 +82,14 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
         finally:
             # Best-effort reset to prevent stale tenant context leaking to the
-            # next user of this pooled connection.
-            # sqlalchemy.exc cannot be imported at module level (test_session.py
-            # enforces via AST analysis that only sqlalchemy.ext.asyncio is
-            # imported here).  Both __import__ calls are deferred to runtime.
-            _sa = __import__("sqlalchemy")
-            _sa_exc = __import__("sqlalchemy.exc", fromlist=["InvalidRequestError"])
-            with suppress(_sa_exc.InvalidRequestError):
+            # next user of this pooled connection.  Any exception (connection
+            # error, session invalid state, etc.) is suppressed — this cleanup
+            # must never mask the actual route error.
+            try:
+                _sa = __import__("sqlalchemy")
                 await session.execute(_sa.text("SET app.current_teacher_id = ''"))
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -118,3 +128,44 @@ async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
         __import__("sqlalchemy").text("SET app.current_teacher_id = :tid"),
         {"tid": str(teacher_id)},
     )
+
+
+@asynccontextmanager
+async def tenant_session(teacher_id: uuid.UUID) -> AsyncIterator[AsyncSession]:
+    """Async context manager for Celery tasks and background jobs.
+
+    Opens a new ``AsyncSession``, activates the RLS tenant context for
+    *teacher_id*, and guarantees the context is reset to '' before the
+    connection is returned to the pool.
+
+    Use this instead of raw ``AsyncSessionLocal()`` in any task that queries
+    tenant-scoped tables.  With ``FORCE ROW LEVEL SECURITY`` enabled, a
+    session without ``app.current_teacher_id`` set will return **zero rows**
+    silently from tenant-scoped tables — this context manager prevents that
+    mistake.
+
+    Example::
+
+        from app.db.session import tenant_session
+
+        async def grade_essay_task(teacher_id: uuid.UUID, essay_id: uuid.UUID) -> None:
+            async with tenant_session(teacher_id) as db:
+                essay = await db.get(Essay, essay_id)
+                ...
+
+    Args:
+        teacher_id: UUID of the teacher whose tenant context should be set.
+
+    Yields:
+        An ``AsyncSession`` with the RLS tenant context already active.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            await set_tenant_context(session, teacher_id)
+            yield session
+        finally:
+            try:
+                _sa = __import__("sqlalchemy")
+                await session.execute(_sa.text("SET app.current_teacher_id = ''"))
+            except Exception:  # noqa: BLE001
+                pass

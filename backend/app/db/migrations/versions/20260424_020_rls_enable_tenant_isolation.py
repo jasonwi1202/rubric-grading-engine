@@ -19,9 +19,13 @@ Tables covered:
     - regrade_requests
 
   teacher_id via FK chain:
-    - assignments    (teacher_id via classes JOIN)
-    - essays         (teacher_id via assignments → classes JOIN)
-    - grades         (teacher_id via essay_versions → essays → assignments → classes JOIN)
+    - assignments        (teacher_id via classes JOIN)
+    - essays             (teacher_id via assignments → classes JOIN)
+    - essay_versions     (teacher_id via essays → assignments → classes JOIN)
+    - grades             (teacher_id via essay_versions → essays → assignments → classes JOIN)
+    - rubric_criteria    (teacher_id via rubrics JOIN; split policy for system templates)
+    - criterion_scores   (teacher_id via grades → essay_versions → essays → assignments → classes JOIN)
+    - class_enrollments  (teacher_id via classes JOIN)
 
 Design:
   1. RLS is ENABLED AND FORCED for each table.  FORCE ROW LEVEL SECURITY
@@ -268,9 +272,135 @@ def upgrade() -> None:
     """)
     )
 
+    # ------------------------------------------------------------------
+    # 11. class_enrollments — teacher_id via classes
+    # ------------------------------------------------------------------
+    op.execute(sa.text("ALTER TABLE class_enrollments ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE class_enrollments FORCE ROW LEVEL SECURITY"))
+    op.execute(
+        sa.text("""
+        CREATE POLICY tenant_isolation ON class_enrollments
+        FOR ALL
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM classes c
+                WHERE c.id = class_enrollments.class_id
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
+            )
+        )
+    """)
+    )
+
+    # ------------------------------------------------------------------
+    # 12. essay_versions — teacher_id via essays → assignments → classes
+    # ------------------------------------------------------------------
+    op.execute(sa.text("ALTER TABLE essay_versions ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE essay_versions FORCE ROW LEVEL SECURITY"))
+    op.execute(
+        sa.text("""
+        CREATE POLICY tenant_isolation ON essay_versions
+        FOR ALL
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM essays e
+                JOIN assignments a ON a.id = e.assignment_id
+                JOIN classes c ON c.id = a.class_id
+                WHERE e.id = essay_versions.essay_id
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
+            )
+        )
+    """)
+    )
+
+    # ------------------------------------------------------------------
+    # 13. rubric_criteria — split policies mirroring rubrics
+    #
+    # Criteria belonging to teacher-owned rubrics are readable only by
+    # their owner.  Criteria belonging to system template rubrics
+    # (teacher_id IS NULL, is_template=TRUE) are readable by any
+    # authenticated session, mirroring the system_templates_readable
+    # policy on the parent rubrics table.
+    # ------------------------------------------------------------------
+    op.execute(sa.text("ALTER TABLE rubric_criteria ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE rubric_criteria FORCE ROW LEVEL SECURITY"))
+    op.execute(
+        sa.text("""
+        CREATE POLICY tenant_isolation ON rubric_criteria
+        FOR ALL
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM rubrics r
+                WHERE r.id = rubric_criteria.rubric_id
+                  AND r.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
+            )
+        )
+    """)
+    )
+    op.execute(
+        sa.text("""
+        CREATE POLICY system_template_criteria_readable ON rubric_criteria
+        FOR SELECT
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM rubrics r
+                WHERE r.id = rubric_criteria.rubric_id
+                  AND r.teacher_id IS NULL
+                  AND r.is_template = true
+                  AND NULLIF(current_setting('app.current_teacher_id', true), '') IS NOT NULL
+            )
+        )
+    """)
+    )
+
+    # ------------------------------------------------------------------
+    # 14. criterion_scores — teacher_id via grades → essay_versions → essays
+    #                        → assignments → classes
+    # ------------------------------------------------------------------
+    op.execute(sa.text("ALTER TABLE criterion_scores ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE criterion_scores FORCE ROW LEVEL SECURITY"))
+    op.execute(
+        sa.text("""
+        CREATE POLICY tenant_isolation ON criterion_scores
+        FOR ALL
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM grades g
+                JOIN essay_versions ev ON ev.id = g.essay_version_id
+                JOIN essays e ON e.id = ev.essay_id
+                JOIN assignments a ON a.id = e.assignment_id
+                JOIN classes c ON c.id = a.class_id
+                WHERE g.id = criterion_scores.grade_id
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
+            )
+        )
+    """)
+    )
+
 
 def downgrade() -> None:
     # Drop policies and disable/unforce RLS in reverse order.
+
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON criterion_scores"))
+    op.execute(sa.text("ALTER TABLE criterion_scores NO FORCE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE criterion_scores DISABLE ROW LEVEL SECURITY"))
+
+    op.execute(sa.text("DROP POLICY IF EXISTS system_template_criteria_readable ON rubric_criteria"))
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON rubric_criteria"))
+    op.execute(sa.text("ALTER TABLE rubric_criteria NO FORCE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE rubric_criteria DISABLE ROW LEVEL SECURITY"))
+
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON essay_versions"))
+    op.execute(sa.text("ALTER TABLE essay_versions NO FORCE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE essay_versions DISABLE ROW LEVEL SECURITY"))
+
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON class_enrollments"))
+    op.execute(sa.text("ALTER TABLE class_enrollments NO FORCE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE class_enrollments DISABLE ROW LEVEL SECURITY"))
 
     op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON regrade_requests"))
     op.execute(sa.text("ALTER TABLE regrade_requests NO FORCE ROW LEVEL SECURITY"))

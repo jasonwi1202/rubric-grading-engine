@@ -167,7 +167,7 @@ class TestRateLimitMiddleware:
         redis_mock.incr.assert_not_called()
 
     def test_redis_failure_fails_open(self) -> None:
-        """When Redis raises an exception the request is allowed through."""
+        """When Redis raises an exception the request is allowed through (200 OK)."""
         mock = MagicMock()
         mock.incr = AsyncMock(side_effect=ConnectionError("redis down"))
         mock.expire = AsyncMock(return_value=True)
@@ -186,7 +186,61 @@ class TestRateLimitMiddleware:
 
         client = TestClient(middleware, raise_server_exceptions=False)
         resp = client.post("/api/v1/auth/login", json={})
-        assert resp.status_code != 429, "Should fail open when Redis is unavailable"
+        assert resp.status_code == 200, (
+            f"Expected 200 (fail-open) when Redis is unavailable, got {resp.status_code}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Security headers appear on 429 rate-limit responses
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityHeadersOn429:
+    """Security headers must be present even on 429 rate-limit responses.
+
+    This test creates a full-stack app with both SecurityHeadersMiddleware and
+    RateLimitMiddleware installed, mocks Redis to exceed the login rate limit,
+    and asserts that the 429 response still carries all required security headers.
+    """
+
+    def _make_full_stack_client(self, redis_mock: MagicMock) -> TestClient:
+        """Build a minimal app with the full middleware stack and a fake login route."""
+        app = FastAPI()
+
+        @app.post("/api/v1/auth/login")
+        async def fake_login() -> dict:
+            return {"access_token": "tok"}
+
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        # Build RateLimitMiddleware with the mock Redis injected.
+        rate_limiter = RateLimitMiddleware.__new__(RateLimitMiddleware)
+        rate_limiter._redis = redis_mock
+        BaseHTTPMiddleware.__init__(rate_limiter, app)
+
+        # Wrap with SecurityHeadersMiddleware (outermost — must see 429s from inner layer).
+        sec_headers = SecurityHeadersMiddleware.__new__(SecurityHeadersMiddleware)
+        BaseHTTPMiddleware.__init__(sec_headers, rate_limiter)
+
+        return TestClient(sec_headers, raise_server_exceptions=False)
+
+    def test_security_headers_present_on_429(self) -> None:
+        redis_mock = MagicMock()
+        redis_mock.incr = AsyncMock(return_value=11)  # login limit is 10
+        redis_mock.expire = AsyncMock(return_value=True)
+
+        client = self._make_full_stack_client(redis_mock)
+        resp = client.post("/api/v1/auth/login", json={"email": "t@t.com", "password": "pw"})
+
+        assert resp.status_code == 429, f"Expected 429, got {resp.status_code}"
+        body = resp.json()
+        assert body["error"]["code"] == "RATE_LIMITED"
+        for header, value in _SECURITY_HEADERS.items():
+            assert resp.headers.get(header) == value, (
+                f"Security header {header!r} missing or wrong on 429 response. "
+                f"Expected {value!r}, got {resp.headers.get(header)!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
