@@ -394,7 +394,10 @@ describe("VideoRecorder — permission denied", () => {
   });
 
   it("shows a screen share denied error when getDisplayMedia is rejected", async () => {
-    mockGetDisplayMedia.mockRejectedValueOnce(new Error("NotAllowedError"));
+    const notAllowedError = Object.assign(new Error("Permission denied"), {
+      name: "NotAllowedError",
+    });
+    mockGetDisplayMedia.mockRejectedValueOnce(notAllowedError);
 
     const user = userEvent.setup();
     render(<VideoRecorder gradeId="grade-test-001" isLocked={false} />, {

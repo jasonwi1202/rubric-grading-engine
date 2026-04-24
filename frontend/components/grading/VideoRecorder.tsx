@@ -161,7 +161,10 @@ function VideoCommentRow({
       const { url } = await getMediaCommentUrl(comment.id);
       setPlayUrl(url);
       // Video element will start once src is set.
-    } catch {
+    } catch (err) {
+      console.error("Failed to load media comment URL:", {
+        error_type: err instanceof Error ? err.constructor.name : typeof err,
+      });
       setUrlError("Could not load playback URL. Please try again.");
     } finally {
       setIsLoadingUrl(false);
@@ -573,7 +576,7 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
               type="button"
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending}
-              aria-label="Save video comment"
+              aria-label={isAudioFallback ? "Save audio comment" : "Save video comment"}
               className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saveMutation.isPending ? "Saving…" : "Save"}
