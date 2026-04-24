@@ -29,6 +29,7 @@ table without a prior ``SET app.current_teacher_id`` call will return zero
 rows silently.
 """
 
+import logging
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
@@ -39,6 +40,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Engine
@@ -89,7 +92,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
                 _sa = __import__("sqlalchemy")
                 await session.execute(_sa.text("SET app.current_teacher_id = ''"))
             except Exception:  # noqa: BLE001
-                pass
+                logger.debug("RLS context reset failed after request", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -168,4 +171,4 @@ async def tenant_session(teacher_id: uuid.UUID) -> AsyncIterator[AsyncSession]:
                 _sa = __import__("sqlalchemy")
                 await session.execute(_sa.text("SET app.current_teacher_id = ''"))
             except Exception:  # noqa: BLE001
-                pass
+                logger.debug("RLS context reset failed in tenant_session", exc_info=True)
