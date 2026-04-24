@@ -24,7 +24,6 @@ from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
 from app.exceptions import ValidationError
 from app.models.user import User
-from app.schemas.media_comment import SaveToBankResponse
 from app.services.media_comment import (
     ALLOWED_MIME_TYPES,
     MAX_MEDIA_SIZE_BYTES,

@@ -27,7 +27,11 @@ from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
 from app.models.grade import Grade
 from app.models.media_comment import MediaComment
-from app.schemas.media_comment import MediaCommentResponse, MediaCommentUrlResponse, SaveToBankResponse
+from app.schemas.media_comment import (
+    MediaCommentResponse,
+    MediaCommentUrlResponse,
+    SaveToBankResponse,
+)
 from app.storage.s3 import StorageError, copy_file, delete_file, generate_presigned_url, upload_file
 
 logger = logging.getLogger(__name__)
