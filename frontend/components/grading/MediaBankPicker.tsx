@@ -183,7 +183,7 @@ export function MediaBankPicker({ gradeId, isLocked }: MediaBankPickerProps) {
                   key={comment.id}
                   comment={comment}
                   isLocked={isLocked}
-                  isApplying={applyMutation.isPending && applyMutation.variables === comment.id}
+                  isApplying={applyMutation.isPending}
                   isApplied={appliedId === comment.id}
                   onApply={() => applyMutation.mutate(comment.id)}
                 />

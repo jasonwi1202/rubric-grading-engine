@@ -38,7 +38,15 @@ vi.mock("@/lib/api/media-comments", () => ({
   applyBankedComment: (...args: unknown[]) => mockApplyBanked(...args),
 }));
 
+vi.mock("@/lib/api/exports", () => ({
+  startExport: vi.fn(),
+  getExportStatus: vi.fn(),
+  getExportDownloadUrl: vi.fn(),
+  downloadGradesCsv: vi.fn(),
+}));
+
 import { MediaBankPicker } from "@/components/grading/MediaBankPicker";
+import { ExportPanel } from "@/components/grading/ExportPanel";
 import type { MediaCommentResponse } from "@/lib/api/media-comments";
 import { ApiError } from "@/lib/api/errors";
 
@@ -370,20 +378,6 @@ describe("MediaBankPicker — apply flow", () => {
 
 describe("ExportPanel — media comment note in export description", () => {
   it("shows a note that media comments are included as links in exported PDFs", async () => {
-    // This test imports ExportPanel and mocks the exports API.
-    const { ExportPanel } = await import("@/components/grading/ExportPanel");
-    const mockStartExport = vi.fn();
-    const mockGetExportStatus = vi.fn();
-    const mockGetExportDownloadUrl = vi.fn();
-    const mockDownloadGradesCsv = vi.fn();
-
-    vi.doMock("@/lib/api/exports", () => ({
-      startExport: mockStartExport,
-      getExportStatus: mockGetExportStatus,
-      getExportDownloadUrl: mockGetExportDownloadUrl,
-      downloadGradesCsv: mockDownloadGradesCsv,
-    }));
-
     const user = userEvent.setup();
     render(
       <ExportPanel assignmentId="asgn-media-note-001" hasLockedGrades={true} />,

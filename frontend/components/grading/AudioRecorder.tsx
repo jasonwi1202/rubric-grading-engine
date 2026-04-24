@@ -102,10 +102,12 @@ export interface AudioRecorderProps {
 
 function CommentRow({
   comment,
+  gradeId,
   isLocked,
   onDeleted,
 }: {
   comment: MediaCommentResponse;
+  gradeId: string;
   isLocked: boolean;
   onDeleted: () => void;
 }) {
@@ -141,6 +143,9 @@ function CommentRow({
       setIsBanked(true);
       // Invalidate the bank list so it refreshes when the picker is opened.
       void queryClient.invalidateQueries({ queryKey: ["media-bank"] });
+      // Also invalidate this grade's media-comments cache so is_banked is
+      // consistent if the component remounts or the query refetches.
+      void queryClient.invalidateQueries({ queryKey: ["media-comments", gradeId] });
     },
     onError: () => {
       setBankError("Failed to save to bank. Please try again.");
@@ -530,6 +535,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
             <CommentRow
               key={c.id}
               comment={c}
+              gradeId={gradeId}
               isLocked={isLocked}
               onDeleted={handleCommentDeleted}
             />
