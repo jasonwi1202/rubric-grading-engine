@@ -31,40 +31,36 @@ def client() -> TestClient:
 
 
 class TestHealthEndpoint:
-    def test_health_returns_200_when_deps_ok(self) -> None:
+    def test_health_returns_200_when_deps_ok(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
         ):
-            c = TestClient(create_app(), raise_server_exceptions=False)
-            resp = c.get("/api/v1/health")
+            resp = client.get("/api/v1/health")
         assert resp.status_code == 200, f"Got {resp.status_code}"
 
-    def test_health_returns_503_when_database_down(self) -> None:
+    def test_health_returns_503_when_database_down(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=False)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
         ):
-            c = TestClient(create_app(), raise_server_exceptions=False)
-            resp = c.get("/api/v1/health")
+            resp = client.get("/api/v1/health")
         assert resp.status_code == 503, f"Got {resp.status_code}"
 
-    def test_health_returns_503_when_redis_down(self) -> None:
+    def test_health_returns_503_when_redis_down(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
         ):
-            c = TestClient(create_app(), raise_server_exceptions=False)
-            resp = c.get("/api/v1/health")
+            resp = client.get("/api/v1/health")
         assert resp.status_code == 503, f"Got {resp.status_code}"
 
-    def test_health_body_shape_when_healthy(self) -> None:
+    def test_health_body_shape_when_healthy(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
         ):
-            c = TestClient(create_app(), raise_server_exceptions=False)
-            resp = c.get("/api/v1/health")
+            resp = client.get("/api/v1/health")
         body = resp.json()
         assert body["status"] == "ok", f"Got {body}"
         assert body["service"] == "rubric-grading-engine-api", f"Got {body}"
@@ -72,13 +68,12 @@ class TestHealthEndpoint:
         assert body["dependencies"]["database"] == "ok", f"Got {body}"
         assert body["dependencies"]["redis"] == "ok", f"Got {body}"
 
-    def test_health_body_shape_when_degraded(self) -> None:
+    def test_health_body_shape_when_degraded(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=False)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
         ):
-            c = TestClient(create_app(), raise_server_exceptions=False)
-            resp = c.get("/api/v1/health")
+            resp = client.get("/api/v1/health")
         body = resp.json()
         assert body["status"] == "degraded", f"Got {body}"
         assert body["service"] == "rubric-grading-engine-api", f"Got {body}"

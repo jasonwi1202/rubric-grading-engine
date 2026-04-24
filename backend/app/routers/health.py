@@ -59,6 +59,7 @@ async def _check_redis() -> bool:
             settings.redis_url,
             socket_connect_timeout=2,
             socket_timeout=2,
+            decode_responses=True,
         )
         try:
             await r.ping()

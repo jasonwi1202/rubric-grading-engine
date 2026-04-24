@@ -28,12 +28,16 @@ Signals used:
   prevent stale IDs from leaking into the next task on the same worker thread.
 """
 
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import before_task_publish, task_postrun, task_prerun
 
 from app.config import settings
 from app.logging_config import configure_logging, correlation_id_var
+
+logger = logging.getLogger(__name__)
 
 celery = Celery(
     "rubric_grading_engine",
@@ -117,7 +121,11 @@ def _restore_correlation_id(task: object, **_kwargs: object) -> None:
             hdrs = getattr(request, "headers", None) or {}
             cid = hdrs.get("correlation_id", "") or ""
         correlation_id_var.set(cid)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "Failed to restore correlation_id from task headers — using empty string",
+            extra={"error_type": type(exc).__name__},
+        )
         correlation_id_var.set("")
 
 

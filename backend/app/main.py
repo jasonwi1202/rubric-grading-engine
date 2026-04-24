@@ -127,6 +127,7 @@ def _register_middleware(application: FastAPI) -> None:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Correlation-Id"],
+        expose_headers=["X-Correlation-Id"],
     )
 
     # 3. Security headers — wraps CORS so headers are applied to every

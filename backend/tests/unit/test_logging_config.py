@@ -299,9 +299,9 @@ class TestIsoTimestamp:
         assert "T" in result, f"Expected ISO-8601 'T' separator: {result!r}"
 
     def test_milliseconds_included(self) -> None:
-        # 1_700_000_000.500 => .500 milliseconds
+        # 1_700_000_000.5 = 1,700,000,000 seconds + 0.5 seconds = 500 milliseconds
         result = _iso_timestamp(1_700_000_000.5)
-        # The .500 milliseconds should appear in the output
+        # The 500ms component should appear in the output as ".500Z"
         assert ".500Z" in result, f"Expected '.500Z' in output: {result!r}"
 
 
