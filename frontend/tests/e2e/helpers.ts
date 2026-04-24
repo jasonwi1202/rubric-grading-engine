@@ -68,6 +68,191 @@ export function testEmail(tag: string): string {
 
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:8000";
 
+// ---------------------------------------------------------------------------
+// API-level seeding helpers (used to bootstrap Journey 2 and later journeys
+// without relying on the UI for setup steps that are already covered by
+// Journey 1).
+// ---------------------------------------------------------------------------
+
+/**
+ * Log in to the backend API and return the JWT access token.
+ *
+ * The access token can be used in `Authorization: Bearer <token>` headers
+ * for subsequent raw `fetch()` seeding calls inside `beforeAll` hooks.
+ * The browser-visible refresh_token cookie is NOT set by this call — use
+ * the UI login form when you need the browser session to be authenticated.
+ */
+export async function loginApi(
+  email: string,
+  password: string,
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`loginApi failed: ${res.status} ${res.statusText} — ${text}`);
+  }
+  const body = (await res.json()) as { data: { access_token: string } };
+  return body.data.access_token;
+}
+
+/** Seed a class via the backend API and return its UUID. */
+export async function seedClass(
+  token: string,
+  name: string,
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/v1/classes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name,
+      subject: "English Language Arts",
+      grade_level: "Grade 8",
+      academic_year: "2025-2026",
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`seedClass failed: ${res.status} ${res.statusText} — ${text}`);
+  }
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data.id;
+}
+
+/**
+ * Enroll a student in a class via the backend API and return the student UUID.
+ *
+ * The student's `full_name` is used by the auto-assignment algorithm as a
+ * fuzzy-matching target — name essay files to match these names.
+ */
+export async function seedStudent(
+  token: string,
+  classId: string,
+  fullName: string,
+): Promise<string> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/classes/${classId}/students`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ full_name: fullName }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`seedStudent failed: ${res.status} ${res.statusText} — ${text}`);
+  }
+  const body = (await res.json()) as {
+    data: { student: { id: string } };
+  };
+  return body.data.student.id;
+}
+
+/**
+ * Create a rubric with two equally-weighted criteria via the backend API and
+ * return its UUID.
+ */
+export async function seedRubric(
+  token: string,
+  name: string,
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/v1/rubrics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name,
+      criteria: [
+        {
+          name: "Argument Quality",
+          weight: 50,
+          min_score: 1,
+          max_score: 5,
+        },
+        {
+          name: "Evidence Use",
+          weight: 50,
+          min_score: 1,
+          max_score: 5,
+        },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`seedRubric failed: ${res.status} ${res.statusText} — ${text}`);
+  }
+  const body = (await res.json()) as { data: { id: string } };
+  return body.data.id;
+}
+
+/**
+ * Create an assignment for a class and immediately transition it to `open`
+ * status so that essays can be uploaded and batch grading can be triggered.
+ *
+ * Returns the assignment UUID.
+ */
+export async function seedAssignment(
+  token: string,
+  classId: string,
+  rubricId: string,
+  title: string,
+): Promise<string> {
+  // Phase 1: create in draft status.
+  const createRes = await fetch(
+    `${API_BASE}/api/v1/classes/${classId}/assignments`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ title, rubric_id: rubricId }),
+    },
+  );
+  if (!createRes.ok) {
+    const text = await createRes.text().catch(() => "");
+    throw new Error(
+      `seedAssignment (create) failed: ${createRes.status} ${createRes.statusText} — ${text}`,
+    );
+  }
+  const created = (await createRes.json()) as { data: { id: string } };
+  const assignmentId = created.data.id;
+
+  // Phase 2: transition draft → open so essays can be uploaded and grading
+  // can be triggered without additional UI steps.
+  const openRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status: "open" }),
+    },
+  );
+  if (!openRes.ok) {
+    const text = await openRes.text().catch(() => "");
+    throw new Error(
+      `seedAssignment (open) failed: ${openRes.status} ${openRes.statusText} — ${text}`,
+    );
+  }
+
+  return assignmentId;
+}
+
 /**
  * Seed a verified teacher account via the backend API.
  *
