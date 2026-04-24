@@ -495,9 +495,13 @@ function LogRequestForm({
   });
 
   // Map rubric_criterion_id → criterion_score_id from the loaded grade.
+  // Entries without a valid rubric_criterion_id are excluded to prevent
+  // incorrect map keys from null or undefined values.
   const criterionScoreMap: Record<string, string> = grade
     ? Object.fromEntries(
-        grade.criterion_scores.map((cs) => [cs.rubric_criterion_id, cs.id]),
+        grade.criterion_scores
+          .filter((cs) => cs.rubric_criterion_id != null)
+          .map((cs) => [cs.rubric_criterion_id, cs.id]),
       )
     : {};
 
@@ -536,7 +540,7 @@ function LogRequestForm({
     // silently log an overall-grade request instead of the intended criterion.
     if (selectedCriterionId && !criterionScoreMap[selectedCriterionId]) {
       setFormError(
-        "Could not find the selected criterion in the grade. Please refresh and try again.",
+        "The selected criterion was not graded for this essay. Please select a different criterion or choose 'Overall grade'.",
       );
       return;
     }
