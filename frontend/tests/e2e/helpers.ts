@@ -301,6 +301,168 @@ export async function seedTeacher(
   return { email, password };
 }
 
+/**
+ * Upload a single plain-text essay file to an assignment, pre-assigned to a
+ * specific student.  Returns the essay UUID created on the server.
+ *
+ * The essay body begins with the student name so the filename-based and
+ * header-text auto-assignment signals both produce a high-confidence match,
+ * but here we bypass auto-assignment entirely by supplying `student_id`
+ * directly in the form so the essay is immediately assigned.
+ *
+ * Security: no real student PII — all names and content are synthetic.
+ */
+export async function seedEssay(
+  token: string,
+  assignmentId: string,
+  studentId: string,
+  studentName: string,
+): Promise<string> {
+  const essayText =
+    `${studentName}\n\n` +
+    "This essay presents a coherent and well-supported argument. " +
+    "The author incorporates relevant textual evidence and organises ideas logically. " +
+    "Each body paragraph develops a distinct aspect of the central thesis. " +
+    "The conclusion restates the main argument and leaves the reader with a clear takeaway.";
+  const blob = new Blob([essayText], { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("files", blob, `${studentName}.txt`);
+  formData.append("student_id", studentId);
+
+  const res = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}/essays`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `seedEssay failed: ${res.status} ${res.statusText} — ${text}`,
+    );
+  }
+  const body = (await res.json()) as { data: Array<{ essay_id: string }> };
+  return body.data[0].essay_id;
+}
+
+/** Return type of {@link seedGradedEssay}. */
+export interface GradedEssayFixture {
+  email: string;
+  password: string;
+  assignmentId: string;
+  essayId: string;
+}
+
+/**
+ * Seed a complete graded-essay fixture for Journey 3 tests.
+ *
+ * Creates a fresh verified teacher account, class, student, rubric, and
+ * assignment; uploads a single text essay pre-assigned to the student;
+ * triggers batch grading; and polls the grading-status endpoint until the
+ * pipeline reaches a terminal state ("complete" or "partial").
+ *
+ * Call `clearMailpit()` in the test's `beforeAll` before invoking this helper
+ * so that the verification email lookup finds the right message.
+ *
+ * Security:
+ * - Synthetic student name only — no real student PII.
+ * - Essay body is generic placeholder text — no real essay content.
+ */
+export async function seedGradedEssay(
+  tag: string,
+): Promise<GradedEssayFixture> {
+  const creds = await seedTeacher(tag);
+  const token = await loginApi(creds.email, creds.password);
+
+  const ts = Date.now();
+  const classId = await seedClass(token, `J3 Class ${ts}`);
+  const studentId = await seedStudent(token, classId, "Gamma Writer");
+  const rubricId = await seedRubric(token, `J3 Rubric ${ts}`);
+  const assignmentId = await seedAssignment(
+    token,
+    classId,
+    rubricId,
+    `J3 Assignment ${ts}`,
+  );
+
+  const essayId = await seedEssay(
+    token,
+    assignmentId,
+    studentId,
+    "Gamma Writer",
+  );
+
+  // Trigger batch grading.
+  const gradeRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}/grade`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ strictness: "balanced" }),
+    },
+  );
+  if (!gradeRes.ok) {
+    const text = await gradeRes.text().catch(() => "");
+    throw new Error(
+      `seedGradedEssay (trigger grading) failed: ${gradeRes.status} ${gradeRes.statusText} — ${text}`,
+    );
+  }
+
+  // Poll until the batch reaches a terminal state.
+  const deadline = Date.now() + 120_000;
+  let lastStatus = "pending";
+  let pollCount = 0;
+  let reachedTerminal = false;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    pollCount += 1;
+    const statusRes = await fetch(
+      `${API_BASE}/api/v1/assignments/${assignmentId}/grading-status`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!statusRes.ok) {
+      const text = await statusRes.text().catch(() => "");
+      if (statusRes.status < 500) {
+        throw new Error(
+          `seedGradedEssay (poll grading status) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
+        );
+      }
+      continue;
+    }
+    const statusBody = (await statusRes.json()) as {
+      data: { status: string };
+    };
+    lastStatus = statusBody.data.status;
+    if (lastStatus === "complete" || lastStatus === "partial") {
+      reachedTerminal = true;
+      break;
+    }
+    if (lastStatus === "failed") {
+      throw new Error(
+        "seedGradedEssay: batch grading failed — essay cannot be reviewed",
+      );
+    }
+  }
+  if (!reachedTerminal) {
+    throw new Error(
+      `seedGradedEssay: grading did not reach a terminal state within 120 s ` +
+        `(last status: "${lastStatus}", polls: ${pollCount})`,
+    );
+  }
+
+  return {
+    email: creds.email,
+    password: creds.password,
+    assignmentId,
+    essayId,
+  };
+}
+
 /** Wait for the backend health endpoint to be reachable. Useful after compose up. */
 export async function waitForBackend(
   apiBase = "http://localhost:8000",
