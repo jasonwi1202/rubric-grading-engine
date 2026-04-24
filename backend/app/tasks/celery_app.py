@@ -32,7 +32,7 @@ import logging
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import before_task_publish, task_postrun, task_prerun
+from celery.signals import before_task_publish, task_postrun, task_prerun, worker_init
 
 from app.config import settings
 from app.logging_config import configure_logging, correlation_id_var
@@ -75,15 +75,22 @@ celery.conf.update(
     },
 )
 
-# Configure structured JSON logging for Celery workers.  This is a no-op
-# when the module is imported by the FastAPI process (configure_logging is
-# called again in create_app() with the same settings, which is idempotent).
-configure_logging(settings.log_level)
-
 
 # ---------------------------------------------------------------------------
 # Correlation ID propagation via Celery signals
 # ---------------------------------------------------------------------------
+
+
+@worker_init.connect  # type: ignore[untyped-decorator]
+def _configure_worker_logging(**_kwargs: object) -> None:
+    """Configure structured JSON logging when the Celery worker process starts.
+
+    Using the ``worker_init`` signal (rather than module-level code) ensures
+    that this runs only in the worker process, not in the FastAPI process that
+    imports this module.  The FastAPI process configures logging in
+    ``create_app()`` via ``configure_logging(settings.log_level)``.
+    """
+    configure_logging(settings.log_level)
 
 
 @before_task_publish.connect  # type: ignore[untyped-decorator]

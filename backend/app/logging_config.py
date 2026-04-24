@@ -58,7 +58,7 @@ class CorrelationIdFilter(logging.Filter):
         # LogRecord does not declare correlation_id; we add it as a dynamic
         # attribute so that JsonFormatter can include it without needing to call
         # correlation_id_var.get() inside the formatter itself.
-        record.correlation_id = correlation_id_var.get("")  # type: ignore[attr-defined]
+        record.correlation_id = correlation_id_var.get("")
         return True
 
 

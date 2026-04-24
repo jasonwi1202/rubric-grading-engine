@@ -230,16 +230,20 @@ A correlation ID is a UUID4 generated (or echoed from `X-Correlation-Id` request
 
 `GET /api/v1/health` returns dependency reachability status. No authentication is required (used by load balancers and Railway probes).
 
+Follows the standard `{"data": ...}` response envelope from `api-design.md`.
+
 **Response shape (HTTP 200 — all healthy):**
 
 ```json
 {
-  "status": "ok",
-  "service": "rubric-grading-engine-api",
-  "version": "0.1.0",
-  "dependencies": {
-    "database": "ok",
-    "redis": "ok"
+  "data": {
+    "status": "ok",
+    "service": "rubric-grading-engine-api",
+    "version": "0.1.0",
+    "dependencies": {
+      "database": "ok",
+      "redis": "ok"
+    }
   }
 }
 ```
@@ -248,17 +252,19 @@ A correlation ID is a UUID4 generated (or echoed from `X-Correlation-Id` request
 
 ```json
 {
-  "status": "degraded",
-  "service": "rubric-grading-engine-api",
-  "version": "0.1.0",
-  "dependencies": {
-    "database": "unavailable",
-    "redis": "ok"
+  "data": {
+    "status": "degraded",
+    "service": "rubric-grading-engine-api",
+    "version": "0.1.0",
+    "dependencies": {
+      "database": "unavailable",
+      "redis": "ok"
+    }
   }
 }
 ```
 
-The response body is always present regardless of status code. Clients should parse it to determine which specific dependency is unhealthy.
+The response body is always present regardless of status code. Clients should parse `data.dependencies` to determine which specific dependency is unhealthy. The `version` field is read from `importlib.metadata` and reflects the installed package version from `pyproject.toml`.
 
 ---
 

@@ -184,7 +184,7 @@ class TestJsonFormatterPIISafety:
         return record
 
     def test_exception_message_is_not_in_output(self, formatter: JsonFormatter) -> None:
-        pii_message = "student Jane Smith submitted an invalid essay"
+        pii_message = "essay submitted by <student_name> contained invalid content"
         record = self._make_exc_record("an error occurred", ValueError(pii_message))
         output = formatter.format(record)
         assert pii_message not in output, (
@@ -197,7 +197,7 @@ class TestJsonFormatterPIISafety:
         assert output.get("error_type") == "ValueError", f"Got: {output}"
 
     def test_student_email_not_in_output_for_exc(self, formatter: JsonFormatter) -> None:
-        email = "student@school.edu"
+        email = "<student_email>@example.invalid"
         record = self._make_exc_record("auth failure", RuntimeError(f"no account for {email}"))
         output = formatter.format(record)
         assert email not in output, (

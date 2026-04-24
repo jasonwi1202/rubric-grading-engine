@@ -17,6 +17,7 @@ balancers and Railway health-check probes can reach it without credentials.
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 
 from fastapi import APIRouter
@@ -27,7 +28,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
 
 _SERVICE_NAME = "rubric-grading-engine-api"
-_VERSION = "0.1.0"
+
+try:
+    _VERSION = importlib.metadata.version("rubric-grading-engine")
+except importlib.metadata.PackageNotFoundError:
+    _VERSION = "unknown"
 
 
 async def _check_database() -> bool:
@@ -84,17 +89,22 @@ async def health_check() -> JSONResponse:
     Response shape::
 
         {
-          "status": "ok",
-          "service": "rubric-grading-engine-api",
-          "version": "0.1.0",
-          "dependencies": {
-            "database": "ok",
-            "redis": "ok"
+          "data": {
+            "status": "ok",
+            "service": "rubric-grading-engine-api",
+            "version": "0.1.0",
+            "dependencies": {
+              "database": "ok",
+              "redis": "ok"
+            }
           }
         }
 
     HTTP 200 — all dependencies healthy.
     HTTP 503 — one or more dependencies unavailable (``status`` is ``"degraded"``).
+
+    No authentication is required — load balancers and Railway health-check
+    probes must be able to reach this endpoint without credentials.
     """
     db_ok = await _check_database()
     redis_ok = await _check_redis()
@@ -103,12 +113,14 @@ async def health_check() -> JSONResponse:
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content={
-            "status": "ok" if all_ok else "degraded",
-            "service": _SERVICE_NAME,
-            "version": _VERSION,
-            "dependencies": {
-                "database": "ok" if db_ok else "unavailable",
-                "redis": "ok" if redis_ok else "unavailable",
-            },
+            "data": {
+                "status": "ok" if all_ok else "degraded",
+                "service": _SERVICE_NAME,
+                "version": _VERSION,
+                "dependencies": {
+                    "database": "ok" if db_ok else "unavailable",
+                    "redis": "ok" if redis_ok else "unavailable",
+                },
+            }
         },
     )

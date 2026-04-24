@@ -61,7 +61,14 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         from app.logging_config import correlation_id_var  # noqa: PLC0415
 
-        correlation_id = request.headers.get("X-Correlation-Id") or str(uuid.uuid4())
+        raw_id = request.headers.get("X-Correlation-Id", "")
+        # Accept client-supplied IDs only when they look like UUID4 (36 chars,
+        # hex + hyphens only).  Reject anything longer or containing unexpected
+        # characters to prevent log injection or log bloat.
+        if raw_id and len(raw_id) <= 36 and raw_id.replace("-", "").isalnum():
+            correlation_id = raw_id
+        else:
+            correlation_id = str(uuid.uuid4())
         request.state.correlation_id = correlation_id
         token = correlation_id_var.set(correlation_id)
         try:

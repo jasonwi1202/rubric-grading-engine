@@ -61,7 +61,7 @@ class TestHealthEndpoint:
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/health")
-        body = resp.json()
+        body = resp.json()["data"]
         assert body["status"] == "ok", f"Got {body}"
         assert body["service"] == "rubric-grading-engine-api", f"Got {body}"
         assert "version" in body, f"Missing 'version' in {body}"
@@ -74,7 +74,7 @@ class TestHealthEndpoint:
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
         ):
             resp = client.get("/api/v1/health")
-        body = resp.json()
+        body = resp.json()["data"]
         assert body["status"] == "degraded", f"Got {body}"
         assert body["service"] == "rubric-grading-engine-api", f"Got {body}"
         assert body["dependencies"]["database"] == "unavailable", f"Got {body}"
@@ -87,7 +87,7 @@ class TestHealthEndpoint:
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
         ):
             resp = client.get("/api/v1/health")
-        body = resp.json()
+        body = resp.json()["data"]
         assert "service" in body, f"Missing 'service' key: {body}"
         assert "version" in body, f"Missing 'version' key: {body}"
         assert "dependencies" in body, f"Missing 'dependencies' key: {body}"
@@ -259,15 +259,15 @@ class TestExceptionHandlers:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Unhandled exception handler logs error_type only — not the exception message."""
-        student_name = "Jane Smith"
-        client = _make_client_with_route(RuntimeError(f"essay by {student_name} was invalid"))
+        sensitive_token = "<student_name>"
+        client = _make_client_with_route(RuntimeError(f"essay by {sensitive_token} was invalid"))
         with caplog.at_level(logging.ERROR):
             client.get("/test-error")
-        # The student name must not appear in any log record.
+        # The sensitive token must not appear in any log record.
         for record in caplog.records:
-            assert student_name not in record.getMessage(), (
-                f"Student PII found in log message: {record.getMessage()!r}"
+            assert sensitive_token not in record.getMessage(), (
+                f"Sensitive value found in log message: {record.getMessage()!r}"
             )
-            assert student_name not in str(record.__dict__), (
-                f"Student PII found in log record extras: {record.__dict__!r}"
+            assert sensitive_token not in str(record.__dict__), (
+                f"Sensitive value found in log record extras: {record.__dict__!r}"
             )
