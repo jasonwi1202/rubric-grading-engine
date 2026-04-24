@@ -106,7 +106,7 @@ function CommentRow({
 }: {
   comment: MediaCommentResponse;
   isLocked: boolean;
-  onDeleted: (id: string) => void;
+  onDeleted: () => void;
 }) {
   const [playUrl, setPlayUrl] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -117,7 +117,7 @@ function CommentRow({
   const deleteMutation = useMutation({
     mutationFn: () => deleteMediaComment(comment.id),
     onSuccess: () => {
-      onDeleted(comment.id);
+      onDeleted();
     },
     onError: (err) => {
       setDeleteError(deleteErrorMessage(err));
@@ -351,7 +351,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
   };
 
   const handleCommentDeleted = useCallback(
-    (_id: string) => {
+    () => {
       void queryClient.invalidateQueries({
         queryKey: ["media-comments", gradeId],
       });

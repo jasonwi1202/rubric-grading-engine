@@ -187,7 +187,14 @@ async def create_media_comment(
         "media_comment_created",
         extra={"grade_id": str(grade_id), "media_comment_id": str(mc.id)},
     )
-    return MediaCommentResponse.model_validate(mc)
+    return MediaCommentResponse(
+        id=mc.id,
+        grade_id=mc.grade_id,
+        s3_key=mc.s3_key,
+        duration_seconds=mc.duration_seconds,
+        mime_type=mc.mime_type,
+        created_at=mc.created_at,
+    )
 
 
 async def delete_media_comment(
@@ -210,7 +217,7 @@ async def delete_media_comment(
 
     s3_key = mc.s3_key  # captured before deletion
 
-    db.delete(mc)
+    db.delete(mc)  # type: ignore[unused-coroutine]  # db.delete is sync on AsyncSession; SQLAlchemy stubs incorrectly type it as a coroutine
     await db.commit()
 
     # Delete from S3 after the DB row is gone — if this fails the orphan
@@ -289,4 +296,14 @@ async def list_grade_media_comments(
     )
     result = await db.execute(stmt)
     rows = result.scalars().all()
-    return [MediaCommentResponse.model_validate(r) for r in rows]
+    return [
+        MediaCommentResponse(
+            id=r.id,
+            grade_id=r.grade_id,
+            s3_key=r.s3_key,
+            duration_seconds=r.duration_seconds,
+            mime_type=r.mime_type,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]

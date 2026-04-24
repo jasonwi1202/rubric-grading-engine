@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
+from app.exceptions import ValidationError
 from app.models.user import User
 from app.services.media_comment import (
     ALLOWED_MIME_TYPES,
@@ -28,7 +29,6 @@ from app.services.media_comment import (
     get_media_comment_url,
     list_grade_media_comments,
 )
-from app.exceptions import ValidationError
 
 #: Pre-computed set of base MIME types (without codec parameters) for efficient
 #: per-request validation without rebuilding the set on every call.
