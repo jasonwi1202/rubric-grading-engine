@@ -309,6 +309,7 @@ async def resolve_regrade_request(
             the referenced CriterionScore no longer exists.
         ForbiddenError: Request belongs to a different teacher.
         ValidationError: deny without resolution_note, or new_criterion_score
+            provided when resolution is "denied", or new_criterion_score
             provided without a targeted criterion, or score out of rubric range.
         ConflictError: Request is already resolved (not open).
         GradeLockedError: Grade is locked; criterion score cannot be updated.
@@ -335,6 +336,14 @@ async def resolve_regrade_request(
             raise NotFoundError("Regrade request not found.")
         raise ForbiddenError("You do not have access to this regrade request.")
 
+    # Acquire a row-level lock so that concurrent resolve calls cannot both
+    # observe status == open and both write conflicting resolutions.
+    await db.execute(
+        select(RegradeRequest.id)
+        .where(RegradeRequest.id == request_id)
+        .with_for_update()
+    )
+
     # Guard: only open requests can be resolved.
     if regrade_request.status != RegradeRequestStatus.open:
         raise ConflictError("This regrade request has already been resolved.")
@@ -344,6 +353,13 @@ async def resolve_regrade_request(
         raise ValidationError(
             "A resolution_note is required when denying a regrade request.",
             field="resolution_note",
+        )
+
+    # Enforce: new_criterion_score is only meaningful for approved resolutions.
+    if body.new_criterion_score is not None and body.resolution == "denied":
+        raise ValidationError(
+            "new_criterion_score cannot be set when denying a regrade request.",
+            field="new_criterion_score",
         )
 
     # Enforce: new_criterion_score only valid when targeting a criterion.
