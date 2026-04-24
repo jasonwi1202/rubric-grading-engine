@@ -91,7 +91,10 @@ export async function loginApi(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) throw new Error(`loginApi failed: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`loginApi failed: ${res.status} ${res.statusText} — ${text}`);
+  }
   const body = (await res.json()) as { data: { access_token: string } };
   return body.data.access_token;
 }
@@ -114,7 +117,10 @@ export async function seedClass(
       academic_year: "2025-2026",
     }),
   });
-  if (!res.ok) throw new Error(`seedClass failed: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`seedClass failed: ${res.status} ${res.statusText} — ${text}`);
+  }
   const body = (await res.json()) as { data: { id: string } };
   return body.data.id;
 }
@@ -141,7 +147,10 @@ export async function seedStudent(
       body: JSON.stringify({ full_name: fullName }),
     },
   );
-  if (!res.ok) throw new Error(`seedStudent failed: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`seedStudent failed: ${res.status} ${res.statusText} — ${text}`);
+  }
   const body = (await res.json()) as {
     data: { student: { id: string } };
   };
@@ -180,7 +189,10 @@ export async function seedRubric(
       ],
     }),
   });
-  if (!res.ok) throw new Error(`seedRubric failed: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`seedRubric failed: ${res.status} ${res.statusText} — ${text}`);
+  }
   const body = (await res.json()) as { data: { id: string } };
   return body.data.id;
 }
@@ -209,8 +221,12 @@ export async function seedAssignment(
       body: JSON.stringify({ title, rubric_id: rubricId }),
     },
   );
-  if (!createRes.ok)
-    throw new Error(`seedAssignment (create) failed: ${createRes.status}`);
+  if (!createRes.ok) {
+    const text = await createRes.text().catch(() => "");
+    throw new Error(
+      `seedAssignment (create) failed: ${createRes.status} ${createRes.statusText} — ${text}`,
+    );
+  }
   const created = (await createRes.json()) as { data: { id: string } };
   const assignmentId = created.data.id;
 
@@ -227,8 +243,12 @@ export async function seedAssignment(
       body: JSON.stringify({ status: "open" }),
     },
   );
-  if (!openRes.ok)
-    throw new Error(`seedAssignment (open) failed: ${openRes.status}`);
+  if (!openRes.ok) {
+    const text = await openRes.text().catch(() => "");
+    throw new Error(
+      `seedAssignment (open) failed: ${openRes.status} ${openRes.statusText} — ${text}`,
+    );
+  }
 
   return assignmentId;
 }
