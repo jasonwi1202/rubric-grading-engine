@@ -177,13 +177,13 @@ export async function seedRubric(
         {
           name: "Argument Quality",
           weight: 50,
-          min_score: 0,
+          min_score: 1,
           max_score: 5,
         },
         {
           name: "Evidence Use",
           weight: 50,
-          min_score: 0,
+          min_score: 1,
           max_score: 5,
         },
       ],
