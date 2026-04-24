@@ -217,7 +217,7 @@ Exception type (`error_type`) is included when an exception is present, but **ex
 
 ## Correlation IDs
 
-A correlation ID is a UUID4 generated (or echoed from `X-Correlation-Id` request header) by `CorrelationIdMiddleware` for every HTTP request. It is:
+A correlation ID is a UUID4 generated (or echoed from `X-Correlation-Id` request header) by `CorrelationIdMiddleware` for every HTTP request. Client-supplied values are accepted only if they parse as a valid UUID4 (standard 36-character canonical form); any other value causes a fresh UUID4 to be generated. It is:
 
 - Stored in `app.logging_config.correlation_id_var` (a `ContextVar`) for the request lifetime.
 - Included in all log lines emitted during the request via `CorrelationIdFilter`.

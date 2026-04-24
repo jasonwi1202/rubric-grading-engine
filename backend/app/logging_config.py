@@ -168,7 +168,9 @@ def configure_logging(level: str = "INFO") -> None:
         level: Logging level string accepted by ``logging.getLevelName``
                (e.g. ``"DEBUG"``, ``"INFO"``, ``"WARNING"``).
     """
-    handler = logging.StreamHandler()
+    import sys  # noqa: PLC0415
+
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     handler.addFilter(CorrelationIdFilter())
 

@@ -81,7 +81,7 @@ celery.conf.update(
 # ---------------------------------------------------------------------------
 
 
-@worker_init.connect  # type: ignore[untyped-decorator]
+@worker_init.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
 def _configure_worker_logging(**_kwargs: object) -> None:
     """Configure structured JSON logging when the Celery worker process starts.
 
@@ -93,7 +93,7 @@ def _configure_worker_logging(**_kwargs: object) -> None:
     configure_logging(settings.log_level)
 
 
-@before_task_publish.connect  # type: ignore[untyped-decorator]
+@before_task_publish.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
 def _inject_correlation_id(headers: dict[str, object], **_kwargs: object) -> None:
     """Embed the current correlation ID in outgoing task message headers.
 
@@ -107,7 +107,7 @@ def _inject_correlation_id(headers: dict[str, object], **_kwargs: object) -> Non
         headers["correlation_id"] = cid
 
 
-@task_prerun.connect  # type: ignore[untyped-decorator]
+@task_prerun.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
 def _restore_correlation_id(task: object, **_kwargs: object) -> None:
     """Restore the correlation ID from task headers before the task body runs.
 
@@ -136,7 +136,7 @@ def _restore_correlation_id(task: object, **_kwargs: object) -> None:
         correlation_id_var.set("")
 
 
-@task_postrun.connect  # type: ignore[untyped-decorator]
+@task_postrun.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
 def _clear_correlation_id(**_kwargs: object) -> None:
     """Clear the correlation ID after the task finishes.
 

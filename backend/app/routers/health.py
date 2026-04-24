@@ -69,7 +69,7 @@ async def _check_redis() -> bool:
         try:
             await r.ping()
         finally:
-            await r.aclose()  # type: ignore[attr-defined]
+            await r.aclose()  # type: ignore[attr-defined]  # redis.asyncio stubs do not expose aclose()
         return True
     except Exception as exc:
         logger.warning(

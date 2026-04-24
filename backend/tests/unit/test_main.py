@@ -110,7 +110,8 @@ class TestCorrelationId:
         )
 
     def test_client_supplied_correlation_id_is_echoed(self, client: TestClient) -> None:
-        supplied_id = "test-correlation-id-1234"
+        # Must be a canonical UUID4 string for the middleware to accept it.
+        supplied_id = "550e8400-e29b-41d4-a716-446655440000"
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
@@ -119,9 +120,25 @@ class TestCorrelationId:
                 "/api/v1/health",
                 headers={"X-Correlation-Id": supplied_id},
             )
-        assert resp.headers.get("X-Correlation-Id") == supplied_id, (
+        # The middleware normalizes to lowercase UUID4 form.
+        assert resp.headers.get("X-Correlation-Id") == supplied_id.lower(), (
             f"Expected echoed ID {supplied_id!r}, got {resp.headers.get('X-Correlation-Id')!r}"
         )
+
+    def test_invalid_correlation_id_header_is_replaced(self, client: TestClient) -> None:
+        """Non-UUID4 X-Correlation-Id is rejected and a fresh UUID4 is generated."""
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get(
+                "/api/v1/health",
+                headers={"X-Correlation-Id": "not-a-uuid"},
+            )
+        cid = resp.headers.get("X-Correlation-Id", "")
+        # The original value must not be echoed back.
+        assert cid != "not-a-uuid", f"Invalid correlation ID was echoed: {cid!r}"
+        assert cid, "Expected a generated UUID4 but got empty string"
 
     def test_missing_correlation_id_header_generates_one(self, client: TestClient) -> None:
         with (
