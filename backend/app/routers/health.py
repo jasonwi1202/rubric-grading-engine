@@ -55,7 +55,7 @@ async def _check_redis() -> bool:
 
         from app.config import settings  # noqa: PLC0415
 
-        r: Redis[str] = Redis.from_url(  # type: ignore[type-arg]
+        r = Redis.from_url(
             settings.redis_url,
             socket_connect_timeout=2,
             socket_timeout=2,

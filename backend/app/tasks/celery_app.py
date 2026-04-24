@@ -86,7 +86,7 @@ configure_logging(settings.log_level)
 # ---------------------------------------------------------------------------
 
 
-@before_task_publish.connect
+@before_task_publish.connect  # type: ignore[untyped-decorator]
 def _inject_correlation_id(headers: dict[str, object], **_kwargs: object) -> None:
     """Embed the current correlation ID in outgoing task message headers.
 
@@ -100,7 +100,7 @@ def _inject_correlation_id(headers: dict[str, object], **_kwargs: object) -> Non
         headers["correlation_id"] = cid
 
 
-@task_prerun.connect
+@task_prerun.connect  # type: ignore[untyped-decorator]
 def _restore_correlation_id(task: object, **_kwargs: object) -> None:
     """Restore the correlation ID from task headers before the task body runs.
 
@@ -129,7 +129,7 @@ def _restore_correlation_id(task: object, **_kwargs: object) -> None:
         correlation_id_var.set("")
 
 
-@task_postrun.connect
+@task_postrun.connect  # type: ignore[untyped-decorator]
 def _clear_correlation_id(**_kwargs: object) -> None:
     """Clear the correlation ID after the task finishes.
 

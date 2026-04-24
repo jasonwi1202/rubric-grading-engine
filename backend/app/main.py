@@ -88,7 +88,11 @@ def _register_middleware(application: FastAPI) -> None:
     from redis.asyncio import Redis
 
     from app.config import settings
-    from app.middleware import CorrelationIdMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
+    from app.middleware import (
+        CorrelationIdMiddleware,
+        RateLimitMiddleware,
+        SecurityHeadersMiddleware,
+    )
 
     # Create a single Redis client for rate limiting.  Stored in app.state so
     # the lifespan handler can call aclose() on graceful shutdown, preventing
