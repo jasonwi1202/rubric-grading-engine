@@ -180,6 +180,13 @@ async def create_regrade_request(
             f"Regrade requests for this grade closed {settings.regrade_window_days} days after grading."
         )
 
+    # Lock the grade row so the count-check and insert are atomic under concurrent
+    # submissions — prevents two simultaneous requests from both seeing
+    # existing_count < regrade_max_per_grade and both inserting.
+    await db.execute(
+        select(Grade.id).where(Grade.id == grade_id).with_for_update()
+    )
+
     # Enforce per-grade request limit.
     count_result = await db.execute(
         select(func.count()).select_from(RegradeRequest).where(
@@ -254,7 +261,12 @@ async def list_regrade_requests_for_assignment(
         .join(Grade, RegradeRequest.grade_id == Grade.id)
         .join(EssayVersion, Grade.essay_version_id == EssayVersion.id)
         .join(Essay, EssayVersion.essay_id == Essay.id)
-        .where(Essay.assignment_id == assignment_id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            Assignment.id == assignment_id,
+            Class.teacher_id == teacher_id,
+        )
         .order_by(RegradeRequest.created_at)
     )
     requests = list(result.scalars().all())
@@ -383,17 +395,22 @@ async def resolve_regrade_request(
                     ),
                     None,
                 )
-                if criterion_data is not None:
-                    min_score = int(str(criterion_data["min_score"]))
-                    max_score = int(str(criterion_data["max_score"]))
-                    if not (min_score <= body.new_criterion_score <= max_score):
-                        raise ValidationError(
-                            f"new_criterion_score {body.new_criterion_score} is out of range [{min_score}, {max_score}].",
-                            field="new_criterion_score",
-                        )
+                if criterion_data is None:
+                    raise ValidationError(
+                        "Criterion not found in rubric snapshot.",
+                        field="new_criterion_score",
+                    )
+                min_score = int(str(criterion_data["min_score"]))
+                max_score = int(str(criterion_data["max_score"]))
+                if not (min_score <= body.new_criterion_score <= max_score):
+                    raise ValidationError(
+                        f"new_criterion_score {body.new_criterion_score} is out of range [{min_score}, {max_score}].",
+                        field="new_criterion_score",
+                    )
 
         before_cs_value: dict[str, object] = {
             "teacher_score": criterion_score.teacher_score,
+            "teacher_feedback": criterion_score.teacher_feedback,
             "final_score": criterion_score.final_score,
         }
         criterion_score.teacher_score = body.new_criterion_score
@@ -408,6 +425,7 @@ async def resolve_regrade_request(
             before_value=before_cs_value,
             after_value={
                 "teacher_score": body.new_criterion_score,
+                "teacher_feedback": criterion_score.teacher_feedback,
                 "final_score": body.new_criterion_score,
             },
         )

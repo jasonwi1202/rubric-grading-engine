@@ -151,8 +151,9 @@ class TestCreateRegradeRequest:
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),  # tenant-scoped grade load
-                _scalar_one_mock(0),               # count of existing requests
+                _scalar_one_or_none_mock(grade),   # tenant-scoped grade load
+                _scalar_one_or_none_mock(grade.id), # FOR UPDATE lock
+                _scalar_one_mock(0),                # count of existing requests
                 # no criterion_score_id, so no CS ownership check
             ]
         )
@@ -215,8 +216,9 @@ class TestCreateRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),  # tenant-scoped grade load
-                _scalar_one_mock(1),               # count = 1 = max_per_grade
+                _scalar_one_or_none_mock(grade),    # tenant-scoped grade load
+                _scalar_one_or_none_mock(grade.id), # FOR UPDATE lock
+                _scalar_one_mock(1),                 # count = 1 = max_per_grade
             ]
         )
 
@@ -279,6 +281,7 @@ class TestCreateRegradeRequest:
         db.execute = AsyncMock(
             side_effect=[
                 _scalar_one_or_none_mock(grade),         # tenant-scoped grade
+                _scalar_one_or_none_mock(grade.id),      # FOR UPDATE lock
                 _scalar_one_mock(0),                      # count = 0
                 _scalar_one_or_none_mock(None),           # CS ownership: not found
             ]
@@ -466,6 +469,7 @@ class TestResolveRegradeRequest:
         request_id = _make_uuid()
         grade_id = _make_uuid()
         cs_id = _make_uuid()
+        rubric_criterion_id = _make_uuid()
 
         rr = _make_regrade_request(
             request_id=request_id,
@@ -475,26 +479,36 @@ class TestResolveRegradeRequest:
             criterion_score_id=cs_id,
         )
         cs = _make_criterion_score(grade_id=grade_id, cs_id=cs_id)
+        cs.rubric_criterion_id = rubric_criterion_id
+
         grade_mock = MagicMock()
         grade_mock.id = grade_id
         grade_mock.total_score = Decimal("3")
         grade_mock.is_locked = False
         grade_mock.essay_version_id = _make_uuid()
 
-        # assignment_mock.rubric_snapshot will be a MagicMock whose .get() returns
-        # a MagicMock that iterates as [] — no criterion_data found, so bounds
-        # validation is skipped (equivalent to no snapshot restriction in this test).
+        # Provide a real rubric_snapshot so bounds validation is exercised.
+        # new_criterion_score=4 is within [0, 5].
         assignment_mock = MagicMock()
+        assignment_mock.rubric_snapshot = {
+            "criteria": [
+                {
+                    "id": str(rubric_criterion_id),
+                    "min_score": 0,
+                    "max_score": 5,
+                }
+            ]
+        }
 
         db = AsyncMock()
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),            # 1: tenant-scoped request
-                _scalar_one_or_none_mock(cs),            # 2: load criterion score
-                _scalar_one_or_none_mock(grade_mock),    # 3: load grade (is_locked check)
+                _scalar_one_or_none_mock(rr),               # 1: tenant-scoped request
+                _scalar_one_or_none_mock(cs),               # 2: load criterion score
+                _scalar_one_or_none_mock(grade_mock),       # 3: load grade (is_locked check)
                 _scalar_one_or_none_mock(assignment_mock),  # 4: load assignment (rubric_snapshot)
-                _scalars_mock([4, 3]),                   # 5: final_scores for recompute
+                _scalars_mock([4, 3]),                      # 5: final_scores for recompute
             ]
         )
         db.refresh = AsyncMock(side_effect=lambda obj: None)
@@ -520,6 +534,10 @@ class TestResolveRegradeRequest:
         regrade_audit = next(e for e in added_entries if e.action == "regrade_resolved")
         assert regrade_audit.entity_type == "grade"
         assert regrade_audit.entity_id == grade_id
+        # score_override audit must include teacher_feedback for shape consistency.
+        score_audit = next(e for e in added_entries if e.action == "score_override")
+        assert "teacher_feedback" in score_audit.before_value
+        assert "teacher_feedback" in score_audit.after_value
 
     @pytest.mark.asyncio
     async def test_cross_teacher_raises_forbidden(self) -> None:
@@ -730,6 +748,63 @@ class TestResolveRegradeRequest:
             resolution="approved",
             resolution_note="Score should be higher.",
             new_criterion_score=10,  # out of [0, 5] range
+        )
+
+        with pytest.raises(ValidationError) as exc_info:
+            await resolve_regrade_request(db, request_id, teacher_id, body)
+
+        assert exc_info.value.field == "new_criterion_score"
+
+    @pytest.mark.asyncio
+    async def test_criterion_not_in_snapshot_raises_validation_error(self) -> None:
+        """Raises ValidationError (fail-closed) when criterion is absent from the rubric snapshot."""
+        teacher_id = _make_uuid()
+        request_id = _make_uuid()
+        grade_id = _make_uuid()
+        cs_id = _make_uuid()
+        rubric_criterion_id = _make_uuid()
+
+        rr = _make_regrade_request(
+            request_id=request_id,
+            teacher_id=teacher_id,
+            grade_id=grade_id,
+            status=RegradeRequestStatus.open,
+            criterion_score_id=cs_id,
+        )
+        cs = _make_criterion_score(grade_id=grade_id, cs_id=cs_id)
+        cs.rubric_criterion_id = rubric_criterion_id
+
+        grade_mock = MagicMock()
+        grade_mock.id = grade_id
+        grade_mock.is_locked = False
+        grade_mock.essay_version_id = _make_uuid()
+
+        # Snapshot contains a DIFFERENT criterion — the targeted one is absent.
+        assignment_mock = MagicMock()
+        assignment_mock.rubric_snapshot = {
+            "criteria": [
+                {
+                    "id": str(_make_uuid()),  # different criterion id — targeted one absent
+                    "min_score": 0,
+                    "max_score": 5,
+                }
+            ]
+        }
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(rr),              # 1: tenant-scoped request
+                _scalar_one_or_none_mock(cs),              # 2: load criterion score
+                _scalar_one_or_none_mock(grade_mock),      # 3: load grade (is_locked check)
+                _scalar_one_or_none_mock(assignment_mock), # 4: load assignment (rubric_snapshot)
+            ]
+        )
+
+        body = RegradeRequestResolveRequest(
+            resolution="approved",
+            resolution_note="Score should be higher.",
+            new_criterion_score=4,
         )
 
         with pytest.raises(ValidationError) as exc_info:
