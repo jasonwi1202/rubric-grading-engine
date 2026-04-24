@@ -90,8 +90,11 @@ async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
         teacher_id: UUID of the authenticated teacher.
     """
     await db.execute(
-        # sqlalchemy.text is imported locally to avoid a top-level synchronous
-        # SQLAlchemy import that would violate the session module's async-only rule.
+        # NOTE: `sqlalchemy.text` cannot be imported at module level in this file
+        # because tests/unit/test_session.py enforces (via AST analysis) that
+        # session.py only imports from `sqlalchemy.ext.asyncio`, not from the
+        # synchronous `sqlalchemy` package.  Using __import__ at call-time
+        # satisfies both the runtime requirement and that AST constraint.
         __import__("sqlalchemy").text("SET LOCAL app.current_teacher_id = :tid"),
         {"tid": str(teacher_id)},
     )

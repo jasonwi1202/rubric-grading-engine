@@ -147,6 +147,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     extra={"path": path, "method": method},
                 )
 
-            break  # Only the first matching rule is applied per request
+            break  # Each request matches at most one rule (exact method + path).
 
         return await call_next(request)

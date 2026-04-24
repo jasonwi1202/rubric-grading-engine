@@ -22,6 +22,8 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
@@ -41,17 +43,17 @@ def _make_teacher(teacher_id: uuid.UUID | None = None) -> MagicMock:
     return teacher
 
 
-def _app_with_teacher(teacher: MagicMock) -> object:
+def _app_with_teacher(teacher: MagicMock) -> FastAPI:
     """Return a FastAPI app whose ``get_current_teacher`` always returns *teacher*."""
     app = create_app()
-    app.dependency_overrides[get_current_teacher] = lambda: teacher  # type: ignore[attr-defined]
+    app.dependency_overrides[get_current_teacher] = lambda: teacher
     return app
 
 
-def _assert_403(resp: object) -> None:
+def _assert_403(resp: httpx.Response) -> None:
     """Assert that the response carries HTTP 403 with the FORBIDDEN error code."""
-    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"  # type: ignore[attr-defined]
-    body = resp.json()  # type: ignore[attr-defined]
+    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
+    body = resp.json()
     assert body.get("error", {}).get("code") == "FORBIDDEN", f"Unexpected body: {body}"
 
 
