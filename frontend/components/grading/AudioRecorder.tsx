@@ -118,6 +118,12 @@ function CommentRow({
   const [isBanked, setIsBanked] = useState(comment.is_banked);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Keep local banked state in sync with query data so that a background
+  // refetch (e.g., from another session) is reflected immediately.
+  useEffect(() => {
+    setIsBanked(comment.is_banked);
+  }, [comment.is_banked]);
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteMediaComment(comment.id),
     onSuccess: () => {

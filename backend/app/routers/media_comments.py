@@ -84,6 +84,14 @@ async def create_media_comment_endpoint(
     """
     # --- Apply-from-bank mode ---
     if source_id is not None:
+        # Mutual exclusivity: reject if the caller also sends a file upload.
+        if file is not None:
+            raise ValidationError(
+                "'source_id' and 'file' are mutually exclusive. "
+                "Provide 'source_id' to apply a banked comment, or 'file' + "
+                "'duration_seconds' to upload a new recording.",
+                field="source_id",
+            )
         response = await apply_banked_comment(
             db=db,
             grade_id=grade_id,

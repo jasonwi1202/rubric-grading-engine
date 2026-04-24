@@ -16,7 +16,7 @@
  * - Entity IDs only in error payloads.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   applyBankedComment,
@@ -68,7 +68,18 @@ export function MediaBankPicker({ gradeId, isLocked }: MediaBankPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [appliedId, setAppliedId] = useState<string | null>(null);
+  const appliedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
+
+  // Clear any pending "Applied!" reset timer on unmount to avoid setting state
+  // on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (appliedTimerRef.current !== null) {
+        clearTimeout(appliedTimerRef.current);
+      }
+    };
+  }, []);
 
   const {
     data: bankComments,
@@ -90,8 +101,14 @@ export function MediaBankPicker({ gradeId, isLocked }: MediaBankPickerProps) {
       void queryClient.invalidateQueries({
         queryKey: ["media-comments", gradeId],
       });
-      // Reset applied indicator after 2 seconds.
-      setTimeout(() => setAppliedId(null), 2000);
+      // Reset applied indicator after 2 seconds; clear any prior timer first.
+      if (appliedTimerRef.current !== null) {
+        clearTimeout(appliedTimerRef.current);
+      }
+      appliedTimerRef.current = setTimeout(() => {
+        setAppliedId(null);
+        appliedTimerRef.current = null;
+      }, 2000);
     },
     onError: (err: unknown) => {
       setApplyError(applyErrorMessage(err));

@@ -21,7 +21,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
@@ -465,12 +465,21 @@ async def apply_banked_comment(
     Raises:
         NotFoundError: Source media comment or target grade not found.
         ForbiddenError: Source comment or target grade belongs to a different teacher.
+        ValidationError: Source comment is not banked.
     """
     # Validate target grade ownership.
     await _load_grade_tenant_scoped(db, grade_id, teacher_id)
 
     # Load the source comment — must be owned by the same teacher.
     source = await _load_media_comment_tenant_scoped(db, source_id, teacher_id)
+
+    # Only banked comments may be applied; applying an unbanked comment is a
+    # caller error, not a permissions issue.
+    if not source.is_banked:
+        raise ValidationError(
+            "Media comment has not been saved to the bank and cannot be applied.",
+            field="source_id",
+        )
 
     # Derive file extension from the source MIME type.
     base_mime = source.mime_type.split(";")[0].strip()
