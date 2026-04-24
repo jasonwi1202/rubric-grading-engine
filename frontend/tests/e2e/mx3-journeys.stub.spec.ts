@@ -83,7 +83,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
   // ── Test 1: Login ─────────────────────────────────────────────────────────
 
   test("teacher logs in successfully", async () => {
-    const page = state.page!;
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
     // Navigating to a protected route causes the middleware to redirect to
     // /login?next=/dashboard, which the login form honours after submit.
     await page.goto("/dashboard");
@@ -99,7 +100,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
   // ── Test 2: Create class ──────────────────────────────────────────────────
 
   test("teacher creates a class", async () => {
-    const page = state.page!;
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
     await page.goto("/dashboard/classes/new");
 
     await page.getByLabel("Class name").fill(state.className);
@@ -125,7 +127,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
   // ── Test 3: Add two students ──────────────────────────────────────────────
 
   test("teacher adds students to the class", async () => {
-    const page = state.page!;
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
     await page.goto(`/dashboard/classes/${state.classId}`);
 
     // Wait for the roster section to render before interacting.
@@ -145,18 +148,21 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
     // ── Add second student ──
     await rosterRegion.getByRole("button", { name: "Add student" }).click();
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await dialog.getByLabel(/full name/i).fill("Student Beta");
-    await dialog.getByRole("button", { name: "Add student" }).click();
+    // Re-query the dialog so the locator resolves against the newly mounted element.
+    const dialog2 = page.getByRole("dialog");
+    await expect(dialog2).toBeVisible({ timeout: 5_000 });
+    await dialog2.getByLabel(/full name/i).fill("Student Beta");
+    await dialog2.getByRole("button", { name: "Add student" }).click();
 
-    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+    await expect(dialog2).not.toBeVisible({ timeout: 5_000 });
     await expect(page.getByText("Student Beta")).toBeVisible();
   });
 
   // ── Test 4: Create rubric ─────────────────────────────────────────────────
 
   test("teacher creates a rubric with criteria", async () => {
-    const page = state.page!;
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
     await page.goto("/dashboard/rubrics/new");
 
     // Name the rubric
@@ -185,7 +191,8 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
   // ── Test 5: Create assignment ─────────────────────────────────────────────
 
   test("teacher creates an assignment and attaches the rubric", async () => {
-    const page = state.page!;
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
     await page.goto(
       `/dashboard/classes/${state.classId}/assignments/new`,
     );
