@@ -1,23 +1,26 @@
 "use client";
 
 /**
- * AudioRecorder — in-browser audio comment recording for EssayReviewPanel.
+ * VideoRecorder — in-browser webcam video comment recording for EssayReviewPanel.
  *
  * Features:
- * - Record / Stop button powered by the MediaRecorder API.
- * - Max 3-minute (180 s) recording limit enforced client-side with a live
- *   countdown timer.
+ * - Record / Stop button powered by the MediaRecorder API using
+ *   getUserMedia({video: true, audio: true}).
+ * - Optional screen share toggle: calls getDisplayMedia and combines the
+ *   screen video track with microphone audio from getUserMedia.
+ * - Records as video/webm; same 3-minute (180 s) max limit as AudioRecorder.
+ * - Live camera preview while recording.
  * - After stopping, the recording is immediately playable for review.
  * - Save uploads the blob to the backend (which stores it in S3) and adds
  *   the comment to the grade's list.
- * - Existing comments are listed with a Play button (presigned URL fetched
- *   on demand) and a Delete button.
- * - Degrades gracefully when microphone permission is denied.
+ * - Existing comments listed with Play and Delete buttons.
+ * - Graceful degradation: if getUserMedia is denied for video, an audio-only
+ *   fallback is offered; if that too is denied, an error is shown.
  * - Locked grades: recording and delete controls are disabled.
  *
  * Security:
  * - No student PII in any log or error path.
- * - Audio blobs are never written to localStorage or sessionStorage.
+ * - Video blobs are never written to localStorage or sessionStorage.
  * - Entity IDs only in error payloads.
  */
 
@@ -37,6 +40,7 @@ import { ApiError } from "@/lib/api/errors";
 // ---------------------------------------------------------------------------
 
 const MAX_DURATION_SECONDS = 180; // 3 minutes
+const VIDEO_MIME_TYPE = "video/webm";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,6 +56,28 @@ function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Safely call element.play() and swallow autoplay-blocked rejections. */
+function safePlay(el: HTMLVideoElement | null): void {
+  if (!el) return;
+  const result = el.play();
+  if (result && typeof result.catch === "function") {
+    result.catch(() => {
+      // Autoplay may be blocked — user can retry.
+    });
+  }
+}
+
+/**
+ * Returns true when the DOMException name indicates a permission denial,
+ * as opposed to hardware errors (NotFoundError, NotReadableError, etc.).
+ */
+function isPermissionDenied(err: unknown): boolean {
+  if (err instanceof Error) {
+    return err.name === "NotAllowedError" || err.name === "PermissionDeniedError";
+  }
+  return false;
 }
 
 function recordErrorMessage(err: unknown): string {
@@ -88,7 +114,7 @@ function deleteErrorMessage(err: unknown): string {
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AudioRecorderProps {
+export interface VideoRecorderProps {
   /** UUID of the grade these comments are attached to. */
   gradeId: string;
   /** When true, recording and delete controls are disabled. */
@@ -96,10 +122,10 @@ export interface AudioRecorderProps {
 }
 
 // ---------------------------------------------------------------------------
-// CommentRow — a single saved media comment entry
+// VideoCommentRow — a single saved video media comment entry
 // ---------------------------------------------------------------------------
 
-function CommentRow({
+function VideoCommentRow({
   comment,
   isLocked,
   onDeleted,
@@ -112,7 +138,7 @@ function CommentRow({
   const [urlError, setUrlError] = useState<string | null>(null);
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteMediaComment(comment.id),
@@ -127,20 +153,18 @@ function CommentRow({
   const handlePlay = useCallback(async () => {
     setUrlError(null);
     if (playUrl) {
-      const result = audioRef.current?.play();
-      if (result && typeof result.catch === "function") {
-        result.catch(() => {
-          // Autoplay may be blocked — user can retry.
-        });
-      }
+      safePlay(videoRef.current);
       return;
     }
     setIsLoadingUrl(true);
     try {
       const { url } = await getMediaCommentUrl(comment.id);
       setPlayUrl(url);
-      // Audio element will start once src is set.
-    } catch {
+      // Video element will start once src is set.
+    } catch (err) {
+      console.error("Failed to load media comment URL:", {
+        error_type: err instanceof Error ? err.constructor.name : typeof err,
+      });
       setUrlError("Could not load playback URL. Please try again.");
     } finally {
       setIsLoadingUrl(false);
@@ -149,13 +173,8 @@ function CommentRow({
 
   // Auto-play when URL first becomes available.
   useEffect(() => {
-    if (playUrl && audioRef.current) {
-      const result = audioRef.current.play();
-      if (result && typeof result.catch === "function") {
-        result.catch(() => {
-          // Blocked — user pressed play anyway.
-        });
-      }
+    if (playUrl) {
+      safePlay(videoRef.current);
     }
   }, [playUrl]);
 
@@ -172,7 +191,7 @@ function CommentRow({
             type="button"
             onClick={handlePlay}
             disabled={isLoadingUrl}
-            aria-label={`Play audio comment recorded on ${createdDate}`}
+            aria-label={`Play video comment recorded on ${createdDate}`}
             className="rounded px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isLoadingUrl ? "Loading…" : "Play"}
@@ -185,7 +204,7 @@ function CommentRow({
                 deleteMutation.mutate();
               }}
               disabled={deleteMutation.isPending}
-              aria-label={`Delete audio comment recorded on ${createdDate}`}
+              aria-label={`Delete video comment recorded on ${createdDate}`}
               className="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {deleteMutation.isPending ? "Deleting…" : "Delete"}
@@ -194,14 +213,14 @@ function CommentRow({
         </div>
       </div>
 
-      {/* Hidden audio element — src set when playUrl is available */}
+      {/* Hidden video element — src set when playUrl is available */}
       {playUrl && (
-        <audio
-          ref={audioRef}
+        <video
+          ref={videoRef}
           src={playUrl}
           controls
-          aria-label="Audio comment playback"
-          className="mt-1 w-full"
+          aria-label="Video comment playback"
+          className="mt-1 w-full rounded"
         />
       )}
 
@@ -220,13 +239,13 @@ function CommentRow({
 }
 
 // ---------------------------------------------------------------------------
-// AudioRecorder — main component
+// VideoRecorder — main component
 // ---------------------------------------------------------------------------
 
-export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
+export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
   const queryClient = useQueryClient();
 
-  // Existing comments query.
+  // Existing comments query — shared key with AudioRecorder; filter to video only.
   const commentsQuery = useQuery({
     queryKey: ["media-comments", gradeId],
     queryFn: () => listGradeMediaComments(gradeId),
@@ -241,23 +260,64 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [screenShareEnabled, setScreenShareEnabled] = useState(false);
+  const [isAudioFallback, setIsAudioFallback] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
+  const liveVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Clear timer on unmount.
+  // Clear timer and release any active media resources on unmount.
   useEffect(() => {
+    // Capture refs at effect-run time so the cleanup closure reads stable values.
+    // (react-hooks/exhaustive-deps requires .current to be snapshotted before cleanup.)
+    const liveVideo = liveVideoRef.current;
+
     return () => {
       if (timerRef.current !== null) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
+
+      const recorder = mediaRecorderRef.current;
+      const streamsToStop = new Set<MediaStream>();
+
+      if (recorder?.stream) {
+        streamsToStop.add(recorder.stream);
+      }
+
+      // Guard the instanceof check: MediaStream may be undefined in non-browser
+      // environments (e.g., jsdom test environment without full media API stubs).
+      const srcObj = liveVideo?.srcObject;
+      if (srcObj && typeof MediaStream !== "undefined" && srcObj instanceof MediaStream) {
+        streamsToStop.add(srcObj);
+      }
+
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // Ignore teardown errors during unmount cleanup.
+        }
+      }
+
+      streamsToStop.forEach((stream) => {
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
+      });
+
+      if (liveVideo) {
+        liveVideo.srcObject = null;
+      }
+
+      mediaRecorderRef.current = null;
     };
   }, []);
 
   // Create and revoke a preview object URL whenever the recorded blob changes.
-  // Revoking on cleanup prevents memory leaks from repeated recordings.
   useEffect(() => {
     if (!recordedBlob) {
       setPreviewUrl(null);
@@ -290,28 +350,91 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
     setPermissionError(null);
     setSaveError(null);
     setRecordedBlob(null);
+    setIsAudioFallback(false);
 
     let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      setPermissionError(
-        "Microphone access was denied. Please enable it in your browser settings and try again.",
-      );
-      return;
+    let audioOnlyFallback = false;
+
+    if (screenShareEnabled) {
+      // Screen share: capture display video, then add microphone audio.
+      let screenStream: MediaStream;
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      } catch (screenErr) {
+        console.error("Screen share failed:", {
+          error_type: screenErr instanceof Error ? screenErr.constructor.name : typeof screenErr,
+        });
+        const isDenied = isPermissionDenied(screenErr);
+        setPermissionError(
+          isDenied
+            ? "Screen share access was denied. Please allow screen sharing and try again."
+            : "Screen share is unavailable or could not be started. Please check your device/browser and try again.",
+        );
+        return;
+      }
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = new MediaStream([
+          ...screenStream.getVideoTracks(),
+          ...audioStream.getAudioTracks(),
+        ]);
+      } catch {
+        // Proceed with screen video only (no microphone audio).
+        stream = screenStream;
+      }
+    } else {
+      // Webcam + microphone recording.
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (videoErr) {
+        // Only offer audio-only fallback for permission denials, not hardware errors.
+        const isDenied = isPermissionDenied(videoErr);
+        if (!isDenied) {
+          setPermissionError(
+            "Camera is unavailable or in use. Please check your device and try again.",
+          );
+          return;
+        }
+        // Camera access denied — offer audio-only fallback.
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioOnlyFallback = true;
+          setIsAudioFallback(true);
+          setPermissionError(
+            "Camera access was denied. Recording audio only. Enable camera access in your browser settings for video.",
+          );
+        } catch {
+          setPermissionError(
+            "Microphone and camera access were denied. Please enable them in your browser settings and try again.",
+          );
+          return;
+        }
+      }
+    }
+
+    // Show live camera preview while recording (not for screen share or audio fallback).
+    if (liveVideoRef.current && !audioOnlyFallback && !screenShareEnabled) {
+      liveVideoRef.current.srcObject = stream;
     }
 
     chunksRef.current = [];
+    const mimeType = audioOnlyFallback ? "audio/webm" : VIDEO_MIME_TYPE;
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(stream);
+      recorder =
+        typeof MediaRecorder !== "undefined" &&
+        typeof MediaRecorder.isTypeSupported === "function" &&
+        MediaRecorder.isTypeSupported(mimeType)
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
     } catch (err) {
-      // MediaRecorder is not supported in this browser (e.g. some Safari versions).
-      // Log for debugging without exposing PII — the error is a DOMException.
-      console.error("MediaRecorder initialization failed:", err);
+      // MediaRecorder not supported in this browser.
+      console.error("MediaRecorder initialization failed:", {
+        error_type: err instanceof Error ? err.constructor.name : typeof err,
+      });
       stream.getTracks().forEach((t) => t.stop());
       setPermissionError(
-        "Audio recording is not supported in this browser. Please try a different browser.",
+        "Video recording is not supported in this browser. Please try a different browser.",
       );
       return;
     }
@@ -324,14 +447,17 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, {
-        type: recorder.mimeType || "audio/webm",
-      });
+      const blobMimeType = recorder.mimeType || mimeType;
+      const blob = new Blob(chunksRef.current, { type: blobMimeType });
       const elapsed = Math.ceil((Date.now() - startTimeRef.current) / 1000);
       setRecordedBlob(blob);
       setRecordedDuration(Math.min(Math.max(elapsed, 1), MAX_DURATION_SECONDS));
-      // Stop all tracks to release the microphone.
+      // Stop all tracks to release camera / screen capture.
       stream.getTracks().forEach((t) => t.stop());
+      // Clear live preview.
+      if (liveVideoRef.current) {
+        liveVideoRef.current.srcObject = null;
+      }
     };
 
     startTimeRef.current = Date.now();
@@ -349,7 +475,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
         return prev - 1;
       });
     }, 1000);
-  }, [isRecording, stopRecording]);
+  }, [isRecording, stopRecording, screenShareEnabled]);
 
   // Upload mutation.
   const saveMutation = useMutation({
@@ -361,6 +487,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
       setRecordedBlob(null);
       setRecordedDuration(0);
       setCountdown(MAX_DURATION_SECONDS);
+      setIsAudioFallback(false);
       void queryClient.invalidateQueries({
         queryKey: ["media-comments", gradeId],
       });
@@ -375,24 +502,36 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
     setRecordedDuration(0);
     setCountdown(MAX_DURATION_SECONDS);
     setSaveError(null);
+    setIsAudioFallback(false);
   };
 
-  const handleCommentDeleted = useCallback(
-    () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["media-comments", gradeId],
-      });
-    },
-    [gradeId, queryClient],
-  );
+  const handleCommentDeleted = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ["media-comments", gradeId],
+    });
+  }, [gradeId, queryClient]);
 
+  // Filter to video-type comments only (audio comments are shown in AudioRecorder).
   const comments = (commentsQuery.data ?? []).filter((c) =>
-    c.mime_type.startsWith("audio/"),
+    c.mime_type.startsWith("video/"),
   );
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-medium text-gray-700">Audio comment</h3>
+      <h3 className="text-sm font-medium text-gray-700">Video comment</h3>
+
+      {/* Screen share toggle — only available when not recording */}
+      {!isLocked && !isRecording && !recordedBlob && (
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-600">
+          <input
+            type="checkbox"
+            checked={screenShareEnabled}
+            onChange={(e) => setScreenShareEnabled(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          Share screen instead of webcam
+        </label>
+      )}
 
       {/* Record / Stop button */}
       {!isLocked && !recordedBlob && (
@@ -402,7 +541,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
             onClick={() => {
               void handleStartStop();
             }}
-            aria-label={isRecording ? "Stop recording" : "Start recording audio comment"}
+            aria-label={isRecording ? "Stop recording" : "Start recording video comment"}
             aria-pressed={isRecording}
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 ${
               isRecording
@@ -421,7 +560,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
 
           {isRecording && (
             <span
-              className="text-sm font-mono text-red-700"
+              className="font-mono text-sm text-red-700"
               aria-live="polite"
               aria-label={`${formatCountdown(countdown)} remaining`}
             >
@@ -429,6 +568,18 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
             </span>
           )}
         </div>
+      )}
+
+      {/* Live camera preview while recording */}
+      {isRecording && !screenShareEnabled && !isAudioFallback && (
+        <video
+          ref={liveVideoRef}
+          autoPlay
+          muted
+          playsInline
+          aria-label="Live camera preview"
+          className="w-full max-w-xs rounded border border-gray-300"
+        />
       )}
 
       {permissionError && (
@@ -441,14 +592,24 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
       {recordedBlob && !isRecording && (
         <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50 p-3">
           <p className="text-xs font-medium text-blue-800">
-            Recording ready ({formatDuration(recordedDuration)}) — review before saving:
+            {isAudioFallback ? "Audio" : "Video"} recording ready (
+            {formatDuration(recordedDuration)}) — review before saving:
           </p>
-          <audio
-            src={previewUrl ?? undefined}
-            controls
-            aria-label="Preview of new audio recording"
-            className="w-full"
-          />
+          {isAudioFallback ? (
+            <audio
+              src={previewUrl ?? undefined}
+              controls
+              aria-label="Preview of new audio recording"
+              className="w-full"
+            />
+          ) : (
+            <video
+              src={previewUrl ?? undefined}
+              controls
+              aria-label="Preview of new video recording"
+              className="w-full rounded"
+            />
+          )}
           {saveError && (
             <p role="alert" className="text-xs text-red-700">
               {saveError}
@@ -459,7 +620,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
               type="button"
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending}
-              aria-label="Save audio comment"
+              aria-label={isAudioFallback ? "Save audio comment" : "Save video comment"}
               className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saveMutation.isPending ? "Saving…" : "Save"}
@@ -479,9 +640,9 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
 
       {/* Existing comments list */}
       {comments.length > 0 && (
-        <ul className="space-y-2" aria-label="Saved audio comments">
+        <ul className="space-y-2" aria-label="Saved video comments">
           {comments.map((c) => (
-            <CommentRow
+            <VideoCommentRow
               key={c.id}
               comment={c}
               isLocked={isLocked}
@@ -493,7 +654,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
 
       {commentsQuery.isError && (
         <p role="alert" className="text-xs text-red-700">
-          Failed to load audio comments. Please refresh the page.
+          Failed to load video comments. Please refresh the page.
         </p>
       )}
     </div>

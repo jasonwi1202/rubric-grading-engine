@@ -30,6 +30,7 @@ import type { GradeResponse, CriterionScoreResponse, PatchCriterionRequest } fro
 import { ApiError } from "@/lib/api/errors";
 import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 import { AudioRecorder } from "@/components/grading/AudioRecorder";
+import { VideoRecorder } from "@/components/grading/VideoRecorder";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -717,6 +718,11 @@ export function EssayReviewPanel({
       {/* Audio comment recorder */}
       <div className="border-t border-gray-200 pt-4">
         <AudioRecorder gradeId={grade.id} isLocked={isLocked} />
+      </div>
+
+      {/* Video comment recorder */}
+      <div className="border-t border-gray-200 pt-4">
+        <VideoRecorder gradeId={grade.id} isLocked={isLocked} />
       </div>
 
       {/* Per-criterion cards */}

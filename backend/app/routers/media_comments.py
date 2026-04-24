@@ -1,7 +1,7 @@
 """Media comment router.
 
 Endpoints:
-  POST   /grades/{grade_id}/media-comments          — upload audio, create record
+  POST   /grades/{grade_id}/media-comments          — upload audio or video, create record
   GET    /grades/{grade_id}/media-comments          — list all comments for a grade
   DELETE /media-comments/{media_comment_id}         — delete record and S3 object
   GET    /media-comments/{media_comment_id}/url     — get presigned playback URL
@@ -51,18 +51,18 @@ media_comments_router = APIRouter(prefix="/media-comments", tags=["media-comment
 @grade_media_router.post(
     "/{grade_id}/media-comments",
     status_code=201,
-    summary="Upload an audio comment and associate it with a grade",
+    summary="Upload an audio or video comment and associate it with a grade",
 )
 async def create_media_comment_endpoint(
     grade_id: uuid.UUID,
-    file: UploadFile = File(..., description="Audio blob (audio/webm, audio/ogg, audio/mp4)"),
+    file: UploadFile = File(..., description="Media blob (audio/webm, audio/ogg, audio/mp4, video/webm)"),
     duration_seconds: int = Form(..., ge=1, le=180),
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
-    """Upload an audio recording and create a MediaComment record.
+    """Upload an audio or video recording and create a MediaComment record.
 
-    The audio blob is uploaded to S3 under the key
+    The media blob is uploaded to S3 under the key
     ``media/{teacher_id}/{grade_id}/{uuid}.webm``.
 
     Response body: ``{"data": MediaCommentResponse}``
@@ -91,7 +91,7 @@ async def create_media_comment_endpoint(
             break
         total_size += len(chunk)
         if total_size > MAX_MEDIA_SIZE_BYTES:
-            raise ValidationError("Audio file exceeds the 50 MB size limit.", field="file")
+            raise ValidationError("Media file exceeds the 50 MB size limit.", field="file")
         audio_buffer.extend(chunk)
     audio_bytes = bytes(audio_buffer)
 
@@ -116,7 +116,7 @@ async def create_media_comment_endpoint(
 
 @grade_media_router.get(
     "/{grade_id}/media-comments",
-    summary="List all audio comments for a grade",
+    summary="List all media comments for a grade",
 )
 async def list_grade_media_comments_endpoint(
     grade_id: uuid.UUID,
