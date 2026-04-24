@@ -269,12 +269,51 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
   const startTimeRef = useRef<number>(0);
   const liveVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Clear timer on unmount.
+  // Clear timer and release any active media resources on unmount.
   useEffect(() => {
+    // Capture refs at effect-run time so the cleanup closure reads stable values.
+    // (react-hooks/exhaustive-deps requires .current to be snapshotted before cleanup.)
+    const liveVideo = liveVideoRef.current;
+
     return () => {
       if (timerRef.current !== null) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
+
+      const recorder = mediaRecorderRef.current;
+      const streamsToStop = new Set<MediaStream>();
+
+      if (recorder?.stream) {
+        streamsToStop.add(recorder.stream);
+      }
+
+      // Guard the instanceof check: MediaStream may be undefined in non-browser
+      // environments (e.g., jsdom test environment without full media API stubs).
+      const srcObj = liveVideo?.srcObject;
+      if (srcObj && typeof MediaStream !== "undefined" && srcObj instanceof MediaStream) {
+        streamsToStop.add(srcObj);
+      }
+
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // Ignore teardown errors during unmount cleanup.
+        }
+      }
+
+      streamsToStop.forEach((stream) => {
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
+      });
+
+      if (liveVideo) {
+        liveVideo.srcObject = null;
+      }
+
+      mediaRecorderRef.current = null;
     };
   }, []);
 
