@@ -238,6 +238,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
   const [countdown, setCountdown] = useState(MAX_DURATION_SECONDS);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [recordedDuration, setRecordedDuration] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -254,6 +255,20 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
       }
     };
   }, []);
+
+  // Create and revoke a preview object URL whenever the recorded blob changes.
+  // Revoking on cleanup prevents memory leaks from repeated recordings.
+  useEffect(() => {
+    if (!recordedBlob) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(recordedBlob);
+    setPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [recordedBlob]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -300,9 +315,9 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
       const blob = new Blob(chunksRef.current, {
         type: recorder.mimeType || "audio/webm",
       });
-      const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
+      const elapsed = Math.ceil((Date.now() - startTimeRef.current) / 1000);
       setRecordedBlob(blob);
-      setRecordedDuration(Math.min(elapsed, MAX_DURATION_SECONDS));
+      setRecordedDuration(Math.min(Math.max(elapsed, 1), MAX_DURATION_SECONDS));
       // Stop all tracks to release the microphone.
       stream.getTracks().forEach((t) => t.stop());
     };
@@ -415,7 +430,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
             Recording ready ({formatDuration(recordedDuration)}) — review before saving:
           </p>
           <audio
-            src={URL.createObjectURL(recordedBlob)}
+            src={previewUrl ?? undefined}
             controls
             aria-label="Preview of new audio recording"
             className="w-full"

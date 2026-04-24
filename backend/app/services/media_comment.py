@@ -14,6 +14,7 @@ Security invariants:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -27,7 +28,7 @@ from app.models.essay import Essay, EssayVersion
 from app.models.grade import Grade
 from app.models.media_comment import MediaComment
 from app.schemas.media_comment import MediaCommentResponse, MediaCommentUrlResponse
-from app.storage.s3 import delete_file, generate_presigned_url, upload_file
+from app.storage.s3 import StorageError, delete_file, generate_presigned_url, upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ async def _load_grade_tenant_scoped(
 ) -> Grade:
     """Load a Grade, enforcing tenant isolation via the full ownership chain.
 
+    ``teacher_id`` is included in the query itself — not as a separate ownership
+    check — to satisfy the repo's tenant-isolation invariant that every data
+    query must include ``teacher_id`` directly.
+
     Raises NotFoundError if the grade does not exist.
     Raises ForbiddenError if it belongs to a different teacher.
     """
@@ -67,7 +72,7 @@ async def _load_grade_tenant_scoped(
         .join(Essay, EssayVersion.essay_id == Essay.id)
         .join(Assignment, Essay.assignment_id == Assignment.id)
         .join(Class, Assignment.class_id == Class.id)
-        .where(Grade.id == grade_id)
+        .where(Grade.id == grade_id, Class.teacher_id == teacher_id)
     )
     result = await db.execute(stmt)
     grade = result.scalar_one_or_none()
@@ -78,21 +83,6 @@ async def _load_grade_tenant_scoped(
         exists_result = await db.execute(exists_stmt)
         if exists_result.scalar_one_or_none() is None:
             raise NotFoundError("Grade not found.")
-        raise ForbiddenError("You do not have access to this grade.")
-
-    # Verify ownership.
-    class_stmt = (
-        select(Class.teacher_id)
-        .join(Assignment, Class.id == Assignment.class_id)
-        .join(Essay, Assignment.id == Essay.assignment_id)
-        .join(EssayVersion, Essay.id == EssayVersion.essay_id)
-        .join(Grade, EssayVersion.id == Grade.essay_version_id)
-        .where(Grade.id == grade_id)
-    )
-    class_result = await db.execute(class_stmt)
-    owning_teacher_id = class_result.scalar_one_or_none()
-
-    if owning_teacher_id != teacher_id:
         raise ForbiddenError("You do not have access to this grade.")
 
     return grade
@@ -166,9 +156,11 @@ async def create_media_comment(
 
     comment_id = uuid.uuid4()
     s3_key = f"media/{teacher_id}/{grade_id}/{comment_id}.webm"
+    loop = asyncio.get_running_loop()
 
-    # Upload to S3 — any StorageError propagates to the caller (mapped to 500).
-    upload_file(s3_key, audio_bytes, mime_type)
+    # Upload to S3 in a thread pool so the sync boto3 call does not block the
+    # event loop.  Any StorageError propagates to the caller (mapped to 500).
+    await loop.run_in_executor(None, upload_file, s3_key, audio_bytes, mime_type)
 
     mc = MediaComment(
         id=comment_id,
@@ -178,10 +170,34 @@ async def create_media_comment(
         duration_seconds=duration_seconds,
         mime_type=mime_type,
     )
-    db.add(mc)
-    await db.flush()
-    await db.refresh(mc)
-    await db.commit()
+    try:
+        db.add(mc)
+        await db.flush()
+        await db.refresh(mc)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        # Best-effort cleanup: remove the S3 object that was already uploaded.
+        try:
+            await loop.run_in_executor(None, delete_file, s3_key)
+        except Exception as cleanup_exc:
+            logger.error(
+                "media_comment_s3_cleanup_failed",
+                extra={
+                    "grade_id": str(grade_id),
+                    "media_comment_id": str(comment_id),
+                    "error_type": type(cleanup_exc).__name__,
+                },
+            )
+        logger.error(
+            "media_comment_create_db_write_failed",
+            extra={
+                "grade_id": str(grade_id),
+                "media_comment_id": str(comment_id),
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
 
     logger.info(
         "media_comment_created",
@@ -220,9 +236,20 @@ async def delete_media_comment(
     db.delete(mc)  # type: ignore[unused-coroutine]  # db.delete is sync on AsyncSession; SQLAlchemy stubs incorrectly type it as a coroutine
     await db.commit()
 
-    # Delete from S3 after the DB row is gone — if this fails the orphan
-    # object in S3 is a storage-cost concern, not a data-integrity one.
-    delete_file(s3_key)
+    # Best-effort S3 deletion: the DB row is already gone, so a storage failure
+    # is a storage-cost concern only, not a data-integrity one.  Log and
+    # continue rather than surfacing a 500 after a successful DB delete.
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, delete_file, s3_key)
+    except StorageError as exc:
+        logger.error(
+            "media_comment_s3_delete_failed",
+            extra={
+                "media_comment_id": str(media_comment_id),
+                "error_type": type(exc).__name__,
+            },
+        )
 
     logger.info(
         "media_comment_deleted",
@@ -254,7 +281,8 @@ async def get_media_comment_url(
     """
     mc = await _load_media_comment_tenant_scoped(db, media_comment_id, teacher_id)
 
-    url = generate_presigned_url(mc.s3_key)
+    loop = asyncio.get_running_loop()
+    url = await loop.run_in_executor(None, generate_presigned_url, mc.s3_key)
 
     logger.info(
         "media_comment_url_generated",

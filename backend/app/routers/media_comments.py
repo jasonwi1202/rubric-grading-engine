@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
@@ -67,7 +67,7 @@ async def create_media_comment_endpoint(
 
     Response body: ``{"data": MediaCommentResponse}``
 
-    Returns 400 if the file is too large or the MIME type is not allowed.
+    Returns 422 if the file is too large or the MIME type is not allowed.
     Returns 403 if the grade belongs to a different teacher.
     Returns 404 if the grade does not exist.
     """
@@ -80,9 +80,20 @@ async def create_media_comment_endpoint(
             field="file",
         )
 
-    audio_bytes = await file.read()
-    if len(audio_bytes) > MAX_MEDIA_SIZE_BYTES:
-        raise ValidationError("Audio file exceeds the 50 MB size limit.", field="file")
+    # Read in chunks so we can reject oversized files without buffering the
+    # entire upload into memory first.
+    _CHUNK_SIZE = 1024 * 1024  # 1 MiB
+    total_size = 0
+    audio_buffer = bytearray()
+    while True:
+        chunk = await file.read(_CHUNK_SIZE)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_MEDIA_SIZE_BYTES:
+            raise ValidationError("Audio file exceeds the 50 MB size limit.", field="file")
+        audio_buffer.extend(chunk)
+    audio_bytes = bytes(audio_buffer)
 
     response = await create_media_comment(
         db=db,
@@ -144,7 +155,7 @@ async def delete_media_comment_endpoint(
     media_comment_id: uuid.UUID,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
-) -> JSONResponse:
+) -> Response:
     """Delete a media comment record and remove the audio file from S3.
 
     Returns 204 No Content on success.
@@ -156,7 +167,7 @@ async def delete_media_comment_endpoint(
         media_comment_id=media_comment_id,
         teacher_id=teacher.id,
     )
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------
