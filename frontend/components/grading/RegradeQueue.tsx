@@ -251,11 +251,11 @@ function ReviewPanel({
               </h3>
               <dl className="space-y-2 text-sm">
                 <div className="flex gap-2">
-                  <dt className="font-medium text-gray-600 shrink-0">Request ID:</dt>
+                  <dt className="shrink-0 font-medium text-gray-600">Request ID:</dt>
                   <dd className="font-mono text-gray-800">{shortId(request.id)}&hellip;</dd>
                 </div>
                 <div className="flex gap-2">
-                  <dt className="font-medium text-gray-600 shrink-0">Criterion:</dt>
+                  <dt className="shrink-0 font-medium text-gray-600">Criterion:</dt>
                   <dd className="text-gray-800">
                     {request.criterion_score_id
                       ? "Specific criterion"
@@ -263,11 +263,11 @@ function ReviewPanel({
                   </dd>
                 </div>
                 <div className="flex gap-2">
-                  <dt className="font-medium text-gray-600 shrink-0">Submitted:</dt>
+                  <dt className="shrink-0 font-medium text-gray-600">Submitted:</dt>
                   <dd className="text-gray-800">{formatDate(request.created_at)}</dd>
                 </div>
                 <div className="flex gap-2">
-                  <dt className="font-medium text-gray-600 shrink-0">Status:</dt>
+                  <dt className="shrink-0 font-medium text-gray-600">Status:</dt>
                   <dd>
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[request.status]}`}
@@ -500,7 +500,10 @@ function LogRequestForm({
   const criterionScoreMap: Record<string, string> = grade
     ? Object.fromEntries(
         grade.criterion_scores
-          .filter((cs) => cs.rubric_criterion_id != null)
+          .filter(
+            (cs): cs is typeof cs & { rubric_criterion_id: string } =>
+              cs.rubric_criterion_id != null,
+          )
           .map((cs) => [cs.rubric_criterion_id, cs.id]),
       )
     : {};
