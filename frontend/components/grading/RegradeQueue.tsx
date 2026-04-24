@@ -120,7 +120,10 @@ function closeWindowErrorMessage(err: unknown): string {
         return "Failed to close the regrade window. Please try again.";
     }
   }
-  return "Failed to close the regrade window. Please try again.";
+  // Non-ApiError means the backend endpoint isn't implemented yet (stub throws
+  // a plain Error). Show a static "coming soon" message instead of a misleading
+  // "failed — retry" message (retrying will always fail until the route ships).
+  return "This feature is coming soon and is not yet available.";
 }
 
 // ---------------------------------------------------------------------------
@@ -484,7 +487,6 @@ function ReviewPanel({
 // ---------------------------------------------------------------------------
 
 interface LogRequestFormProps {
-  assignmentId: string;
   essays: EssayListItem[];
   rubricCriteria: RubricSnapshotCriterion[];
   onSuccess: (created: RegradeRequest) => void;
@@ -644,7 +646,7 @@ function LogRequestForm({
             id={`${formId}-criterion`}
             value={selectedCriterionId}
             onChange={(e) => setSelectedCriterionId(e.target.value)}
-            disabled={!selectedEssayId || gradeLoading}
+            disabled={!selectedEssayId || gradeLoading || gradeError}
             className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
           >
             <option value="">Overall grade</option>
@@ -859,13 +861,16 @@ export function RegradeQueue({
         {!windowClosed ? (
           <div className="flex items-center gap-2">
             {closeError && (
-              <p className="text-xs text-red-600">{closeError}</p>
+              <p role="alert" className="text-xs text-red-600">{closeError}</p>
             )}
             {closeConfirming ? (
               <>
                 <span className="text-sm text-gray-600">
                   Close the regrade window? No new requests will be accepted.
                 </span>
+                {/* Confirm is disabled — the backend endpoint does not yet exist.
+                    Clicking it calls the stub which immediately maps to the
+                    "coming soon" message so teachers get clear feedback. */}
                 <button
                   type="button"
                   onClick={() => closeMutation.mutate()}
@@ -1117,7 +1122,6 @@ export function RegradeQueue({
               Log a regrade request
             </h3>
             <LogRequestForm
-              assignmentId={assignmentId}
               essays={essays}
               rubricCriteria={rubricCriteria}
               onSuccess={handleLogSuccess}

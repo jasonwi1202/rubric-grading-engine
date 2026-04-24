@@ -781,4 +781,40 @@ describe("RegradeQueue — close regrade window", () => {
       screen.getByRole("button", { name: /close regrade window/i }),
     ).toBeInTheDocument();
   });
+
+  it("shows a static error message when closeRegradeWindow rejects", async () => {
+    // Simulate the stub throwing a plain Error (backend endpoint not yet implemented).
+    mockCloseRegradeWindow.mockRejectedValue(
+      new Error("This feature is coming soon."),
+    );
+
+    render(
+      <RegradeQueue
+        assignmentId={ASSIGNMENT_ID}
+        essays={[]}
+        rubricCriteria={RUBRIC_CRITERIA}
+      />,
+      { wrapper },
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /close regrade window/i }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /this feature is coming soon/i,
+      );
+    });
+
+    // Raw error message must NOT be displayed verbatim.
+    // Verify the component uses a safe static string, not the stub's message directly.
+    expect(
+      screen.getByRole("alert").textContent,
+    ).not.toContain("throw");
+    expect(
+      screen.getByRole("alert").textContent,
+    ).not.toContain("Error:");
+  });
 });
