@@ -142,14 +142,12 @@ const STATUS_COLORS: Record<RegradeRequest["status"], string> = {
 
 interface ReviewPanelProps {
   request: RegradeRequest;
-  rubricCriteria: RubricSnapshotCriterion[];
   onResolve: (updated: RegradeRequest) => void;
   onClose: () => void;
 }
 
 function ReviewPanel({
   request,
-  rubricCriteria,
   onResolve,
   onClose,
 }: ReviewPanelProps) {
@@ -1074,7 +1072,6 @@ export function RegradeQueue({
       {selectedRequest && (
         <ReviewPanel
           request={selectedRequest}
-          rubricCriteria={rubricCriteria}
           onResolve={handleResolve}
           onClose={() => setSelectedRequest(null)}
         />
