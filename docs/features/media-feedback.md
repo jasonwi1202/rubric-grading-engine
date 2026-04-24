@@ -1,7 +1,7 @@
 # Feature: Media Feedback
 
 **Phase:** 2 — Workflow
-**Status:** Partially Implemented (M4.10)
+**Status:** Partially Implemented (M4.10, M4.11)
 
 **Shipped (M4.10 — audio comments):**
 - In-browser audio recording via MediaRecorder API with a 3-minute max and live countdown (`AudioRecorder` component in `EssayReviewPanel`)
@@ -14,8 +14,15 @@
 - Locked grades suppress the record button (read-only when `grade.is_locked`)
 - MIME type validation server-side; 50 MB size cap; graceful degradation on permission denial
 
+**Shipped (M4.11 — video comments):**
+- In-browser webcam + microphone recording via MediaRecorder API (`VideoRecorder` component in `EssayReviewPanel`)
+- Optional screen share mode: `getDisplayMedia` captures display video, combined with microphone audio from `getUserMedia`
+- Records as `video/webm`; same 3-minute limit, same S3 upload and API flow as M4.10
+- Live webcam preview while recording; post-recording video preview before saving
+- Graceful degradation: `NotAllowedError` on camera denied → audio-only fallback offered; both camera and mic denied → combined error; screen share denied → screen-share-specific error; hardware errors (`NotFoundError`, `NotReadableError`) shown separately
+- Video comments filter by `mime_type.startsWith("video/")` in the shared `media-comments` query
+
 **Pending:**
-- Video comment recording (webcam / screen + webcam)
 - Media comment bank (pre-recorded reusable comments)
 - Export integration (PDF link / QR code to media file)
 - Auto-transcription for accessibility

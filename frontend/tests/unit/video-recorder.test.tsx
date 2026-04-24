@@ -69,7 +69,8 @@ class MockMediaRecorder {
     return mimeType === "video/webm" || mimeType === "audio/webm";
   }
 
-  start(_timeslice?: number) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  start(..._args: unknown[]) {
     this.state = "recording";
     // Simulate one data chunk immediately.
     if (this.ondataavailable) {
