@@ -29,6 +29,7 @@ import {
 import type { GradeResponse, CriterionScoreResponse, PatchCriterionRequest } from "@/lib/api/grades";
 import { ApiError } from "@/lib/api/errors";
 import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
+import { AudioRecorder } from "@/components/grading/AudioRecorder";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -711,6 +712,11 @@ export function EssayReviewPanel({
             Saving…
           </p>
         )}
+      </div>
+
+      {/* Audio comment recorder */}
+      <div className="border-t border-gray-200 pt-4">
+        <AudioRecorder gradeId={grade.id} isLocked={isLocked} />
       </div>
 
       {/* Per-criterion cards */}

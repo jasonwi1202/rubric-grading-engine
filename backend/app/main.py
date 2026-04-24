@@ -207,6 +207,7 @@ def _register_routers(application: FastAPI) -> None:
         essay_integrity_router,
         integrity_reports_router,
     )
+    from app.routers.media_comments import grade_media_router, media_comments_router
     from app.routers.onboarding import router as onboarding_router
     from app.routers.regrade_requests import (
         assignments_regrade_router,
@@ -239,6 +240,8 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(integrity_reports_router, prefix="/api/v1")
     application.include_router(comment_bank_router, prefix="/api/v1")
     application.include_router(exports_router, prefix="/api/v1")
+    application.include_router(grade_media_router, prefix="/api/v1")
+    application.include_router(media_comments_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

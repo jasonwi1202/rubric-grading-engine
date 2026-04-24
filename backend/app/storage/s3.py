@@ -112,9 +112,9 @@ def delete_file(key: str) -> None:
     try:
         client.delete_object(Bucket=settings.s3_bucket_name, Key=key)
     except (BotoCoreError, ClientError) as exc:
-        logger.exception(
+        logger.error(
             "S3 delete failed",
-            extra={"key": key, "error_type": type(exc).__name__},
+            extra={"error_type": type(exc).__name__},
         )
         raise StorageError("S3 delete failed") from exc
 
