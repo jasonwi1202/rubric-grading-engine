@@ -275,7 +275,10 @@ async def _run_export(
 
             # 4b. Load media comments for all grades in one query (for PDF links).
             media_result = await db.execute(
-                select(MediaComment).where(MediaComment.grade_id.in_(grade_ids))
+                select(MediaComment).where(
+                    MediaComment.grade_id.in_(grade_ids),
+                    MediaComment.teacher_id == uuid.UUID(teacher_id),
+                )
             )
             media_by_grade: dict[uuid.UUID, list[str]] = {}
             for mc in media_result.scalars():

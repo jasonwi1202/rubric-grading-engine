@@ -102,6 +102,9 @@ def upload_file(key: str, data: bytes, content_type: str) -> None:
 def copy_file(source_key: str, dest_key: str) -> None:
     """Copy the object at *source_key* to *dest_key* within the same bucket.
 
+    Both keys must exist within ``settings.s3_bucket_name``.  The destination
+    key is created (or overwritten) with the source object's content.
+
     Args:
         source_key: Source object key within the bucket.
         dest_key: Destination object key within the bucket.
