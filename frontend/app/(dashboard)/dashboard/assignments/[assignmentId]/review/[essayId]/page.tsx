@@ -38,34 +38,12 @@ import {
   EssayReviewPanel,
   type RubricSnapshotCriterion,
 } from "@/components/grading/EssayReviewPanel";
+import { parseRubricSnapshot } from "@/lib/rubric/parseRubricSnapshot";
 import {
   IntegrityPanel,
   IntegrityPanelSkeleton,
   IntegrityPanelEmpty,
 } from "@/components/grading/IntegrityPanel";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Parse the rubric_snapshot to extract typed criterion metadata.
- * The snapshot shape is defined by `build_rubric_snapshot` in the backend.
- */
-function parseCriteria(
-  snapshot: Record<string, unknown>,
-): RubricSnapshotCriterion[] {
-  const raw = snapshot.criteria;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((c) => ({
-    id: String((c as Record<string, unknown>).id ?? ""),
-    name: String((c as Record<string, unknown>).name ?? "Unnamed"),
-    description: String((c as Record<string, unknown>).description ?? ""),
-    weight: Number((c as Record<string, unknown>).weight ?? 0),
-    min_score: Number((c as Record<string, unknown>).min_score ?? 0),
-    max_score: Number((c as Record<string, unknown>).max_score ?? 0),
-  }));
-}
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -138,7 +116,7 @@ export default function EssayReviewPage() {
 
   // Parse criteria from rubric_snapshot once the assignment loads
   const criteria: RubricSnapshotCriterion[] = assignment
-    ? parseCriteria(
+    ? parseRubricSnapshot(
         assignment.rubric_snapshot as Record<string, unknown>,
       )
     : [];

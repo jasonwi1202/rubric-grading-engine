@@ -30,6 +30,8 @@ import { listEssays } from "@/lib/api/essays";
 import { getIntegritySummary } from "@/lib/api/integrity";
 import { BatchGradingPanel } from "@/components/grading/BatchGradingPanel";
 import { ExportPanel } from "@/components/grading/ExportPanel";
+import { RegradeQueue } from "@/components/grading/RegradeQueue";
+import { parseRubricSnapshot } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -404,6 +406,22 @@ export default function AssignmentOverviewPage() {
               </div>
             )}
           </section>
+
+          {/* Regrade request queue — shown once grading has started */}
+          {(assignment.status === "grading" ||
+            assignment.status === "review" ||
+            assignment.status === "complete" ||
+            assignment.status === "returned") && (
+            <div className="mt-8">
+              <RegradeQueue
+                assignmentId={assignmentId}
+                essays={essays ?? []}
+                rubricCriteria={parseRubricSnapshot(
+                  assignment.rubric_snapshot as Record<string, unknown>,
+                )}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

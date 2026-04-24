@@ -28,6 +28,7 @@ import {
 } from "@/lib/api/grades";
 import type { GradeResponse, CriterionScoreResponse, PatchCriterionRequest } from "@/lib/api/grades";
 import { ApiError } from "@/lib/api/errors";
+import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,16 +36,9 @@ import { ApiError } from "@/lib/api/errors";
 
 /**
  * One criterion entry from assignment.rubric_snapshot.criteria.
- * Matches the shape produced by the backend `build_rubric_snapshot` function.
+ * Defined in the shared rubric helper; re-exported here for backward compatibility.
  */
-export interface RubricSnapshotCriterion {
-  id: string;
-  name: string;
-  description: string;
-  weight: number;
-  min_score: number;
-  max_score: number;
-}
+export type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
 // Score recalculation helper — exported for unit testing
