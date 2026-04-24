@@ -510,8 +510,16 @@ class TestResolveRegradeRequest:
         assert cs.teacher_score == 4
         assert cs.final_score == 4
         assert rr.status == RegradeRequestStatus.approved
-        # score_override audit + regrade_resolved audit = 2 db.add calls
+        # Verify both audit log entries were inserted: score_override + regrade_resolved.
         assert db.add.call_count == 2
+        added_entries = [call.args[0] for call in db.add.call_args_list]
+        actions = {e.action for e in added_entries}
+        assert "score_override" in actions
+        assert "regrade_resolved" in actions
+        # The regrade_resolved entry must be scoped to the grade (not the request).
+        regrade_audit = next(e for e in added_entries if e.action == "regrade_resolved")
+        assert regrade_audit.entity_type == "grade"
+        assert regrade_audit.entity_id == grade_id
 
     @pytest.mark.asyncio
     async def test_cross_teacher_raises_forbidden(self) -> None:
@@ -671,3 +679,60 @@ class TestResolveRegradeRequest:
 
         with pytest.raises(GradeLockedError):
             await resolve_regrade_request(db, request_id, teacher_id, body)
+
+    @pytest.mark.asyncio
+    async def test_new_criterion_score_out_of_range_raises_validation_error(self) -> None:
+        """Raises ValidationError when new_criterion_score falls outside rubric snapshot bounds."""
+        teacher_id = _make_uuid()
+        request_id = _make_uuid()
+        grade_id = _make_uuid()
+        cs_id = _make_uuid()
+        rubric_criterion_id = _make_uuid()
+
+        rr = _make_regrade_request(
+            request_id=request_id,
+            teacher_id=teacher_id,
+            grade_id=grade_id,
+            status=RegradeRequestStatus.open,
+            criterion_score_id=cs_id,
+        )
+        cs = _make_criterion_score(grade_id=grade_id, cs_id=cs_id)
+        cs.rubric_criterion_id = rubric_criterion_id
+
+        grade_mock = MagicMock()
+        grade_mock.id = grade_id
+        grade_mock.is_locked = False
+        grade_mock.essay_version_id = _make_uuid()
+
+        # Build an assignment mock with a rubric_snapshot containing criterion bounds.
+        assignment_mock = MagicMock()
+        assignment_mock.rubric_snapshot = {
+            "criteria": [
+                {
+                    "id": str(rubric_criterion_id),
+                    "min_score": 0,
+                    "max_score": 5,
+                }
+            ]
+        }
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(rr),              # 1: tenant-scoped request
+                _scalar_one_or_none_mock(cs),              # 2: load criterion score
+                _scalar_one_or_none_mock(grade_mock),      # 3: load grade (is_locked check)
+                _scalar_one_or_none_mock(assignment_mock), # 4: load assignment (rubric_snapshot)
+            ]
+        )
+
+        body = RegradeRequestResolveRequest(
+            resolution="approved",
+            resolution_note="Score should be higher.",
+            new_criterion_score=10,  # out of [0, 5] range
+        )
+
+        with pytest.raises(ValidationError) as exc_info:
+            await resolve_regrade_request(db, request_id, teacher_id, body)
+
+        assert exc_info.value.field == "new_criterion_score"
