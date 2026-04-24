@@ -27,8 +27,8 @@ from app.models.class_ import Class
 from app.models.essay import Essay, EssayVersion
 from app.models.grade import Grade
 from app.models.media_comment import MediaComment
-from app.schemas.media_comment import MediaCommentResponse, MediaCommentUrlResponse
-from app.storage.s3 import StorageError, delete_file, generate_presigned_url, upload_file
+from app.schemas.media_comment import MediaCommentResponse, MediaCommentUrlResponse, SaveToBankResponse
+from app.storage.s3 import StorageError, copy_file, delete_file, generate_presigned_url, upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +238,7 @@ async def create_media_comment(
         s3_key=mc.s3_key,
         duration_seconds=mc.duration_seconds,
         mime_type=mc.mime_type,
+        is_banked=mc.is_banked,
         created_at=mc.created_at,
     )
 
@@ -360,7 +361,176 @@ async def list_grade_media_comments(
             s3_key=r.s3_key,
             duration_seconds=r.duration_seconds,
             mime_type=r.mime_type,
+            is_banked=r.is_banked,
             created_at=r.created_at,
         )
         for r in rows
     ]
+
+
+async def save_to_bank(
+    db: AsyncSession,
+    media_comment_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> SaveToBankResponse:
+    """Mark a media comment as saved to the teacher's reusable bank.
+
+    Args:
+        db: Async database session.
+        media_comment_id: UUID of the MediaComment to bank.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        :class:`SaveToBankResponse` with updated ``is_banked`` flag.
+
+    Raises:
+        NotFoundError: Media comment not found.
+        ForbiddenError: Media comment belongs to a different teacher.
+    """
+    mc = await _load_media_comment_tenant_scoped(db, media_comment_id, teacher_id)
+
+    mc.is_banked = True
+    await db.commit()
+    await db.refresh(mc)
+
+    logger.info(
+        "media_comment_saved_to_bank",
+        extra={"media_comment_id": str(media_comment_id)},
+    )
+    return SaveToBankResponse(id=mc.id, is_banked=mc.is_banked)
+
+
+async def list_banked_media_comments(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+) -> list[MediaCommentResponse]:
+    """Return all banked media comments for a teacher, newest first.
+
+    Args:
+        db: Async database session.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        List of :class:`MediaCommentResponse` objects where ``is_banked`` is True.
+    """
+    stmt = (
+        select(MediaComment)
+        .where(
+            MediaComment.teacher_id == teacher_id,
+            MediaComment.is_banked == True,  # noqa: E712 — SQLAlchemy requires ==
+        )
+        .order_by(MediaComment.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        MediaCommentResponse(
+            id=r.id,
+            grade_id=r.grade_id,
+            s3_key=r.s3_key,
+            duration_seconds=r.duration_seconds,
+            mime_type=r.mime_type,
+            is_banked=r.is_banked,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+async def apply_banked_comment(
+    db: AsyncSession,
+    grade_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    source_id: uuid.UUID,
+) -> MediaCommentResponse:
+    """Apply a banked media comment to a new grade by copying the S3 object.
+
+    The source comment's S3 object is copied to a new key scoped to the target
+    grade.  A new :class:`MediaComment` record is created for the target grade.
+    The source comment remains unchanged.
+
+    Args:
+        db: Async database session.
+        grade_id: UUID of the target grade.
+        teacher_id: UUID of the authenticated teacher.
+        source_id: UUID of the banked :class:`MediaComment` to copy.
+
+    Returns:
+        The newly created :class:`MediaCommentResponse`.
+
+    Raises:
+        NotFoundError: Source media comment or target grade not found.
+        ForbiddenError: Source comment or target grade belongs to a different teacher.
+    """
+    # Validate target grade ownership.
+    await _load_grade_tenant_scoped(db, grade_id, teacher_id)
+
+    # Load the source comment — must be owned by the same teacher.
+    source = await _load_media_comment_tenant_scoped(db, source_id, teacher_id)
+
+    # Derive file extension from the source MIME type.
+    base_mime = source.mime_type.split(";")[0].strip()
+    ext = _MIME_TO_EXT.get(base_mime, ".webm")
+    new_comment_id = uuid.uuid4()
+    dest_key = f"media/{teacher_id}/{grade_id}/{new_comment_id}{ext}"
+
+    loop = asyncio.get_running_loop()
+    # Copy the S3 object so each grade has its own independent media file.
+    # A StorageError here propagates to the caller (mapped to 500).
+    await loop.run_in_executor(None, copy_file, source.s3_key, dest_key)
+
+    mc = MediaComment(
+        id=new_comment_id,
+        grade_id=grade_id,
+        teacher_id=teacher_id,
+        s3_key=dest_key,
+        duration_seconds=source.duration_seconds,
+        mime_type=source.mime_type,
+        is_banked=False,
+    )
+    try:
+        db.add(mc)
+        await db.flush()
+        await db.refresh(mc)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        # Best-effort cleanup of the copied S3 object.
+        try:
+            await loop.run_in_executor(None, delete_file, dest_key)
+        except Exception as cleanup_exc:
+            logger.error(
+                "media_comment_s3_cleanup_failed",
+                extra={
+                    "grade_id": str(grade_id),
+                    "media_comment_id": str(new_comment_id),
+                    "error_type": type(cleanup_exc).__name__,
+                },
+            )
+        logger.error(
+            "media_comment_apply_bank_db_write_failed",
+            extra={
+                "grade_id": str(grade_id),
+                "source_id": str(source_id),
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    logger.info(
+        "media_comment_applied_from_bank",
+        extra={
+            "grade_id": str(grade_id),
+            "source_id": str(source_id),
+            "media_comment_id": str(mc.id),
+        },
+    )
+    return MediaCommentResponse(
+        id=mc.id,
+        grade_id=mc.grade_id,
+        s3_key=mc.s3_key,
+        duration_seconds=mc.duration_seconds,
+        mime_type=mc.mime_type,
+        is_banked=mc.is_banked,
+        created_at=mc.created_at,
+    )

@@ -39,6 +39,9 @@ vi.mock("@/lib/api/media-comments", () => ({
   listGradeMediaComments: (...args: unknown[]) => mockListComments(...args),
   deleteMediaComment: (...args: unknown[]) => mockDelete(...args),
   getMediaCommentUrl: (...args: unknown[]) => mockGetUrl(...args),
+  saveToBank: () => Promise.resolve({ id: "mc-test-001", is_banked: true }),
+  listBankedComments: () => Promise.resolve([]),
+  applyBankedComment: () => Promise.resolve({}),
 }));
 
 import { VideoRecorder } from "@/components/grading/VideoRecorder";
@@ -115,6 +118,7 @@ function makeComment(
     s3_key: "media/teacher-001/grade-001/vc-test-001.webm",
     duration_seconds: 15,
     mime_type: "video/webm",
+    is_banked: false,
     created_at: "2026-04-24T00:00:00Z",
     ...overrides,
   };

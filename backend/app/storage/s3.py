@@ -99,6 +99,31 @@ def upload_file(key: str, data: bytes, content_type: str) -> None:
         raise StorageError("S3 upload failed") from exc
 
 
+def copy_file(source_key: str, dest_key: str) -> None:
+    """Copy the object at *source_key* to *dest_key* within the same bucket.
+
+    Args:
+        source_key: Source object key within the bucket.
+        dest_key: Destination object key within the bucket.
+
+    Raises:
+        StorageError: If the copy fails for any reason.
+    """
+    client = _make_client()
+    try:
+        client.copy_object(
+            Bucket=settings.s3_bucket_name,
+            CopySource={"Bucket": settings.s3_bucket_name, "Key": source_key},
+            Key=dest_key,
+        )
+    except (BotoCoreError, ClientError) as exc:
+        logger.error(
+            "S3 copy failed",
+            extra={"error_type": type(exc).__name__},
+        )
+        raise StorageError("S3 copy failed") from exc
+
+
 def delete_file(key: str) -> None:
     """Delete the object at *key* from the configured S3 bucket.
 

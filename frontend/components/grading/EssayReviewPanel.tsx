@@ -31,6 +31,7 @@ import { ApiError } from "@/lib/api/errors";
 import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 import { AudioRecorder } from "@/components/grading/AudioRecorder";
 import { VideoRecorder } from "@/components/grading/VideoRecorder";
+import { MediaBankPicker } from "@/components/grading/MediaBankPicker";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -723,6 +724,12 @@ export function EssayReviewPanel({
       {/* Video comment recorder */}
       <div className="border-t border-gray-200 pt-4">
         <VideoRecorder gradeId={grade.id} isLocked={isLocked} />
+      </div>
+
+      {/* Media comment bank picker */}
+      <div className="border-t border-gray-200 pt-4">
+        <h3 className="text-sm font-medium text-gray-700">Media comment bank</h3>
+        <MediaBankPicker gradeId={grade.id} isLocked={isLocked} />
       </div>
 
       {/* Per-criterion cards */}
