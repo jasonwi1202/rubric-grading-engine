@@ -30,12 +30,16 @@ const mockUpload = vi.fn();
 const mockListComments = vi.fn();
 const mockDelete = vi.fn();
 const mockGetUrl = vi.fn();
+const mockSaveToBank = vi.fn();
 
 vi.mock("@/lib/api/media-comments", () => ({
   uploadMediaComment: (...args: unknown[]) => mockUpload(...args),
   listGradeMediaComments: (...args: unknown[]) => mockListComments(...args),
   deleteMediaComment: (...args: unknown[]) => mockDelete(...args),
   getMediaCommentUrl: (...args: unknown[]) => mockGetUrl(...args),
+  saveToBank: (...args: unknown[]) => mockSaveToBank(...args),
+  listBankedComments: () => Promise.resolve([]),
+  applyBankedComment: () => Promise.resolve({}),
 }));
 
 import { AudioRecorder } from "@/components/grading/AudioRecorder";
@@ -101,6 +105,7 @@ function makeComment(
     s3_key: "media/teacher-001/grade-001/mc-test-001.webm",
     duration_seconds: 10,
     mime_type: "audio/webm",
+    is_banked: false,
     created_at: "2026-04-24T00:00:00Z",
     ...overrides,
   };
@@ -134,6 +139,8 @@ beforeEach(() => {
   // Default: getUserMedia succeeds.
   const stream = makeMockStream();
   mockGetUserMedia.mockResolvedValue(stream);
+  // Default: saveToBank succeeds.
+  mockSaveToBank.mockResolvedValue({ id: "mc-test-001", is_banked: true });
 
   // Stub navigator.mediaDevices — restored in afterEach so the mutation does
   // not bleed into other test files in the same Vitest worker.
@@ -355,8 +362,11 @@ describe("AudioRecorder — save flow", () => {
 
     // Preview should disappear; Record button returns.
     await waitFor(() => {
+      // The "Save audio comment" preview button should be gone.
+      // (The "Save audio comment to reusable bank" button on existing rows
+      // uses a different aria-label; we check the preview button specifically.)
       expect(
-        screen.queryByRole("button", { name: /save audio/i }),
+        screen.queryByRole("button", { name: /^save audio comment$/i }),
       ).not.toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: /start recording/i }),

@@ -319,6 +319,9 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
                     <span className="block text-xs text-gray-500">
                       Generates a ZIP of per-student PDF feedback files
                     </span>
+                    <span className="mt-0.5 block text-xs text-blue-600" data-testid="export-media-note">
+                      Media comments are included as links in each PDF
+                    </span>
                   </span>
                 </span>
               </button>

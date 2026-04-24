@@ -55,6 +55,7 @@ def _build_student_pdf(
     assignment_title: str,
     summary_feedback: str,
     criterion_items: list[dict[str, object]],
+    media_comment_ids: list[str] | None = None,
 ) -> bytes:
     """Generate a PDF feedback report for a single student.
 
@@ -66,6 +67,9 @@ def _build_student_pdf(
         summary_feedback: Overall teacher/AI feedback text.
         criterion_items: List of dicts with keys ``name``, ``final_score``,
             ``max_score``, and optional ``feedback``.
+        media_comment_ids: Optional list of media comment UUID strings for
+            this grade.  When provided, a section is added at the end of the
+            PDF directing the recipient to retrieve playback URLs via the API.
 
     Returns:
         Raw PDF bytes.
@@ -110,6 +114,26 @@ def _build_student_pdf(
                 pdf.multi_cell(0, 6, str(feedback))
             pdf.ln(2)
 
+    # Media comments section — included when the grade has attached recordings.
+    if media_comment_ids:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(0, 8, "Media Comments", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", size=10)
+        pdf.multi_cell(
+            0,
+            6,
+            (
+                "This grade includes recorded audio/video feedback. "
+                "Use the following comment IDs to retrieve playback links "
+                "via GET /api/v1/media-comments/{id}/url."
+            ),
+        )
+        pdf.ln(2)
+        for mc_id in media_comment_ids:
+            pdf.set_font("Courier", size=10)
+            pdf.cell(0, 6, mc_id, new_x="LMARGIN", new_y="NEXT")
+
     return bytes(pdf.output())
 
 
@@ -132,6 +156,7 @@ async def _run_export(
     from app.models.class_ import Class  # noqa: PLC0415
     from app.models.essay import Essay, EssayStatus, EssayVersion  # noqa: PLC0415
     from app.models.grade import CriterionScore, Grade  # noqa: PLC0415
+    from app.models.media_comment import MediaComment  # noqa: PLC0415
     from app.models.student import Student  # noqa: PLC0415
 
     assignment_uuid = uuid.UUID(assignment_id)
@@ -248,6 +273,17 @@ async def _run_export(
             for score in scores_result.scalars():
                 scores_by_grade.setdefault(score.grade_id, []).append(score)
 
+            # 4b. Load media comments for all grades in one query (for PDF links).
+            media_result = await db.execute(
+                select(MediaComment).where(
+                    MediaComment.grade_id.in_(grade_ids),
+                    MediaComment.teacher_id == uuid.UUID(teacher_id),
+                )
+            )
+            media_by_grade: dict[uuid.UUID, list[str]] = {}
+            for mc in media_result.scalars():
+                media_by_grade.setdefault(mc.grade_id, []).append(str(mc.id))
+
             # 5. Generate PDFs and package into ZIP.
             zip_buffer = io.BytesIO()
             # completed counts PDFs written successfully; skipped tracks unprocessable essays.
@@ -308,6 +344,7 @@ async def _run_export(
                             assignment_title=assignment.title,
                             summary_feedback=summary,
                             criterion_items=criterion_items,
+                            media_comment_ids=media_by_grade.get(grade.id) or None,
                         )
                     except Exception as pdf_exc:
                         logger.error(

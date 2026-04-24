@@ -50,6 +50,13 @@ class MediaComment(Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     # MIME type of the recorded blob, e.g. "audio/webm".
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    # True when the teacher has saved this comment to the media comment bank
+    # so it can be reused across multiple essays.
+    is_banked: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+        server_default="false",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

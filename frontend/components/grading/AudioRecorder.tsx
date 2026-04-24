@@ -28,6 +28,7 @@ import {
   listGradeMediaComments,
   deleteMediaComment,
   getMediaCommentUrl,
+  saveToBank,
 } from "@/lib/api/media-comments";
 import type { MediaCommentResponse } from "@/lib/api/media-comments";
 import { ApiError } from "@/lib/api/errors";
@@ -101,18 +102,29 @@ export interface AudioRecorderProps {
 
 function CommentRow({
   comment,
+  gradeId,
   isLocked,
   onDeleted,
 }: {
   comment: MediaCommentResponse;
+  gradeId: string;
   isLocked: boolean;
   onDeleted: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [playUrl, setPlayUrl] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [bankError, setBankError] = useState<string | null>(null);
+  const [isBanked, setIsBanked] = useState(comment.is_banked);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Keep local banked state in sync with query data so that a background
+  // refetch (e.g., from another session) is reflected immediately.
+  useEffect(() => {
+    setIsBanked(comment.is_banked);
+  }, [comment.is_banked]);
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteMediaComment(comment.id),
@@ -121,6 +133,22 @@ function CommentRow({
     },
     onError: (err) => {
       setDeleteError(deleteErrorMessage(err));
+    },
+  });
+
+  const saveToBankMutation = useMutation({
+    mutationFn: () => saveToBank(comment.id),
+    onSuccess: () => {
+      setBankError(null);
+      setIsBanked(true);
+      // Invalidate the bank list so it refreshes when the picker is opened.
+      void queryClient.invalidateQueries({ queryKey: ["media-bank"] });
+      // Also invalidate this grade's media-comments cache so is_banked is
+      // consistent if the component remounts or the query refetches.
+      void queryClient.invalidateQueries({ queryKey: ["media-comments", gradeId] });
+    },
+    onError: () => {
+      setBankError("Failed to save to bank. Please try again.");
     },
   });
 
@@ -178,18 +206,36 @@ function CommentRow({
             {isLoadingUrl ? "Loading…" : "Play"}
           </button>
           {!isLocked && (
-            <button
-              type="button"
-              onClick={() => {
-                setDeleteError(null);
-                deleteMutation.mutate();
-              }}
-              disabled={deleteMutation.isPending}
-              aria-label={`Delete audio comment recorded on ${createdDate}`}
-              className="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {deleteMutation.isPending ? "Deleting…" : "Delete"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setBankError(null);
+                  saveToBankMutation.mutate();
+                }}
+                disabled={saveToBankMutation.isPending || isBanked}
+                aria-label={
+                  isBanked
+                    ? "Audio comment is already saved to bank"
+                    : "Save audio comment to reusable bank"
+                }
+                className="rounded px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isBanked ? "In bank" : saveToBankMutation.isPending ? "Saving…" : "Save to bank"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  deleteMutation.mutate();
+                }}
+                disabled={deleteMutation.isPending}
+                aria-label={`Delete audio comment recorded on ${createdDate}`}
+                className="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Deleting…" : "Delete"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -213,6 +259,11 @@ function CommentRow({
       {deleteError && (
         <p role="alert" className="mt-1 text-xs text-red-700">
           {deleteError}
+        </p>
+      )}
+      {bankError && (
+        <p role="alert" className="mt-1 text-xs text-red-700">
+          {bankError}
         </p>
       )}
     </li>
@@ -484,6 +535,7 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
             <CommentRow
               key={c.id}
               comment={c}
+              gradeId={gradeId}
               isLocked={isLocked}
               onDeleted={handleCommentDeleted}
             />

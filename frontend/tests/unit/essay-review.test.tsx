@@ -42,14 +42,17 @@ vi.mock("@/lib/api/grades", () => ({
   lockGrade: (...args: unknown[]) => mockLockGrade(...args),
 }));
 
-// Mock media-comments so the AudioRecorder embedded in EssayReviewPanel
-// does not trigger a real network call (and thus a query-error alert) when
-// listGradeMediaComments has no mocked response in these tests.
+// Mock media-comments so the AudioRecorder / VideoRecorder / MediaBankPicker
+// embedded in EssayReviewPanel do not trigger real network calls (and thus
+// query-error alerts) when their queries have no mocked responses in these tests.
 vi.mock("@/lib/api/media-comments", () => ({
   listGradeMediaComments: () => Promise.resolve([]),
   uploadMediaComment: () => Promise.resolve({}),
   deleteMediaComment: () => Promise.resolve(undefined),
   getMediaCommentUrl: () => Promise.resolve({ url: "" }),
+  saveToBank: () => Promise.resolve({ id: "mc-001", is_banked: true }),
+  listBankedComments: () => Promise.resolve([]),
+  applyBankedComment: () => Promise.resolve({}),
 }));
 
 import {
