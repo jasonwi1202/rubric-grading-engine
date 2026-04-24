@@ -60,6 +60,56 @@ export function testEmail(tag: string): string {
   return `e2e-${tag}-${Date.now()}@example.com`;
 }
 
+const API_BASE = process.env.API_BASE_URL ?? "http://localhost:8000";
+
+/**
+ * Seed a verified teacher account via the backend API.
+ *
+ * Creates the account via POST /auth/signup, waits for the verification email
+ * in Mailpit, and confirms the token via GET /auth/verify-email.  Returns the
+ * credentials that can be used to log in via the UI.
+ *
+ * Call `clearMailpit()` before this helper when running in a suite that might
+ * have stale emails in the inbox.
+ */
+export async function seedTeacher(
+  tag: string,
+): Promise<{ email: string; password: string }> {
+  const email = testEmail(tag);
+  const password = "JourneyPass1!";
+
+  const signupRes = await fetch(`${API_BASE}/api/v1/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      first_name: "E2E",
+      last_name: "Teacher",
+      email,
+      password,
+      school_name: "E2E Test School",
+    }),
+  });
+  if (!signupRes.ok) {
+    throw new Error(`Signup failed: ${signupRes.status}`);
+  }
+
+  // Verify email via Mailpit
+  const { body } = await waitForEmail(email, "verify", 20_000);
+  const verifyUrl = extractLinkFromEmail(body);
+  const token = new URL(verifyUrl).searchParams.get("token");
+  if (!token) {
+    throw new Error("Verification token not found in email link");
+  }
+  const verifyRes = await fetch(
+    `${API_BASE}/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
+  );
+  if (!verifyRes.ok) {
+    throw new Error(`Email verification failed: ${verifyRes.status}`);
+  }
+
+  return { email, password };
+}
+
 /** Wait for the backend health endpoint to be reachable. Useful after compose up. */
 export async function waitForBackend(
   apiBase = "http://localhost:8000",
