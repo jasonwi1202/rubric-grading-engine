@@ -316,7 +316,7 @@ Content-Security-Policy: default-src 'self'  (tightened per page in Next.js)
 ## 7. Dependency Security
 
 - Backend: `pip-audit` runs in CI on every push — fails the build on known critical/high CVEs
-- Frontend: `npm audit` runs in CI — fails on critical CVEs
+- Frontend: `npm audit` runs in CI — fails on high/critical CVEs (`--audit-level=high`)
 - Dependencies are pinned to exact versions in `pyproject.toml` (backend) and `package.json` (frontend)
 - Dependabot (or equivalent) opens PRs for dependency updates automatically — reviewed weekly
 
