@@ -44,7 +44,7 @@ import { getGrade } from "@/lib/api/grades";
 import type { GradeResponse } from "@/lib/api/grades";
 import { ApiError } from "@/lib/api/errors";
 import type { EssayListItem } from "@/lib/api/essays";
-import type { RubricSnapshotCriterion } from "@/components/grading/EssayReviewPanel";
+import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 import { useFocusTrap } from "@/lib/utils/focus-trap";
 
 // ---------------------------------------------------------------------------
