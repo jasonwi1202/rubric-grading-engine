@@ -589,7 +589,7 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
 
   // ── Test 2: Override score, assert live total update ──────────────────────
 
-  test("teacher overrides a criterion score and weighted total updates in real time", async () => {
+  test("teacher overrides a criterion score and total score updates in real time", async () => {
     if (!state.page) throw new Error("Browser context not initialized in beforeAll");
     const page = state.page;
 
@@ -632,20 +632,23 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
       { timeout: 5_000 },
     );
 
+    // Prepare to observe the auto-save PATCH call before triggering blur so
+    // the test proves the mutation actually completed successfully.
+    const saveResponsePromise = page.waitForResponse(
+      (response) => {
+        const pathname = new URL(response.url()).pathname;
+        return (
+          response.request().method() === "PATCH" &&
+          /\/api\/v1\/grades\/[^/]+\/criteria\/[^/]+$/.test(pathname) &&
+          response.status() === 200
+        );
+      },
+      { timeout: 20_000 },
+    );
+
     // Blur to trigger the auto-save PATCH call.
     await firstInput.blur();
-
-    // Wait for "Saving…" to clear — signals the mutation completed.
-    await page
-      .waitForSelector("text=Saving", { state: "visible", timeout: 5_000 })
-      .catch(() => {
-        /* may disappear before we check */
-      });
-    await page
-      .waitForSelector("text=Saving", { state: "hidden", timeout: 20_000 })
-      .catch(() => {
-        /* already gone */
-      });
+    await saveResponsePromise;
 
     // The input must retain the overridden value after the save round-trip.
     await expect(firstInput).toHaveValue(String(newScore));
@@ -671,16 +674,19 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
     // Verify the UI immediately reflects the typed text.
     await expect(feedbackTextarea).toHaveValue(updatedFeedback);
 
+    // Prepare to observe the auto-save PATCH call before triggering blur so
+    // the test proves the mutation actually completed successfully.
+    const feedbackSaveResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        /\/api\/v1\/grades\/[^/]+\/feedback$/.test(response.url()) &&
+        response.ok(),
+      { timeout: 20_000 },
+    );
+
     // Blur triggers the auto-save mutation (PATCH /grades/{gradeId}/feedback).
     await feedbackTextarea.blur();
-
-    // Wait for "Saving…" to clear.
-    await page
-      .waitForSelector("text=Saving", { state: "visible", timeout: 5_000 })
-      .catch(() => {});
-    await page
-      .waitForSelector("text=Saving", { state: "hidden", timeout: 20_000 })
-      .catch(() => {});
+    await feedbackSaveResponse;
 
     // The textarea must still contain the updated feedback after the save.
     await expect(feedbackTextarea).toHaveValue(updatedFeedback);

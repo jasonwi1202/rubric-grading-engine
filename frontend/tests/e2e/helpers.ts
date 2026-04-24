@@ -415,8 +415,12 @@ export async function seedGradedEssay(
 
   // Poll until the batch reaches a terminal state.
   const deadline = Date.now() + 120_000;
+  let lastStatus = "pending";
+  let pollCount = 0;
+  let reachedTerminal = false;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 3_000));
+    pollCount += 1;
     const statusRes = await fetch(
       `${API_BASE}/api/v1/assignments/${assignmentId}/grading-status`,
       { headers: { Authorization: `Bearer ${token}` } },
@@ -425,13 +429,22 @@ export async function seedGradedEssay(
     const statusBody = (await statusRes.json()) as {
       data: { status: string };
     };
-    const status = statusBody.data.status;
-    if (status === "complete" || status === "partial") break;
-    if (status === "failed") {
+    lastStatus = statusBody.data.status;
+    if (lastStatus === "complete" || lastStatus === "partial") {
+      reachedTerminal = true;
+      break;
+    }
+    if (lastStatus === "failed") {
       throw new Error(
         "seedGradedEssay: batch grading failed — essay cannot be reviewed",
       );
     }
+  }
+  if (!reachedTerminal) {
+    throw new Error(
+      `seedGradedEssay: grading did not reach a terminal state within 120 s ` +
+        `(last status: "${lastStatus}", polls: ${pollCount})`,
+    );
   }
 
   return {
