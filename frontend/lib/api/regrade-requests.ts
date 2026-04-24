@@ -49,7 +49,9 @@ export interface RegradeRequest {
  * Matches backend `RegradeRequestCreate`.
  */
 export interface RegradeRequestCreate {
-  /** min_length: 1, max_length: 5000 (server-enforced); UI enforces max 500. */
+  /** min_length: 1, max_length: 5000 (server-enforced); UI caps at 500 to
+   * encourage concise justifications. The server will accept up to 5000 chars
+   * if the request is submitted outside the UI. */
   dispute_text: string;
   /** UUID of CriterionScore to dispute, or null/undefined for overall grade. */
   criterion_score_id?: string | null;

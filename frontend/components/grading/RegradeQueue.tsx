@@ -162,13 +162,6 @@ function ReviewPanel({
 
   const resolveId = useId();
 
-  // Fetch the grade to display original scores and AI justification.
-  // We don't have the essay_id directly from the request, so we cannot use
-  // getGrade(essayId). Instead, we display a link to the essay review page
-  // and show the grade details if available.
-  // Note: grade_id alone isn't enough to fetch grade in the current API
-  // (GET /essays/{essayId}/grade) — we fall back to showing the request data.
-
   const resolveMutation = useMutation({
     mutationFn: (body: RegradeRequestResolveRequest) =>
       resolveRegradeRequest(request.id, body),
@@ -258,8 +251,8 @@ function ReviewPanel({
               </h3>
               <dl className="space-y-2 text-sm">
                 <div className="flex gap-2">
-                  <dt className="font-medium text-gray-600 shrink-0">Grade ID:</dt>
-                  <dd className="font-mono text-gray-800">{shortId(request.grade_id)}&hellip;</dd>
+                  <dt className="font-medium text-gray-600 shrink-0">Request ID:</dt>
+                  <dd className="font-mono text-gray-800">{shortId(request.id)}&hellip;</dd>
                 </div>
                 <div className="flex gap-2">
                   <dt className="font-medium text-gray-600 shrink-0">Criterion:</dt>
@@ -291,7 +284,7 @@ function ReviewPanel({
                 id={`${resolveId}-dispute-text-heading`}
                 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500"
               >
-                Student justification
+                Teacher-entered justification
               </h3>
               <blockquote className="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-800 italic whitespace-pre-wrap">
                 {request.dispute_text}
@@ -313,9 +306,9 @@ function ReviewPanel({
             )}
 
             <p className="text-xs text-gray-400">
-              To review the original essay and AI justification, open the{" "}
-              <span className="font-medium text-gray-500">essay review page</span>{" "}
-              for this grade.
+              To review the original essay and AI justification, use the{" "}
+              <strong className="text-gray-500">essay review page</strong>{" "}
+              linked from the submission table above.
             </p>
           </div>
 
@@ -502,12 +495,11 @@ function LogRequestForm({
   });
 
   // Map rubric_criterion_id → criterion_score_id from the loaded grade.
-  const criterionScoreMap: Record<string, string> = {};
-  if (grade) {
-    for (const cs of grade.criterion_scores) {
-      criterionScoreMap[cs.rubric_criterion_id] = cs.id;
-    }
-  }
+  const criterionScoreMap: Record<string, string> = grade
+    ? Object.fromEntries(
+        grade.criterion_scores.map((cs) => [cs.rubric_criterion_id, cs.id]),
+      )
+    : {};
 
   const createMutation = useMutation({
     mutationFn: (body: RegradeRequestCreate) => {
@@ -536,6 +528,16 @@ function LogRequestForm({
     }
     if (!disputeText.trim()) {
       setFormError("Dispute text is required.");
+      return;
+    }
+
+    // When a specific criterion is selected, validate that the grade has a
+    // matching criterion score. Without a matching score, submitting would
+    // silently log an overall-grade request instead of the intended criterion.
+    if (selectedCriterionId && !criterionScoreMap[selectedCriterionId]) {
+      setFormError(
+        "Could not find the selected criterion in the grade. Please refresh and try again.",
+      );
       return;
     }
 
@@ -651,7 +653,7 @@ function LogRequestForm({
           aria-required="true"
           aria-describedby={`${formId}-dispute-count`}
           maxLength={DISPUTE_TEXT_MAX_CHARS}
-          placeholder="Enter the student's justification for disputing this grade…"
+          placeholder="Enter the justification for disputing this grade…"
           className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         <p
@@ -991,14 +993,10 @@ export function RegradeQueue({
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredRequests.map((request) => {
-                  const essay = essays.find(
-                    (e) =>
-                      (e as EssayListItem & { grade_id?: string | null })
-                        .grade_id === request.grade_id,
-                  );
-                  const studentLabel = essay?.student_name
-                    ? essay.student_name
-                    : `Grade ${shortId(request.grade_id)}`;
+                  // EssayListItem does not include grade_id; show a short
+                  // request identifier as the student label. Teachers can
+                  // cross-reference via the essay review page.
+                  const studentLabel = `Request ${shortId(request.id)}`;
 
                   return (
                     <tr key={request.id} className="hover:bg-gray-50">
