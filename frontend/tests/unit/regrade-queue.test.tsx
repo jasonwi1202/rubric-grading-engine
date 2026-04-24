@@ -15,8 +15,10 @@
  * - Log request form shows essay selector and dispute text field
  * - Log request form blocks submission when dispute text is empty
  * - Log request calls createRegradeRequest on submit
- * - Close regrade window button shows confirmation dialog
  * - DISPUTE_TEXT_MAX_CHARS export is 500
+ *
+ * Note: Close-regrade-window tests are not included — the backend endpoint
+ * does not yet exist, so the UI action is not rendered.
  *
  * Security:
  * - No student PII in fixtures — synthetic IDs and placeholder text only.
@@ -37,7 +39,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 const mockListRegradeRequests = vi.fn();
 const mockCreateRegradeRequest = vi.fn();
 const mockResolveRegradeRequest = vi.fn();
-const mockCloseRegradeWindow = vi.fn();
 const mockGetGrade = vi.fn();
 
 vi.mock("@/lib/api/regrade-requests", () => ({
@@ -47,7 +48,6 @@ vi.mock("@/lib/api/regrade-requests", () => ({
     mockCreateRegradeRequest(...args),
   resolveRegradeRequest: (...args: unknown[]) =>
     mockResolveRegradeRequest(...args),
-  closeRegradeWindow: (...args: unknown[]) => mockCloseRegradeWindow(...args),
 }));
 
 vi.mock("@/lib/api/grades", () => ({
@@ -688,135 +688,5 @@ describe("RegradeQueue — log request form", () => {
         expect.objectContaining({ dispute_text: "Grade is incorrect" }),
       );
     });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Close regrade window
-// ---------------------------------------------------------------------------
-
-describe("RegradeQueue — close regrade window", () => {
-  beforeEach(() => {
-    mockListRegradeRequests.mockResolvedValue([]);
-    mockCloseRegradeWindow.mockReset();
-  });
-
-  it("shows 'Close regrade window' button", () => {
-    render(
-      <RegradeQueue
-        assignmentId={ASSIGNMENT_ID}
-        essays={[]}
-        rubricCriteria={RUBRIC_CRITERIA}
-      />,
-      { wrapper },
-    );
-
-    expect(
-      screen.getByRole("button", { name: /close regrade window/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("shows confirmation dialog when close button is clicked", async () => {
-    render(
-      <RegradeQueue
-        assignmentId={ASSIGNMENT_ID}
-        essays={[]}
-        rubricCriteria={RUBRIC_CRITERIA}
-      />,
-      { wrapper },
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /close regrade window/i }),
-    );
-
-    expect(screen.getByRole("button", { name: /^confirm$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
-  });
-
-  it("calls closeRegradeWindow when confirmed", async () => {
-    mockCloseRegradeWindow.mockResolvedValue(undefined);
-
-    render(
-      <RegradeQueue
-        assignmentId={ASSIGNMENT_ID}
-        essays={[]}
-        rubricCriteria={RUBRIC_CRITERIA}
-      />,
-      { wrapper },
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /close regrade window/i }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
-
-    await waitFor(() => {
-      expect(mockCloseRegradeWindow).toHaveBeenCalledWith(ASSIGNMENT_ID);
-    });
-
-    // After closing, show "Regrade window closed" badge
-    expect(screen.getByText(/regrade window closed/i)).toBeInTheDocument();
-    // Log request tab should be hidden
-    expect(screen.queryByRole("tab", { name: /log request/i })).not.toBeInTheDocument();
-  });
-
-  it("cancels confirmation when cancel is clicked", async () => {
-    render(
-      <RegradeQueue
-        assignmentId={ASSIGNMENT_ID}
-        essays={[]}
-        rubricCriteria={RUBRIC_CRITERIA}
-      />,
-      { wrapper },
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /close regrade window/i }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
-
-    expect(mockCloseRegradeWindow).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: /close regrade window/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("shows a static error message when closeRegradeWindow rejects", async () => {
-    // Simulate the stub throwing a plain Error (backend endpoint not yet implemented).
-    mockCloseRegradeWindow.mockRejectedValue(
-      new Error("This feature is coming soon."),
-    );
-
-    render(
-      <RegradeQueue
-        assignmentId={ASSIGNMENT_ID}
-        essays={[]}
-        rubricCriteria={RUBRIC_CRITERIA}
-      />,
-      { wrapper },
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /close regrade window/i }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        /this feature is coming soon/i,
-      );
-    });
-
-    // The component must show its own static string, not the raw error message
-    // thrown by the stub. Verify the stub's own message text is not rendered
-    // verbatim — the component must rephrase it, not echo it.
-    const alertText = screen.getByRole("alert").textContent ?? "";
-    // "This feature is coming soon." is both the stub message and the mapped
-    // message, so assert the component produces its mapped suffix as the signal:
-    expect(alertText).toContain("not yet available");
-    // And raw Error artifacts must not appear:
-    expect(alertText).not.toMatch(/error:/i);
-    expect(alertText).not.toContain("throw");
   });
 });

@@ -31,7 +31,7 @@ import { getIntegritySummary } from "@/lib/api/integrity";
 import { BatchGradingPanel } from "@/components/grading/BatchGradingPanel";
 import { ExportPanel } from "@/components/grading/ExportPanel";
 import { RegradeQueue } from "@/components/grading/RegradeQueue";
-import type { RubricSnapshotCriterion } from "@/components/grading/EssayReviewPanel";
+import { parseRubricSnapshot } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -65,29 +65,6 @@ const ASSIGNMENT_STATUS_COLORS: Record<AssignmentStatus, string> = {
   complete: "bg-green-100 text-green-700",
   returned: "bg-purple-100 text-purple-700",
 };
-
-// ---------------------------------------------------------------------------
-// Rubric snapshot helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Parse criteria from the rubric_snapshot.
- * Matches the shape produced by the backend `build_rubric_snapshot` function.
- */
-function parseCriteria(
-  snapshot: Record<string, unknown>,
-): RubricSnapshotCriterion[] {
-  const raw = snapshot.criteria;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((c) => ({
-    id: String((c as Record<string, unknown>).id ?? ""),
-    name: String((c as Record<string, unknown>).name ?? "Unnamed"),
-    description: String((c as Record<string, unknown>).description ?? ""),
-    weight: Number((c as Record<string, unknown>).weight ?? 0),
-    min_score: Number((c as Record<string, unknown>).min_score ?? 0),
-    max_score: Number((c as Record<string, unknown>).max_score ?? 0),
-  }));
-}
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -439,7 +416,7 @@ export default function AssignmentOverviewPage() {
               <RegradeQueue
                 assignmentId={assignmentId}
                 essays={essays ?? []}
-                rubricCriteria={parseCriteria(
+                rubricCriteria={parseRubricSnapshot(
                   assignment.rubric_snapshot as Record<string, unknown>,
                 )}
               />

@@ -12,8 +12,10 @@
  *   text field (max 500 chars), submit.
  * - Side-by-side review panel: original score + AI justification, dispute text.
  * - Approve controls: optional score override, confirm button.
- * - Deny controls: required resolution note, confirm button.
- * - Close regrade window action (teacher-explicit, with confirmation).
+ * - Deny controls: required resolution note (max 5000 chars), confirm button.
+ *
+ * Note: The "close regrade window" action requires a backend endpoint that
+ * is not yet implemented. It will be wired up in a future milestone.
  *
  * Security:
  * - No student PII is included in log output — only entity IDs.
@@ -32,7 +34,6 @@ import {
   listRegradeRequests,
   createRegradeRequest,
   resolveRegradeRequest,
-  closeRegradeWindow,
 } from "@/lib/api/regrade-requests";
 import type {
   RegradeRequest,
@@ -81,7 +82,7 @@ function createErrorMessage(err: unknown): string {
       case "FORBIDDEN":
         return "You do not have permission to submit this request.";
       case "NOT_FOUND":
-        return "Grade not found. Please refresh the page.";
+        return "Grade or criterion not found. Please refresh the page.";
       case "REGRADE_WINDOW_CLOSED":
         return "The regrade submission window has closed. No new requests can be submitted.";
       case "REGRADE_REQUEST_LIMIT_REACHED":
@@ -101,29 +102,19 @@ function resolveErrorMessage(err: unknown): string {
       case "NOT_FOUND":
         return "Regrade request not found. Please refresh.";
       case "VALIDATION_ERROR":
-        return "A resolution note is required when denying a request.";
+        switch (err.field) {
+          case "resolution_note":
+            return "A resolution note is required when denying a request.";
+          case "new_criterion_score":
+            return "The score override must be within the rubric range for this criterion.";
+          default:
+            return "Please review the resolution details and try again.";
+        }
       default:
         return "Failed to resolve the request. Please try again.";
     }
   }
   return "Failed to resolve the request. Please try again.";
-}
-
-function closeWindowErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case "FORBIDDEN":
-        return "You do not have permission to close the regrade window.";
-      case "NOT_FOUND":
-        return "Assignment not found. Please refresh the page.";
-      default:
-        return "Failed to close the regrade window. Please try again.";
-    }
-  }
-  // Non-ApiError means the backend endpoint isn't implemented yet (stub throws
-  // a plain Error). Show a static "coming soon" message instead of a misleading
-  // "failed — retry" message (retrying will always fail until the route ships).
-  return "This feature is coming soon and is not yet available.";
 }
 
 // ---------------------------------------------------------------------------
@@ -421,10 +412,14 @@ function ReviewPanel({
                         value={resolutionNote}
                         onChange={(e) => setResolutionNote(e.target.value)}
                         rows={4}
+                        maxLength={5000}
                         aria-required="true"
                         placeholder="Explain why the request is being denied…"
                         className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
+                      <p className="mt-1 text-right text-xs text-gray-400">
+                        {resolutionNote.length} / 5000
+                      </p>
                     </div>
                   )}
 
@@ -443,9 +438,13 @@ function ReviewPanel({
                         value={resolutionNote}
                         onChange={(e) => setResolutionNote(e.target.value)}
                         rows={3}
+                        maxLength={5000}
                         placeholder="Optional note for your records…"
                         className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
+                      <p className="mt-1 text-right text-xs text-gray-400">
+                        {resolutionNote.length} / 5000
+                      </p>
                     </div>
                   )}
 
@@ -749,9 +748,6 @@ export function RegradeQueue({
   const [statusFilter, setStatusFilter] = useState<
     "all" | "open" | "resolved"
   >("open");
-  const [closeConfirming, setCloseConfirming] = useState(false);
-  const [closeError, setCloseError] = useState<string | null>(null);
-  const [windowClosed, setWindowClosed] = useState(false);
 
   const tabId = useId();
 
@@ -765,22 +761,6 @@ export function RegradeQueue({
     queryFn: () => listRegradeRequests(assignmentId),
     enabled: !!assignmentId,
     staleTime: 30_000,
-  });
-
-  const closeMutation = useMutation({
-    mutationFn: () => closeRegradeWindow(assignmentId),
-    onSuccess: () => {
-      setCloseConfirming(false);
-      setWindowClosed(true);
-      setCloseError(null);
-      // Switch to queue tab — the log tab is removed when the window is closed,
-      // and leaving activeTab === "log" would keep the log panel visible with
-      // aria-labelledby pointing to a non-existent element.
-      setActiveTab("queue");
-    },
-    onError: (err) => {
-      setCloseError(closeWindowErrorMessage(err));
-    },
   });
 
   const handleResolve = useCallback(
@@ -812,7 +792,7 @@ export function RegradeQueue({
     e: React.KeyboardEvent<HTMLButtonElement>,
     currentTab: "queue" | "log",
   ) => {
-    const availableTabs = (windowClosed ? ["queue"] : ["queue", "log"]) as Array<"queue" | "log">;
+    const availableTabs: Array<"queue" | "log"> = ["queue", "log"];
     const currentIndex = availableTabs.indexOf(currentTab);
     let nextIndex = currentIndex;
 
@@ -843,7 +823,7 @@ export function RegradeQueue({
 
   return (
     <section aria-labelledby={`${tabId}-heading`}>
-      {/* Section heading + close window action */}
+      {/* Section heading */}
       <div className="mb-4 flex items-center justify-between">
         <h2
           id={`${tabId}-heading`}
@@ -856,52 +836,6 @@ export function RegradeQueue({
             </span>
           )}
         </h2>
-
-        {/* Close regrade window */}
-        {!windowClosed ? (
-          <div className="flex items-center gap-2">
-            {closeError && (
-              <p role="alert" className="text-xs text-red-600">{closeError}</p>
-            )}
-            {closeConfirming ? (
-              <>
-                <span className="text-sm text-gray-600">
-                  Close the regrade window? No new requests will be accepted.
-                </span>
-                {/* The Confirm button calls the mutation which calls closeRegradeWindow.
-                    The stub always throws (backend endpoint not yet implemented),
-                    so onError fires and shows the "coming soon" message via closeError. */}
-                <button
-                  type="button"
-                  onClick={() => closeMutation.mutate()}
-                  disabled={closeMutation.isPending}
-                  className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:opacity-50"
-                >
-                  {closeMutation.isPending ? "Closing…" : "Confirm"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCloseConfirming(false)}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setCloseConfirming(true)}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-              >
-                Close regrade window
-              </button>
-            )}
-          </div>
-        ) : (
-          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
-            Regrade window closed
-          </span>
-        )}
       </div>
 
       {/* Tabs: Queue | Log Request */}
@@ -926,24 +860,22 @@ export function RegradeQueue({
         >
           Queue
         </button>
-        {!windowClosed && (
-          <button
-            role="tab"
-            aria-selected={activeTab === "log"}
-            aria-controls={`${tabId}-log-panel`}
-            id={`${tabId}-log-tab`}
-            tabIndex={activeTab === "log" ? 0 : -1}
-            onClick={() => setActiveTab("log")}
-            onKeyDown={(e) => handleTabKeyDown(e, "log")}
-            className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
-              activeTab === "log"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Log request
-          </button>
-        )}
+        <button
+          role="tab"
+          aria-selected={activeTab === "log"}
+          aria-controls={`${tabId}-log-panel`}
+          id={`${tabId}-log-tab`}
+          tabIndex={activeTab === "log" ? 0 : -1}
+          onClick={() => setActiveTab("log")}
+          onKeyDown={(e) => handleTabKeyDown(e, "log")}
+          className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
+            activeTab === "log"
+              ? "border-b-2 border-blue-600 text-blue-600"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Log request
+        </button>
       </div>
 
       {/* Queue tab panel */}
@@ -1108,28 +1040,25 @@ export function RegradeQueue({
         )}
       </div>
 
-      {/* Log request tab panel — only rendered while the window is open so that
-          aria-labelledby always points to the existing log tab button. */}
-      {!windowClosed && (
-        <div
-          role="tabpanel"
-          id={`${tabId}-log-panel`}
-          aria-labelledby={`${tabId}-log-tab`}
-          hidden={activeTab !== "log"}
-        >
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold text-gray-900">
-              Log a regrade request
-            </h3>
-            <LogRequestForm
-              essays={essays}
-              rubricCriteria={rubricCriteria}
-              onSuccess={handleLogSuccess}
-              onCancel={() => setActiveTab("queue")}
-            />
-          </div>
+      {/* Log request tab panel */}
+      <div
+        role="tabpanel"
+        id={`${tabId}-log-panel`}
+        aria-labelledby={`${tabId}-log-tab`}
+        hidden={activeTab !== "log"}
+      >
+        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <h3 className="mb-4 text-sm font-semibold text-gray-900">
+            Log a regrade request
+          </h3>
+          <LogRequestForm
+            essays={essays}
+            rubricCriteria={rubricCriteria}
+            onSuccess={handleLogSuccess}
+            onCancel={() => setActiveTab("queue")}
+          />
         </div>
-      )}
+      </div>
 
       {/* Review panel modal */}
       {selectedRequest && (
