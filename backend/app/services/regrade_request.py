@@ -337,7 +337,9 @@ async def resolve_regrade_request(
         raise ForbiddenError("You do not have access to this regrade request.")
 
     # Acquire a row-level lock so that concurrent resolve calls cannot both
-    # observe status == open and both write conflicting resolutions.
+    # observe status == open and both write conflicting resolutions. The lock
+    # is held until db.commit() at the end of the resolution pipeline, covering
+    # the full status-check → mutation → audit-write sequence.
     await db.execute(
         select(RegradeRequest.id)
         .where(RegradeRequest.id == request_id)
