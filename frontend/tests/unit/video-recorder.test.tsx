@@ -229,7 +229,7 @@ describe("VideoRecorder — MIME type", () => {
 
     await waitFor(() => {
       expect(mockUpload).toHaveBeenCalledTimes(1);
-      const [_gradeId, blob] = mockUpload.mock.calls[0] as [string, Blob, number];
+      const [, blob] = mockUpload.mock.calls[0] as [string, Blob, number];
       // The blob should have the video/webm MIME type.
       expect(blob.type).toBe("video/webm");
     });
@@ -336,8 +336,11 @@ describe("VideoRecorder — permission denied", () => {
   it("shows a camera-denied error and falls back to audio-only when getUserMedia(video) is denied", async () => {
     // Reject the first getUserMedia (video+audio), succeed on second (audio only).
     const audioOnlyStream = makeMockStream();
+    const notAllowedError = Object.assign(new Error("Permission denied"), {
+      name: "NotAllowedError",
+    });
     mockGetUserMedia
-      .mockRejectedValueOnce(new Error("NotAllowedError"))
+      .mockRejectedValueOnce(notAllowedError)
       .mockResolvedValueOnce(audioOnlyStream);
 
     const user = userEvent.setup();
@@ -364,7 +367,10 @@ describe("VideoRecorder — permission denied", () => {
   });
 
   it("shows a combined error when both video and audio are denied", async () => {
-    mockGetUserMedia.mockRejectedValue(new Error("NotAllowedError"));
+    const notAllowedError = Object.assign(new Error("Permission denied"), {
+      name: "NotAllowedError",
+    });
+    mockGetUserMedia.mockRejectedValue(notAllowedError);
 
     const user = userEvent.setup();
     render(<VideoRecorder gradeId="grade-test-001" isLocked={false} />, {

@@ -58,6 +58,28 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** Safely call element.play() and swallow autoplay-blocked rejections. */
+function safePlay(el: HTMLVideoElement | null): void {
+  if (!el) return;
+  const result = el.play();
+  if (result && typeof result.catch === "function") {
+    result.catch(() => {
+      // Autoplay may be blocked — user can retry.
+    });
+  }
+}
+
+/**
+ * Returns true when the DOMException name indicates a permission denial,
+ * as opposed to hardware errors (NotFoundError, NotReadableError, etc.).
+ */
+function isPermissionDenied(err: unknown): boolean {
+  if (err instanceof Error) {
+    return err.name === "NotAllowedError" || err.name === "PermissionDeniedError";
+  }
+  return false;
+}
+
 function recordErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
@@ -131,12 +153,7 @@ function VideoCommentRow({
   const handlePlay = useCallback(async () => {
     setUrlError(null);
     if (playUrl) {
-      const result = videoRef.current?.play();
-      if (result && typeof result.catch === "function") {
-        result.catch(() => {
-          // Autoplay may be blocked — user can retry.
-        });
-      }
+      safePlay(videoRef.current);
       return;
     }
     setIsLoadingUrl(true);
@@ -153,13 +170,8 @@ function VideoCommentRow({
 
   // Auto-play when URL first becomes available.
   useEffect(() => {
-    if (playUrl && videoRef.current) {
-      const result = videoRef.current.play();
-      if (result && typeof result.catch === "function") {
-        result.catch(() => {
-          // Blocked — user pressed play anyway.
-        });
-      }
+    if (playUrl) {
+      safePlay(videoRef.current);
     }
   }, [playUrl]);
 
@@ -230,9 +242,9 @@ function VideoCommentRow({
 export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
   const queryClient = useQueryClient();
 
-  // Existing comments query.
+  // Existing comments query — shared key with AudioRecorder; filter to video only.
   const commentsQuery = useQuery({
-    queryKey: ["video-comments", gradeId],
+    queryKey: ["media-comments", gradeId],
     queryFn: () => listGradeMediaComments(gradeId),
     staleTime: 60_000,
   });
@@ -326,8 +338,16 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
       // Webcam + microphone recording.
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      } catch {
-        // Camera denied — offer audio-only fallback.
+      } catch (videoErr) {
+        // Only offer audio-only fallback for permission denials, not hardware errors.
+        const isDenied = isPermissionDenied(videoErr);
+        if (!isDenied) {
+          setPermissionError(
+            "Camera is unavailable or in use. Please check your device and try again.",
+          );
+          return;
+        }
+        // Camera access denied — offer audio-only fallback.
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           audioOnlyFallback = true;
@@ -361,7 +381,9 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
           : new MediaRecorder(stream);
     } catch (err) {
       // MediaRecorder not supported in this browser.
-      console.error("MediaRecorder initialization failed:", err);
+      console.error("MediaRecorder initialization failed:", {
+        error_type: err instanceof Error ? err.constructor.name : typeof err,
+      });
       stream.getTracks().forEach((t) => t.stop());
       setPermissionError(
         "Video recording is not supported in this browser. Please try a different browser.",
@@ -419,7 +441,7 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
       setCountdown(MAX_DURATION_SECONDS);
       setIsAudioFallback(false);
       void queryClient.invalidateQueries({
-        queryKey: ["video-comments", gradeId],
+        queryKey: ["media-comments", gradeId],
       });
     },
     onError: (err) => {
@@ -437,11 +459,14 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
 
   const handleCommentDeleted = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: ["video-comments", gradeId],
+      queryKey: ["media-comments", gradeId],
     });
   }, [gradeId, queryClient]);
 
-  const comments = commentsQuery.data ?? [];
+  // Filter to video-type comments only (audio comments are shown in AudioRecorder).
+  const comments = (commentsQuery.data ?? []).filter((c) =>
+    c.mime_type.startsWith("video/"),
+  );
 
   return (
     <div className="space-y-3">
