@@ -533,6 +533,10 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
     page: null,
   };
 
+  // seedGradedEssay polls for up to 120 s + login overhead; raise the hook
+  // timeout well above Playwright's 30 s default so beforeAll doesn't time out.
+  test.setTimeout(180_000);
+
   test.beforeAll(async ({ browser }) => {
     // Clear stale emails so seedTeacher's waitForEmail() picks up the right
     // verification message.

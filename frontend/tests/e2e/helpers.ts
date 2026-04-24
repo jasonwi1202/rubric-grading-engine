@@ -425,7 +425,15 @@ export async function seedGradedEssay(
       `${API_BASE}/api/v1/assignments/${assignmentId}/grading-status`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    if (!statusRes.ok) continue;
+    if (!statusRes.ok) {
+      const text = await statusRes.text().catch(() => "");
+      if (statusRes.status < 500) {
+        throw new Error(
+          `seedGradedEssay (poll grading status) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
+        );
+      }
+      continue;
+    }
     const statusBody = (await statusRes.json()) as {
       data: { status: string };
     };
