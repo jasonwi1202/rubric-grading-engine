@@ -58,6 +58,11 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
+    from app.config import settings
+    from app.logging_config import configure_logging
+
+    configure_logging(settings.log_level)
+
     application = FastAPI(
         title="Rubric Grading Engine",
         version="0.1.0",
@@ -83,7 +88,11 @@ def _register_middleware(application: FastAPI) -> None:
     from redis.asyncio import Redis
 
     from app.config import settings
-    from app.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+    from app.middleware import (
+        CorrelationIdMiddleware,
+        RateLimitMiddleware,
+        SecurityHeadersMiddleware,
+    )
 
     # Create a single Redis client for rate limiting.  Stored in app.state so
     # the lifespan handler can call aclose() on graceful shutdown, preventing
@@ -96,10 +105,12 @@ def _register_middleware(application: FastAPI) -> None:
     # last call here is the *outermost* middleware (runs first on a request,
     # last on a response).
     #
-    # Desired request flow:  SecurityHeaders → CORS → RateLimit → App
-    # Desired response flow: App → RateLimit → CORS → SecurityHeaders
+    # Desired request flow:  CorrelationId → SecurityHeaders → CORS → RateLimit → App
+    # Desired response flow: App → RateLimit → CORS → SecurityHeaders → CorrelationId
     #
     # This ensures:
+    #   - Correlation IDs are available to ALL downstream middleware and route
+    #     handlers so that every log line during a request carries the ID.
     #   - Security headers appear on ALL responses, including CORS preflight
     #     responses (OPTIONS).  CORSMiddleware can short-circuit and return a
     #     preflight response without calling the inner app; if SecurityHeaders
@@ -119,12 +130,18 @@ def _register_middleware(application: FastAPI) -> None:
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-Correlation-Id"],
+        expose_headers=["X-Correlation-Id"],
     )
 
-    # 3. Security headers — outermost (added last); headers are applied to
-    #    every response, including CORS preflight 200s and rate-limit 429s.
+    # 3. Security headers — wraps CORS so headers are applied to every
+    #    response, including CORS preflight 200s and rate-limit 429s.
     application.add_middleware(SecurityHeadersMiddleware)
+
+    # 4. Correlation ID — outermost (added last); runs first on a request so
+    #    that correlation_id_var is set before any other middleware or handler
+    #    emits log lines.
+    application.add_middleware(CorrelationIdMiddleware)
 
 
 # ---------------------------------------------------------------------------

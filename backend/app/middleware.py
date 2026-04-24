@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 
 from redis.asyncio import Redis
@@ -34,6 +35,57 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Correlation ID
+# ---------------------------------------------------------------------------
+
+
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    """Generate and propagate a correlation ID for every HTTP request.
+
+    - Reads ``X-Correlation-Id`` from the incoming request if present;
+      falls back to a freshly generated UUID4.
+    - Stores the ID on ``request.state.correlation_id`` for downstream
+      route handlers and services.
+    - Sets ``correlation_id_var`` (from ``app.logging_config``) so that all
+      log lines emitted during the request carry the same ID.
+    - Echoes the ID back in the ``X-Correlation-Id`` response header so that
+      clients and log aggregators can correlate request logs with responses.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        from app.logging_config import correlation_id_var  # noqa: PLC0415
+
+        raw_id = request.headers.get("X-Correlation-Id", "")
+        # Accept client-supplied IDs only when they are valid UUID4 strings.
+        # Reject anything else to prevent log injection or log bloat.
+        if raw_id:
+            try:
+                parsed = uuid.UUID(raw_id)
+            except ValueError:
+                correlation_id = str(uuid.uuid4())
+            else:
+                if parsed.version == 4 and str(parsed) == raw_id.lower():
+                    correlation_id = str(parsed)
+                else:
+                    correlation_id = str(uuid.uuid4())
+        else:
+            correlation_id = str(uuid.uuid4())
+        request.state.correlation_id = correlation_id
+        token = correlation_id_var.set(correlation_id)
+        try:
+            response = await call_next(request)
+        finally:
+            correlation_id_var.reset(token)
+
+        response.headers["X-Correlation-Id"] = correlation_id
+        return response
+
 
 # ---------------------------------------------------------------------------
 # Security headers

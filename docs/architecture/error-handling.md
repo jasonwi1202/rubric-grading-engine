@@ -196,6 +196,78 @@ logger.error("Grading task failed", error=str(exc))
 
 ---
 
+## Structured JSON Logging
+
+All services (API and Celery workers) emit structured JSON log lines via `app.logging_config`. Every log line includes the following fixed fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `timestamp` | ISO-8601 UTC | e.g. `"2025-01-15T14:32:01.123Z"` |
+| `level` | string | Python level name (`INFO`, `WARNING`, `ERROR`, …) |
+| `logger` | string | Dotted logger name (e.g. `app.services.grading`) |
+| `service` | string | Always `"rubric-grading-engine"` |
+| `correlation_id` | string | Per-request UUID (empty string outside a request) |
+| `message` | string | Formatted log message |
+
+Additional fields from `extra=` keyword arguments are merged into the object. Only entity IDs (`essay_id`, `grade_id`, etc.) and operational metadata should appear there — **never student names, essay content, or scores**.
+
+Exception type (`error_type`) is included when an exception is present, but **exception messages and tracebacks are never emitted** — they can contain student PII from database error messages or LLM response fragments.
+
+---
+
+## Correlation IDs
+
+A correlation ID is a UUID4 generated (or echoed from `X-Correlation-Id` request header) by `CorrelationIdMiddleware` for every HTTP request. Client-supplied values are accepted only if they parse as a valid UUID4 (standard 36-character canonical form); any other value causes a fresh UUID4 to be generated. It is:
+
+- Stored in `app.logging_config.correlation_id_var` (a `ContextVar`) for the request lifetime.
+- Included in all log lines emitted during the request via `CorrelationIdFilter`.
+- Echoed in the `X-Correlation-Id` response header.
+- Propagated to Celery tasks via the task message headers (`before_task_publish` signal) and restored in the worker (`task_prerun` signal) so that background task log lines carry the same ID as the originating HTTP request.
+
+---
+
+## Health Check Endpoint
+
+`GET /api/v1/health` returns dependency reachability status. No authentication is required (used by load balancers and Railway probes).
+
+Follows the standard `{"data": ...}` response envelope from `api-design.md`.
+
+**Response shape (HTTP 200 — all healthy):**
+
+```json
+{
+  "data": {
+    "status": "ok",
+    "service": "rubric-grading-engine-api",
+    "version": "0.1.0",
+    "dependencies": {
+      "database": "ok",
+      "redis": "ok"
+    }
+  }
+}
+```
+
+**Response shape (HTTP 503 — one or more dependencies unavailable):**
+
+```json
+{
+  "data": {
+    "status": "degraded",
+    "service": "rubric-grading-engine-api",
+    "version": "0.1.0",
+    "dependencies": {
+      "database": "unavailable",
+      "redis": "ok"
+    }
+  }
+}
+```
+
+The response body is always present regardless of status code. Clients should parse `data.dependencies` to determine which specific dependency is unhealthy. The `version` field is read from `importlib.metadata` and reflects the installed package version from `pyproject.toml`.
+
+---
+
 ## Frontend Error Handling
 
 The frontend should:
