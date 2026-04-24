@@ -25,6 +25,7 @@ import {
   loginApi,
   seedAssignment,
   seedClass,
+  seedGradedEssay,
   seedRubric,
   seedStudent,
   seedTeacher,
@@ -511,32 +512,241 @@ test.describe("Journey 2 — Grading: upload → auto-assign → batch grade →
 // Journey 3: Open review queue → override score → edit feedback → lock grade
 // ---------------------------------------------------------------------------
 test.describe("Journey 3 — Review: open queue → override → edit feedback → lock", () => {
-  test.skip(true, STUB);
+  // All four steps share state (assignment ID, essay ID, browser session) and
+  // must run in order.  A single browser context persists so the auth cookie
+  // carries across navigations.
+  test.describe.configure({ mode: "serial" });
 
-  test("teacher opens review queue and sees AI-generated grades", async ({
-    page,
-  }) => {
-    void page;
-    expect(true).toBe(true);
+  const state: {
+    email: string;
+    password: string;
+    assignmentId: string;
+    essayId: string;
+    context: BrowserContext | null;
+    page: Page | null;
+  } = {
+    email: "",
+    password: "",
+    assignmentId: "",
+    essayId: "",
+    context: null,
+    page: null,
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    // Clear stale emails so seedTeacher's waitForEmail() picks up the right
+    // verification message.
+    await clearMailpit();
+
+    // Seed a complete graded-essay fixture independently of Journeys 1 & 2.
+    // seedGradedEssay: creates teacher → class → student → rubric → assignment
+    //                  → uploads essay → triggers batch grading → polls until done.
+    const fixture = await seedGradedEssay("journey3");
+    state.email = fixture.email;
+    state.password = fixture.password;
+    state.assignmentId = fixture.assignmentId;
+    state.essayId = fixture.essayId;
+
+    // Create a browser context and log in via the UI form so the browser holds
+    // a valid refresh_token httpOnly cookie for all subsequent tests.
+    state.context = await browser.newContext({
+      baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    });
+    state.page = await state.context.newPage();
+
+    await state.page.goto("/dashboard");
+    await expect(state.page).toHaveURL(/\/login/);
+    await state.page.getByLabel("Email").fill(state.email);
+    await state.page.getByLabel("Password").fill(state.password);
+    await state.page.getByRole("button", { name: /sign in/i }).click();
+    await expect(state.page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
   });
 
-  test("teacher overrides a criterion score and sees it saved", async ({
-    page,
-  }) => {
-    void page;
-    expect(true).toBe(true);
+  test.afterAll(async () => {
+    await state.context?.close();
   });
 
-  test("teacher edits feedback text and sees it saved", async ({ page }) => {
-    void page;
-    expect(true).toBe(true);
+  // ── Test 1: Review queue ──────────────────────────────────────────────────
+
+  test("teacher opens review queue and sees AI-generated grades", async () => {
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
+
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
+
+    // The review queue page heading confirms we landed on the right route.
+    await expect(
+      page.getByRole("heading", { name: /review queue/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The seeded essay was graded in beforeAll, so its status is "graded"
+    // which maps to "Unreviewed" in the review queue UI.
+    await expect(page.getByText("Unreviewed")).toBeVisible({ timeout: 10_000 });
+
+    // The essay list must render at least one clickable listitem link.
+    await expect(page.getByRole("listitem").first()).toBeVisible({ timeout: 5_000 });
   });
 
-  test("teacher locks a grade and controls become read-only", async ({
-    page,
-  }) => {
-    void page;
-    expect(true).toBe(true);
+  // ── Test 2: Override score, assert live total update ──────────────────────
+
+  test("teacher overrides a criterion score and weighted total updates in real time", async () => {
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
+
+    // Navigate directly to the essay review panel.
+    await page.goto(
+      `/dashboard/assignments/${state.assignmentId}/review/${state.essayId}`,
+    );
+
+    // The total-score element renders once the grade API call resolves.
+    // Its aria-label is "Total score: X out of Y".
+    const totalScoreEl = page.locator('[aria-label^="Total score:"]');
+    await expect(totalScoreEl).toBeVisible({ timeout: 15_000 });
+
+    // Parse the initial total from the aria-label.
+    const initialAriaLabel =
+      (await totalScoreEl.getAttribute("aria-label")) ?? "";
+    const initialTotal = parseInt(
+      initialAriaLabel.match(/total score:\s*(\d+)/i)?.[1] ?? "0",
+      10,
+    );
+
+    // Find all criterion score inputs (spinbuttons).
+    // The seeded rubric has 2 criteria, so there are exactly 2 inputs.
+    const scoreInputs = page.getByRole("spinbutton");
+    await expect(scoreInputs.first()).toBeVisible({ timeout: 5_000 });
+    const firstInput = scoreInputs.first();
+    const currentValue = parseInt(await firstInput.inputValue(), 10);
+
+    // Pick a new value within [1, 5] that differs from the current value.
+    const newScore = currentValue >= 5 ? currentValue - 1 : currentValue + 1;
+
+    // Fill the input — the live total recalculates immediately via onChange
+    // (no blur required for the real-time assertion).
+    await firstInput.fill(String(newScore));
+    const expectedTotal = initialTotal + (newScore - currentValue);
+
+    await expect(totalScoreEl).toHaveAttribute(
+      "aria-label",
+      new RegExp(`total score:\\s*${expectedTotal}\\s+out of`, "i"),
+      { timeout: 5_000 },
+    );
+
+    // Blur to trigger the auto-save PATCH call.
+    await firstInput.blur();
+
+    // Wait for "Saving…" to clear — signals the mutation completed.
+    await page
+      .waitForSelector("text=Saving", { state: "visible", timeout: 5_000 })
+      .catch(() => {
+        /* may disappear before we check */
+      });
+    await page
+      .waitForSelector("text=Saving", { state: "hidden", timeout: 20_000 })
+      .catch(() => {
+        /* already gone */
+      });
+
+    // The input must retain the overridden value after the save round-trip.
+    await expect(firstInput).toHaveValue(String(newScore));
+  });
+
+  // ── Test 3: Edit feedback, verify auto-save ───────────────────────────────
+
+  test("teacher edits summary feedback text and panel shows updated text", async () => {
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
+
+    // The page should still be on the essay review panel from Test 2.
+    const feedbackTextarea = page.getByLabel("Overall summary feedback");
+    await expect(feedbackTextarea).toBeVisible({ timeout: 10_000 });
+
+    // The textarea must be editable (not disabled) for an unlocked grade.
+    await expect(feedbackTextarea).toBeEnabled();
+
+    // Replace the feedback with a unique string to prove the save sticks.
+    const updatedFeedback = `E2E Journey 3 feedback — ${Date.now()}`;
+    await feedbackTextarea.fill(updatedFeedback);
+
+    // Verify the UI immediately reflects the typed text.
+    await expect(feedbackTextarea).toHaveValue(updatedFeedback);
+
+    // Blur triggers the auto-save mutation (PATCH /grades/{gradeId}/feedback).
+    await feedbackTextarea.blur();
+
+    // Wait for "Saving…" to clear.
+    await page
+      .waitForSelector("text=Saving", { state: "visible", timeout: 5_000 })
+      .catch(() => {});
+    await page
+      .waitForSelector("text=Saving", { state: "hidden", timeout: 20_000 })
+      .catch(() => {});
+
+    // The textarea must still contain the updated feedback after the save.
+    await expect(feedbackTextarea).toHaveValue(updatedFeedback);
+  });
+
+  // ── Test 4: Lock grade, verify read-only controls + locked badge ──────────
+
+  test("teacher locks a grade and controls become read-only; locked badge visible in review queue", async () => {
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
+
+    // The page is still on the essay review panel from Test 3.
+    // aria-label when unlocked: "Lock this grade as final — no further edits will be allowed"
+    const lockButton = page.getByRole("button", {
+      name: /lock this grade as final/i,
+    });
+    await expect(lockButton).toBeEnabled({ timeout: 5_000 });
+    await lockButton.click();
+
+    // After locking the button's aria-label changes to "Grade is already locked"
+    // and the button becomes disabled.
+    await expect(
+      page.getByRole("button", { name: /grade is already locked/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The "Locked" badge renders in the total-score banner with aria-label
+    // "This grade is locked".
+    await expect(page.getByLabel("This grade is locked")).toBeVisible();
+
+    // All criterion score inputs must be disabled (read-only).
+    const scoreInputs = page.getByRole("spinbutton");
+    const inputCount = await scoreInputs.count();
+    expect(inputCount).toBeGreaterThan(0);
+    for (let i = 0; i < inputCount; i++) {
+      await expect(scoreInputs.nth(i)).toBeDisabled();
+    }
+
+    // The summary feedback textarea must also be disabled.
+    await expect(page.getByLabel("Overall summary feedback")).toBeDisabled();
+
+    // ── Navigate back to the review queue ────────────────────────────────────
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
+
+    // The essay's list-item link aria-label includes "status: Locked"
+    // once the essay transitions to the "locked" backend status.
+    await expect(
+      page.getByRole("link", { name: /status:\s*locked/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // ── Reload the review page and confirm controls remain disabled ───────────
+    await page.goto(
+      `/dashboard/assignments/${state.assignmentId}/review/${state.essayId}`,
+    );
+
+    // Score inputs must stay disabled after a full page navigation.
+    const scoreInputsReloaded = page.getByRole("spinbutton");
+    await expect(scoreInputsReloaded.first()).toBeVisible({ timeout: 15_000 });
+    const reloadedCount = await scoreInputsReloaded.count();
+    for (let i = 0; i < reloadedCount; i++) {
+      await expect(scoreInputsReloaded.nth(i)).toBeDisabled();
+    }
+
+    // Summary feedback textarea must also remain disabled.
+    await expect(
+      page.getByLabel("Overall summary feedback"),
+    ).toBeDisabled({ timeout: 10_000 });
   });
 });
 
