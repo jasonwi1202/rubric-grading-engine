@@ -141,6 +141,34 @@ class TestJsonFormatterExtraFields:
         output = json.loads(formatter.format(record))
         assert output.get("error_type") == "LLMError"
 
+    def test_reserved_fields_cannot_be_overwritten_by_extra(
+        self, formatter: JsonFormatter
+    ) -> None:
+        """Fixed output fields must not be overrideable via extra= kwargs."""
+        record = logging.LogRecord(
+            name="app.test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="real message",
+            args=(),
+            exc_info=None,
+        )
+        # Simulate a caller passing reserved field names via extra=.
+        record.timestamp = "1970-01-01T00:00:00.000Z"  # type: ignore[attr-defined]
+        record.level = "FAKE"  # type: ignore[attr-defined]
+        record.logger = "attacker.module"  # type: ignore[attr-defined]
+        record.service = "evil-service"  # type: ignore[attr-defined]
+        record.correlation_id = ""  # type: ignore[attr-defined]
+
+        output = json.loads(formatter.format(record))
+        # Fixed fields must reflect the real LogRecord values, not extra= overrides.
+        assert output["level"] == "INFO"
+        assert output["logger"] == "app.test"
+        assert output["service"] == "rubric-grading-engine"
+        assert output["message"] == "real message"
+        assert output["timestamp"] != "1970-01-01T00:00:00.000Z"
+
 
 # ---------------------------------------------------------------------------
 # JsonFormatter — PII safety (exception messages never in output)

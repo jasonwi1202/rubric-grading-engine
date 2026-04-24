@@ -17,6 +17,7 @@ balancers and Railway health-check probes can reach it without credentials.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.metadata
 import logging
 
@@ -36,14 +37,20 @@ except importlib.metadata.PackageNotFoundError:
 
 
 async def _check_database() -> bool:
-    """Return ``True`` if the database accepts a trivial query, ``False`` otherwise."""
+    """Return ``True`` if the database accepts a trivial query, ``False`` otherwise.
+
+    Enforces a 3-second timeout so that a stalled TCP/DNS connection does not
+    block the health endpoint indefinitely (which would cause load balancer
+    probes to time out rather than receive a 503).
+    """
     try:
         import sqlalchemy  # noqa: PLC0415
 
         from app.db.session import engine  # noqa: PLC0415
 
-        async with engine.connect() as conn:
-            await conn.execute(sqlalchemy.text("SELECT 1"))
+        async with asyncio.timeout(3):
+            async with engine.connect() as conn:
+                await conn.execute(sqlalchemy.text("SELECT 1"))
         return True
     except Exception as exc:
         logger.warning(

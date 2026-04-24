@@ -91,6 +91,14 @@ class JsonFormatter(logging.Formatter):
     # Standard LogRecord attributes that must not be copied into the JSON
     # payload as extra fields.  Keeps the output compact and avoids
     # double-encoding already-present fixed fields.
+    #
+    # Also includes the names of the *fixed* output fields (timestamp, level,
+    # logger, service, correlation_id, message) so that callers cannot spoof
+    # those fields via ``extra=`` keyword arguments.  ``error_type`` is
+    # intentionally excluded from this protection: it is an optional field
+    # that callers pass via ``extra={"error_type": ...}`` when logging without
+    # an exception; when exc_info *is* present the formatter's own assignment
+    # (which runs after the extra-field merge loop) always takes precedence.
     _SKIP: frozenset[str] = frozenset(
         {
             "args",
@@ -117,6 +125,11 @@ class JsonFormatter(logging.Formatter):
             "threadName",
             # Added by CorrelationIdFilter — already present in fixed fields.
             "correlation_id",
+            # Reserved fixed output field names — prevent extra= from spoofing them.
+            "timestamp",
+            "level",
+            "logger",
+            "service",
         }
     )
 
