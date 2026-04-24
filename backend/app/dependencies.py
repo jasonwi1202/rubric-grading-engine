@@ -131,14 +131,19 @@ async def get_db_for_teacher(
     Combines authentication and RLS activation in a single dependency:
     1. Validates the JWT and resolves the teacher (via ``get_current_teacher``).
     2. Calls ``set_tenant_context`` so the PostgreSQL RLS policies for the
-       authenticated teacher become active for all queries in this session.
+       authenticated teacher become active for all subsequent queries in this
+       session.
 
     FastAPI caches ``get_db`` within a request, so the ``db`` instance here
-    is the same session used by ``get_current_teacher``.  Calling
-    ``set_tenant_context`` here therefore activates RLS for all queries
-    issued by the route handler (and any service functions it calls).
+    is the same session used by ``get_current_teacher`` — the initial
+    ``users`` table lookup in that dependency runs without a tenant context
+    (the ``users`` table has no RLS) and completes before this dependency
+    sets the context.  All queries in the route handler that touch
+    tenant-scoped tables run after ``set_tenant_context`` is called here.
 
-    Usage::
+    Routers should declare this dependency once to get the session with RLS
+    already active, and declare ``get_current_teacher`` separately to receive
+    the resolved teacher object::
 
         @router.get("/classes")
         async def list_classes(
@@ -146,6 +151,9 @@ async def get_db_for_teacher(
             db: AsyncSession = Depends(get_db_for_teacher),
         ) -> ...:
             ...
+
+    Both dependencies share the same underlying ``get_db`` session instance
+    (FastAPI deduplicates identical generator dependencies per request).
     """
     await set_tenant_context(db, teacher.id)
     yield db
