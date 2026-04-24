@@ -266,7 +266,7 @@ describe("VideoRecorder — screen share toggle", () => {
     });
 
     expect(
-      screen.getByRole("checkbox", { name: /enable screen share/i }),
+      screen.getByRole("checkbox", { name: /share screen instead of webcam/i }),
     ).toBeInTheDocument();
   });
 
@@ -278,7 +278,7 @@ describe("VideoRecorder — screen share toggle", () => {
 
     // Enable screen share.
     const checkbox = screen.getByRole("checkbox", {
-      name: /enable screen share/i,
+      name: /share screen instead of webcam/i,
     });
     await user.click(checkbox);
     expect(checkbox).toBeChecked();
@@ -301,7 +301,7 @@ describe("VideoRecorder — screen share toggle", () => {
 
     // Enable screen share.
     await user.click(
-      screen.getByRole("checkbox", { name: /enable screen share/i }),
+      screen.getByRole("checkbox", { name: /share screen instead of webcam/i }),
     );
 
     // Start recording.
@@ -324,7 +324,7 @@ describe("VideoRecorder — screen share toggle", () => {
     });
 
     expect(
-      screen.queryByRole("checkbox", { name: /enable screen share/i }),
+      screen.queryByRole("checkbox", { name: /share screen instead of webcam/i }),
     ).not.toBeInTheDocument();
   });
 });
@@ -407,7 +407,7 @@ describe("VideoRecorder — permission denied", () => {
 
     // Enable screen share.
     await user.click(
-      screen.getByRole("checkbox", { name: /enable screen share/i }),
+      screen.getByRole("checkbox", { name: /share screen instead of webcam/i }),
     );
 
     await user.click(

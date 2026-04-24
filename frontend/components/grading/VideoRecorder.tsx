@@ -321,9 +321,15 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
       let screenStream: MediaStream;
       try {
         screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      } catch {
+      } catch (screenErr) {
+        console.error("Screen share failed:", {
+          error_type: screenErr instanceof Error ? screenErr.constructor.name : typeof screenErr,
+        });
+        const isDenied = isPermissionDenied(screenErr);
         setPermissionError(
-          "Screen share access was denied. Please allow screen sharing and try again.",
+          isDenied
+            ? "Screen share access was denied. Please allow screen sharing and try again."
+            : "Screen share is unavailable or could not be started. Please check your device/browser and try again.",
         );
         return;
       }
@@ -482,7 +488,6 @@ export function VideoRecorder({ gradeId, isLocked }: VideoRecorderProps) {
             type="checkbox"
             checked={screenShareEnabled}
             onChange={(e) => setScreenShareEnabled(e.target.checked)}
-            aria-label="Enable screen share recording"
             className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
           Share screen instead of webcam

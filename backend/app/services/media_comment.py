@@ -1,7 +1,7 @@
 """Media comment service.
 
 Business logic for creating, deleting, and accessing presigned URLs for
-audio comments attached to grades.
+audio and video comments attached to grades.
 
 Security invariants:
 - All queries include ``teacher_id`` to enforce tenant isolation — no separate
@@ -32,10 +32,10 @@ from app.storage.s3 import StorageError, delete_file, generate_presigned_url, up
 
 logger = logging.getLogger(__name__)
 
-# Maximum audio recording size: 50 MB.
+# Maximum media recording size: 50 MB.
 MAX_MEDIA_SIZE_BYTES = 50 * 1024 * 1024
 
-# Allowed MIME types for audio comments.
+# Allowed MIME types for audio and video comments.
 ALLOWED_MIME_TYPES = frozenset(
     [
         "audio/webm",
@@ -43,6 +43,9 @@ ALLOWED_MIME_TYPES = frozenset(
         "audio/ogg",
         "audio/ogg;codecs=opus",
         "audio/mp4",
+        "video/webm",
+        "video/webm;codecs=vp8,opus",
+        "video/webm;codecs=vp9,opus",
     ]
 )
 
@@ -56,6 +59,7 @@ _MIME_TO_EXT: dict[str, str] = {
     "audio/webm": ".webm",
     "audio/ogg": ".ogg",
     "audio/mp4": ".mp4",
+    "video/webm": ".webm",
 }
 
 # Sanity-check: every base MIME type in ALLOWED_MIME_TYPES must have an entry
@@ -153,15 +157,15 @@ async def create_media_comment(
     duration_seconds: int,
     mime_type: str,
 ) -> MediaCommentResponse:
-    """Upload audio to S3 and persist a MediaComment record.
+    """Upload audio or video to S3 and persist a MediaComment record.
 
     Args:
         db: Async database session.
         grade_id: UUID of the grade to attach the comment to.
         teacher_id: UUID of the authenticated teacher.
-        audio_bytes: Raw audio blob bytes.
+        audio_bytes: Raw media blob bytes (audio or video).
         duration_seconds: Recording length in seconds (client-supplied).
-        mime_type: MIME type of the recording (e.g. ``"audio/webm"``).
+        mime_type: MIME type of the recording (e.g. ``"audio/webm"`` or ``"video/webm"``).
 
     Returns:
         The created :class:`MediaCommentResponse`.

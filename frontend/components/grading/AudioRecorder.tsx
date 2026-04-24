@@ -386,7 +386,9 @@ export function AudioRecorder({ gradeId, isLocked }: AudioRecorderProps) {
     [gradeId, queryClient],
   );
 
-  const comments = commentsQuery.data ?? [];
+  const comments = (commentsQuery.data ?? []).filter((c) =>
+    c.mime_type.startsWith("audio/"),
+  );
 
   return (
     <div className="space-y-3">
