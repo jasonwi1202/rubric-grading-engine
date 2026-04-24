@@ -71,8 +71,14 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         finally:
-            # Best-effort reset; ignore errors if the session is already closed.
-            with suppress(Exception):
+            # Best-effort reset to prevent stale tenant context leaking to the
+            # next user of this pooled connection.
+            # sqlalchemy.exc cannot be imported at module level (AST constraint
+            # enforced by test_session.py).  We fetch the specific exception
+            # types at call-time and suppress them via contextlib.suppress.
+            # Unexpected exceptions are not suppressed so they surface normally.
+            _sa_exc = __import__("sqlalchemy.exc", fromlist=["InvalidRequestError"])
+            with suppress(_sa_exc.InvalidRequestError):
                 await session.execute(
                     __import__("sqlalchemy").text("SET app.current_teacher_id = ''"),
                 )

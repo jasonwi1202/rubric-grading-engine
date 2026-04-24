@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
 
+from redis.asyncio import Redis
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -120,9 +120,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     failure is logged at ERROR level so on-call staff can investigate.
     """
 
-    def __init__(self, app: object, redis_client: Any) -> None:
+    def __init__(self, app: object, redis_client: Redis[str]) -> None:
         super().__init__(app)  # type: ignore[arg-type]
-        self._redis: Any = redis_client
+        self._redis: Redis[str] = redis_client
 
     async def dispatch(
         self,

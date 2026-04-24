@@ -139,8 +139,7 @@ def upgrade() -> None:
         USING (
             teacher_id IS NULL
             AND is_template = true
-            AND current_setting('app.current_teacher_id', true) IS NOT NULL
-            AND current_setting('app.current_teacher_id', true) <> ''
+            AND NULLIF(current_setting('app.current_teacher_id', true), '') IS NOT NULL
         )
     """)
     )
