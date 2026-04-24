@@ -21,6 +21,7 @@ For one-off access outside a request (e.g. in Celery tasks)::
 
 import uuid
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio import (
@@ -60,9 +61,21 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Yield an ``AsyncSession`` and guarantee it is closed after the request."""
+    """Yield an ``AsyncSession`` and guarantee it is closed after the request.
+
+    On exit, the per-session ``app.current_teacher_id`` GUC is reset to ''
+    so that when the underlying connection is returned to the pool the next
+    borrower does not inherit a stale tenant context.
+    """
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        finally:
+            # Best-effort reset; ignore errors if the session is already closed.
+            with suppress(Exception):
+                await session.execute(
+                    __import__("sqlalchemy").text("SET app.current_teacher_id = ''"),
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -73,17 +86,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
     """Set the PostgreSQL session variable used by RLS tenant isolation policies.
 
-    Must be called within an open transaction before any query that touches a
-    tenant-scoped table (classes, students, rubrics, assignments, essays,
-    grades).  Uses ``SET LOCAL`` so the variable is automatically reset when
-    the transaction ends — safe for use with connection-pooled sessions.
+    Uses ``SET`` (session-level, not ``SET LOCAL``) so the variable persists
+    across transaction boundaries within the same session.  This is required
+    because service functions may call ``await db.commit()`` followed by
+    ``await db.refresh()``: the refresh opens a new implicit transaction, and
+    ``SET LOCAL`` would have been cleared at the previous commit.
+
+    The variable is reset to '' in ``get_db``'s finally block before the
+    connection is returned to the pool, preventing cross-request leakage.
 
     Example::
 
         async with AsyncSessionLocal() as db:
-            async with db.begin():
-                await set_tenant_context(db, teacher.id)
-                result = await db.execute(select(Class).where(...))
+            await set_tenant_context(db, teacher.id)
+            result = await db.execute(select(Class).where(...))
 
     Args:
         db: The active ``AsyncSession``.
@@ -95,6 +111,6 @@ async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
         # session.py only imports from `sqlalchemy.ext.asyncio`, not from the
         # synchronous `sqlalchemy` package.  Using __import__ at call-time
         # satisfies both the runtime requirement and that AST constraint.
-        __import__("sqlalchemy").text("SET LOCAL app.current_teacher_id = :tid"),
+        __import__("sqlalchemy").text("SET app.current_teacher_id = :tid"),
         {"tid": str(teacher_id)},
     )

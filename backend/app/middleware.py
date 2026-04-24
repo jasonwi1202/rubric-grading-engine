@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -83,12 +84,23 @@ _RATE_LIMIT_RULES: list[tuple[str, str, int, int]] = [
 def _get_client_ip(request: Request) -> str:
     """Return the best-effort client IP for rate-limit keying.
 
-    For public unauthenticated endpoints the direct TCP address is always
-    used to prevent trivial bypasses via crafted ``X-Forwarded-For`` headers.
-    Middleware-level rate limiting runs before the route handler, so the
-    ``trust_proxy_headers`` setting from ``app.config`` is intentionally NOT
-    consulted here.
+    When ``settings.trust_proxy_headers`` is ``True`` (production, behind
+    Cloudflare or another trusted reverse proxy), the real visitor IP is read
+    from ``CF-Connecting-IP`` first, then ``X-Forwarded-For``.  When the
+    setting is ``False`` (default, development), the direct TCP connection
+    address is used to prevent trivial bypasses via crafted headers.
     """
+    from app.config import settings
+
+    if settings.trust_proxy_headers:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            # X-Forwarded-For may be a comma-separated list; the leftmost
+            # address is the originating client.
+            return forwarded_for.split(",")[0].strip()
     if request.client:
         return request.client.host
     return "unknown"
@@ -97,20 +109,20 @@ def _get_client_ip(request: Request) -> str:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Per-IP rate limiting for sensitive public endpoints.
 
-    Uses Redis INCR + EXPIRE counters.  A single async Redis client is
-    created per middleware instance (not per request) using the connection-
-    pool backed client from ``redis-py``.
+    Uses Redis INCR + EXPIRE counters.  The Redis client is injected at
+    construction time (created and owned by the caller — see
+    ``app.main._register_middleware``) so that its lifecycle (including
+    graceful ``aclose()`` on shutdown) can be managed via the app lifespan
+    handler.
 
     When Redis is unavailable the middleware **fails open** (the request is
     allowed through) to avoid taking down authentication for all users.  The
     failure is logged at ERROR level so on-call staff can investigate.
     """
 
-    def __init__(self, app: object, redis_url: str) -> None:
+    def __init__(self, app: object, redis_client: Any) -> None:
         super().__init__(app)  # type: ignore[arg-type]
-        from redis.asyncio import Redis
-
-        self._redis: Redis = Redis.from_url(redis_url, decode_responses=True)  # type: ignore[type-arg]
+        self._redis: Any = redis_client
 
     async def dispatch(
         self,

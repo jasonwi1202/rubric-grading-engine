@@ -134,8 +134,8 @@ class TestRateLimitMiddleware:
         redis_mock = self._make_redis(counter=1)
         client = self._make_app(redis_mock)
         resp = client.post("/api/v1/auth/login", json={"email": "t@t.com", "password": "pw"})
-        # The route itself will return 422 (validation) since we have no real handler,
-        # but the rate-limit middleware should NOT have returned 429.
+        # The route handler returns {"access_token": "tok"} with status 200.
+        # The rate-limit middleware should NOT have returned 429.
         assert resp.status_code != 429, f"Unexpected 429: {resp.text}"
 
     def test_blocks_request_over_limit(self) -> None:
@@ -193,33 +193,47 @@ class TestRateLimitMiddleware:
 # CORS wildcard validation
 # ---------------------------------------------------------------------------
 
+# Minimal required fields for a valid Settings instance — mirrors the pattern
+# used in tests/unit/test_config.py.  Using Settings() directly avoids the
+# module-level singleton mutation that reload(app.config) would cause.
+_SETTINGS_BASE: dict[str, object] = {
+    "database_url": "postgresql+asyncpg://user:pass@localhost:5432/testdb",
+    "redis_url": "redis://localhost:6379/0",
+    "jwt_secret_key": "a" * 32,
+    "email_verification_hmac_secret": "b" * 32,
+    "unsubscribe_hmac_secret": "c" * 32,
+    "openai_api_key": "test-openai-key",
+    "s3_bucket_name": "test-bucket",
+    "s3_region": "us-east-1",
+    "aws_access_key_id": "test-aws-key",
+    "aws_secret_access_key": "test-aws-secret",
+    "cors_origins": "http://localhost:3000",
+}
+
 
 class TestCorsWildcardRejection:
     """Settings must reject a wildcard '*' in CORS_ORIGINS."""
 
-    def test_wildcard_origin_raises_validation_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-
-        monkeypatch.setenv("CORS_ORIGINS", "*")
-        # Force a fresh Settings instantiation to pick up the patched env var.
+    def test_wildcard_origin_raises_validation_error(self) -> None:
         from pydantic import ValidationError as PydanticValidationError
 
+        from app.config import Settings
+
         with pytest.raises(PydanticValidationError, match="not permitted"):
-            # Import here so the validator runs with the patched env var.
-            from importlib import reload
+            Settings(_env_file=None, **{**_SETTINGS_BASE, "cors_origins": "*"})  # type: ignore[call-arg]
 
-            import app.config as cfg_module
-
-            reload(cfg_module)
-
-    def test_explicit_origin_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_explicit_origin_is_accepted(self) -> None:
         """A concrete origin string must not raise a validation error."""
-        monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000,https://app.example.com")
-        from importlib import reload
+        from app.config import Settings
 
-        import app.config as cfg_module
-
-        reload(cfg_module)
-        assert cfg_module.settings.cors_origins_list == [
+        s = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            **{
+                **_SETTINGS_BASE,
+                "cors_origins": "http://localhost:3000,https://app.example.com",
+            },
+        )
+        assert s.cors_origins_list == [
             "http://localhost:3000",
             "https://app.example.com",
         ]

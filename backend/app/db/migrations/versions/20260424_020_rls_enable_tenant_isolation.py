@@ -1,7 +1,7 @@
 """rls: enable Row Level Security on all tenant-scoped tables
 
 Revision ID: 020_rls_tenant_isolation
-Revises: 019_media_comment
+Revises: 019_media_comment_is_banked
 Create Date: 2026-04-24 00:00:00.000000
 
 Enables PostgreSQL Row Level Security (RLS) on all tenant-scoped tables so
@@ -34,27 +34,29 @@ Design:
   2. For most tables a single PERMISSIVE policy named "tenant_isolation"
      is created FOR ALL operations.  The USING clause checks:
 
-         teacher_id::text = current_setting('app.current_teacher_id', true)
+         teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
 
-     The second argument `true` makes `current_setting` return NULL rather
-     than raising an error when the variable is not set.  When NULL, the
-     comparison evaluates to NULL (not TRUE), which PostgreSQL treats as
-     FALSE — so all rows are filtered out.  Unauthenticated queries against
-     these tables return zero rows.
+     ``NULLIF(current_setting(...), '')`` converts both an unset variable (NULL
+     via missing_ok=true) and a reset-to-empty variable ('') to NULL, so the
+     comparison always evaluates to NULL (false) when no teacher is in context.
+     Using UUID-to-UUID comparison (instead of ``teacher_id::text``) lets
+     PostgreSQL use the existing btree index on teacher_id columns.
 
   3. rubrics — SPLIT POLICIES to support system templates:
      System rubric templates use teacher_id IS NULL and is_template=TRUE.
      A single equality policy would hide them from all teachers.  Instead
      two PERMISSIVE policies are used:
        - "tenant_isolation": teacher-owned rows (non-NULL teacher_id)
-       - "system_templates_readable": rows where teacher_id IS NULL are
-         visible to everyone for SELECT; INSERT/UPDATE/DELETE still require
-         a matching teacher_id (i.e. system templates are read-only via RLS).
+       - "system_templates_readable": rows where is_template=TRUE and
+         teacher_id IS NULL are visible for SELECT to any authenticated
+         session (i.e. when app.current_teacher_id is non-empty).
+         INSERT/UPDATE/DELETE still require a matching teacher_id.
 
   4. The application must call
-         SET LOCAL app.current_teacher_id = '<uuid>';
-     at the start of each authenticated database transaction to activate
-     the policy.  See ``app.db.session.set_tenant_context``.
+         SET app.current_teacher_id = '<uuid>';
+     at the start of each authenticated request (scoped to the session, not
+     just the transaction) to activate the policy, and reset it to '' before
+     the connection is returned to the pool.  See ``app.db.session``.
 
   5. For tables without a direct teacher_id (assignments, essays, grades)
      the policy uses an EXISTS sub-query.  These sub-queries are efficient
@@ -88,7 +90,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON classes
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
@@ -103,7 +105,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON students
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
@@ -126,7 +128,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON rubrics
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
@@ -134,7 +136,12 @@ def upgrade() -> None:
         sa.text("""
         CREATE POLICY system_templates_readable ON rubrics
         FOR SELECT
-        USING (teacher_id IS NULL)
+        USING (
+            teacher_id IS NULL
+            AND is_template = true
+            AND current_setting('app.current_teacher_id', true) IS NOT NULL
+            AND current_setting('app.current_teacher_id', true) <> ''
+        )
     """)
     )
 
@@ -152,7 +159,7 @@ def upgrade() -> None:
                 SELECT 1
                 FROM classes c
                 WHERE c.id = assignments.class_id
-                  AND c.teacher_id::text = current_setting('app.current_teacher_id', true)
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
             )
         )
     """)
@@ -173,7 +180,7 @@ def upgrade() -> None:
                 FROM assignments a
                 JOIN classes c ON c.id = a.class_id
                 WHERE a.id = essays.assignment_id
-                  AND c.teacher_id::text = current_setting('app.current_teacher_id', true)
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
             )
         )
     """)
@@ -196,7 +203,7 @@ def upgrade() -> None:
                 JOIN assignments a ON a.id = e.assignment_id
                 JOIN classes c ON c.id = a.class_id
                 WHERE ev.id = grades.essay_version_id
-                  AND c.teacher_id::text = current_setting('app.current_teacher_id', true)
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
             )
         )
     """)
@@ -212,7 +219,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON comment_bank_entries
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
@@ -227,7 +234,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON integrity_reports
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
@@ -242,7 +249,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON media_comments
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
@@ -257,7 +264,7 @@ def upgrade() -> None:
         CREATE POLICY tenant_isolation ON regrade_requests
         FOR ALL
         USING (
-            teacher_id::text = current_setting('app.current_teacher_id', true)
+            teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
         )
     """)
     )
