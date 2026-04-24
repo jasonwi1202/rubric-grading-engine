@@ -24,13 +24,16 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.exceptions import (
+    ConflictError,
     ForbiddenError,
+    GradeLockedError,
     NotFoundError,
     RegradeRequestLimitReachedError,
     RegradeWindowClosedError,
@@ -162,11 +165,11 @@ async def create_regrade_request(
         A :class:`RegradeRequestResponse` for the newly created request.
 
     Raises:
-        NotFoundError: Grade (or criterion score) not found.
+        NotFoundError: Grade not found, or criterion_score_id was provided
+            but no criterion score exists for this grade.
         ForbiddenError: Grade belongs to a different teacher.
         RegradeWindowClosedError: Submission window has expired.
         RegradeRequestLimitReachedError: Per-grade limit already reached.
-        ValidationError: criterion_score_id does not belong to this grade.
     """
     grade = await _load_grade_tenant_scoped(db, grade_id, teacher_id)
 
@@ -274,9 +277,11 @@ async def resolve_regrade_request(
     - Denied resolutions require a ``resolution_note``.
     - Approved resolutions may optionally set a ``new_criterion_score`` which
       is applied to the targeted CriterionScore (and recalculates the grade's
-      ``total_score``).
+      ``total_score``).  The score is validated against the rubric snapshot
+      min/max bounds and requires the grade to be unlocked.
     - Always writes a ``regrade_resolved`` audit log entry with before/after
-      status values.
+      status values.  When a new score is applied, a ``score_override`` audit
+      entry is also written for the criterion score.
 
     Args:
         db: Async database session.
@@ -288,11 +293,13 @@ async def resolve_regrade_request(
         Updated :class:`RegradeRequestResponse`.
 
     Raises:
-        NotFoundError: Request not found.
+        NotFoundError: Request not found, or new_criterion_score provided but
+            the referenced CriterionScore no longer exists.
         ForbiddenError: Request belongs to a different teacher.
         ValidationError: deny without resolution_note, or new_criterion_score
-            provided without a targeted criterion.
+            provided without a targeted criterion, or score out of rubric range.
         ConflictError: Request is already resolved (not open).
+        GradeLockedError: Grade is locked; criterion score cannot be updated.
     """
     # Load the request, enforcing tenant isolation via the grade ownership chain.
     rr_result = await db.execute(
@@ -315,6 +322,10 @@ async def resolve_regrade_request(
         if exists_result.scalar_one_or_none() is None:
             raise NotFoundError("Regrade request not found.")
         raise ForbiddenError("You do not have access to this regrade request.")
+
+    # Guard: only open requests can be resolved.
+    if regrade_request.status != RegradeRequestStatus.open:
+        raise ConflictError("This regrade request has already been resolved.")
 
     # Enforce: deny requires a resolution note.
     if body.resolution == "denied" and not body.resolution_note:
@@ -341,28 +352,81 @@ async def resolve_regrade_request(
             )
         )
         criterion_score = cs_result.scalar_one_or_none()
-        if criterion_score is not None:
-            criterion_score.teacher_score = body.new_criterion_score
-            criterion_score.final_score = body.new_criterion_score
+        if criterion_score is None:
+            raise NotFoundError("Criterion score not found.")
 
-            # Recompute grade total_score after the override.
-            grade_result = await db.execute(
-                select(Grade).where(Grade.id == regrade_request.grade_id)
+        # Reject edits on locked grades (mirrors override_criterion invariant).
+        grade_result = await db.execute(
+            select(Grade).where(Grade.id == regrade_request.grade_id)
+        )
+        grade = grade_result.scalar_one_or_none()
+        if grade is not None and grade.is_locked:
+            raise GradeLockedError("Grade is locked and cannot be edited.")
+
+        # Validate new score against the immutable rubric snapshot.
+        if grade is not None:
+            assignment_result = await db.execute(
+                select(Assignment)
+                .join(Essay, Essay.assignment_id == Assignment.id)
+                .join(EssayVersion, EssayVersion.essay_id == Essay.id)
+                .where(EssayVersion.id == grade.essay_version_id)
             )
-            grade = grade_result.scalar_one_or_none()
-            if grade is not None:
-                total_result = await db.execute(
-                    select(CriterionScore.final_score).where(
-                        CriterionScore.grade_id == regrade_request.grade_id
-                    )
+            assignment = assignment_result.scalar_one_or_none()
+            if assignment is not None:
+                snapshot = cast(dict[str, Any], assignment.rubric_snapshot)
+                criteria_data = cast(list[dict[str, Any]], snapshot.get("criteria", []))
+                criterion_data = next(
+                    (
+                        c
+                        for c in criteria_data
+                        if str(c["id"]) == str(criterion_score.rubric_criterion_id)
+                    ),
+                    None,
                 )
-                grade.total_score = Decimal(
-                    sum(
-                        score
-                        for score in total_result.scalars().all()
-                        if score is not None
-                    )
+                if criterion_data is not None:
+                    min_score = int(str(criterion_data["min_score"]))
+                    max_score = int(str(criterion_data["max_score"]))
+                    if not (min_score <= body.new_criterion_score <= max_score):
+                        raise ValidationError(
+                            f"new_criterion_score {body.new_criterion_score} is out of range [{min_score}, {max_score}].",
+                            field="new_criterion_score",
+                        )
+
+        before_cs_value: dict[str, object] = {
+            "teacher_score": criterion_score.teacher_score,
+            "final_score": criterion_score.final_score,
+        }
+        criterion_score.teacher_score = body.new_criterion_score
+        criterion_score.final_score = body.new_criterion_score
+
+        # Write a score_override audit entry for this criterion change.
+        score_audit = AuditLog(
+            teacher_id=teacher_id,
+            entity_type="criterion_score",
+            entity_id=criterion_score.id,
+            action="score_override",
+            before_value=before_cs_value,
+            after_value={
+                "teacher_score": body.new_criterion_score,
+                "final_score": body.new_criterion_score,
+            },
+        )
+        db.add(score_audit)
+
+        # Recompute grade total_score after the override.
+        if grade is not None:
+            total_result = await db.execute(
+                select(CriterionScore.final_score).where(
+                    CriterionScore.grade_id == regrade_request.grade_id
                 )
+            )
+            grade.total_score = Decimal(
+                sum(
+                    score
+                    for score in total_result.scalars().all()
+                    if score is not None
+                )
+            )
 
     # Resolve the request.
     new_status = (
@@ -376,14 +440,20 @@ async def resolve_regrade_request(
 
     audit = AuditLog(
         teacher_id=teacher_id,
-        entity_type="regrade_request",
-        entity_id=request_id,
+        entity_type="grade",
+        entity_id=regrade_request.grade_id,
         action="regrade_resolved",
         before_value={"status": before_status},
         after_value={
             "status": new_status.value,
             "resolution_note": body.resolution_note,
             "new_criterion_score": body.new_criterion_score,
+            "regrade_request_id": str(regrade_request.id),
+            "criterion_score_id": (
+                str(regrade_request.criterion_score_id)
+                if regrade_request.criterion_score_id is not None
+                else None
+            ),
         },
     )
     db.add(audit)

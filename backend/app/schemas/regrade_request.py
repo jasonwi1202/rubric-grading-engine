@@ -1,7 +1,9 @@
 """Pydantic schemas for the regrade request endpoints.
 
-No student PII is collected, processed, or stored in these schemas.
-All identifier fields use UUIDs; student names never appear here.
+Identifier fields in these schemas use UUIDs, but free-form teacher-entered
+fields such as ``dispute_text`` and ``resolution_note`` are sensitive and may
+contain student names or other identifiers.  Treat those fields as potentially
+containing student PII and never log their contents.
 """
 
 from __future__ import annotations

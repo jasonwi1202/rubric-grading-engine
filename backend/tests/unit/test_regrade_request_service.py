@@ -8,7 +8,9 @@ Coverage:
   cross-teacher access returns ForbiddenError, criterion_score_id ownership check.
 - list_regrade_requests_for_assignment: happy path, cross-teacher returns ForbiddenError.
 - resolve_regrade_request: approve happy path, deny happy path,
-  deny without note raises ValidationError, cross-teacher returns ForbiddenError.
+  deny without note raises ValidationError, cross-teacher returns ForbiddenError,
+  already-resolved raises ConflictError, criterion score not found raises NotFoundError,
+  grade locked raises GradeLockedError, new score without criterion raises ValidationError.
 """
 
 from __future__ import annotations
@@ -21,7 +23,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.exceptions import (
+    ConflictError,
     ForbiddenError,
+    GradeLockedError,
     NotFoundError,
     RegradeRequestLimitReachedError,
     RegradeWindowClosedError,
@@ -474,15 +478,23 @@ class TestResolveRegradeRequest:
         grade_mock = MagicMock()
         grade_mock.id = grade_id
         grade_mock.total_score = Decimal("3")
+        grade_mock.is_locked = False
+        grade_mock.essay_version_id = _make_uuid()
+
+        # assignment_mock.rubric_snapshot will be a MagicMock whose .get() returns
+        # a MagicMock that iterates as [] — no criterion_data found, so bounds
+        # validation is skipped (equivalent to no snapshot restriction in this test).
+        assignment_mock = MagicMock()
 
         db = AsyncMock()
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),          # tenant-scoped request
-                _scalar_one_or_none_mock(cs),           # load criterion score
-                _scalar_one_or_none_mock(grade_mock),   # load grade for total_score update
-                _scalars_mock([4, 3]),                  # final_scores for recompute
+                _scalar_one_or_none_mock(rr),            # 1: tenant-scoped request
+                _scalar_one_or_none_mock(cs),            # 2: load criterion score
+                _scalar_one_or_none_mock(grade_mock),    # 3: load grade (is_locked check)
+                _scalar_one_or_none_mock(assignment_mock),  # 4: load assignment (rubric_snapshot)
+                _scalars_mock([4, 3]),                   # 5: final_scores for recompute
             ]
         )
         db.refresh = AsyncMock(side_effect=lambda obj: None)
@@ -498,6 +510,8 @@ class TestResolveRegradeRequest:
         assert cs.teacher_score == 4
         assert cs.final_score == 4
         assert rr.status == RegradeRequestStatus.approved
+        # score_override audit + regrade_resolved audit = 2 db.add calls
+        assert db.add.call_count == 2
 
     @pytest.mark.asyncio
     async def test_cross_teacher_raises_forbidden(self) -> None:
@@ -565,3 +579,95 @@ class TestResolveRegradeRequest:
             await resolve_regrade_request(db, request_id, teacher_id, body)
 
         assert exc_info.value.field == "new_criterion_score"
+
+    @pytest.mark.asyncio
+    async def test_already_resolved_raises_conflict(self) -> None:
+        """Raises ConflictError when the request is not in open status."""
+        teacher_id = _make_uuid()
+        request_id = _make_uuid()
+        rr = _make_regrade_request(
+            request_id=request_id,
+            teacher_id=teacher_id,
+            status=RegradeRequestStatus.approved,  # already resolved
+        )
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(rr),
+            ]
+        )
+
+        body = RegradeRequestResolveRequest(resolution="approved")
+
+        with pytest.raises(ConflictError):
+            await resolve_regrade_request(db, request_id, teacher_id, body)
+
+    @pytest.mark.asyncio
+    async def test_criterion_score_not_found_during_resolution_raises_not_found(self) -> None:
+        """Raises NotFoundError when criterion_score_id is set but the row is gone (FK NULL cascade)."""
+        teacher_id = _make_uuid()
+        request_id = _make_uuid()
+        grade_id = _make_uuid()
+        cs_id = _make_uuid()
+        rr = _make_regrade_request(
+            request_id=request_id,
+            teacher_id=teacher_id,
+            grade_id=grade_id,
+            status=RegradeRequestStatus.open,
+            criterion_score_id=cs_id,
+        )
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(rr),   # tenant-scoped request
+                _scalar_one_or_none_mock(None),  # criterion score not found
+            ]
+        )
+
+        body = RegradeRequestResolveRequest(
+            resolution="approved",
+            resolution_note="Score should be higher.",
+            new_criterion_score=5,
+        )
+
+        with pytest.raises(NotFoundError):
+            await resolve_regrade_request(db, request_id, teacher_id, body)
+
+    @pytest.mark.asyncio
+    async def test_grade_locked_raises_grade_locked_error(self) -> None:
+        """Raises GradeLockedError when new_criterion_score targets a locked grade."""
+        teacher_id = _make_uuid()
+        request_id = _make_uuid()
+        grade_id = _make_uuid()
+        cs_id = _make_uuid()
+        rr = _make_regrade_request(
+            request_id=request_id,
+            teacher_id=teacher_id,
+            grade_id=grade_id,
+            status=RegradeRequestStatus.open,
+            criterion_score_id=cs_id,
+        )
+        cs = _make_criterion_score(grade_id=grade_id, cs_id=cs_id)
+        grade_mock = MagicMock()
+        grade_mock.id = grade_id
+        grade_mock.is_locked = True  # grade is locked
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _scalar_one_or_none_mock(rr),         # tenant-scoped request
+                _scalar_one_or_none_mock(cs),          # criterion score found
+                _scalar_one_or_none_mock(grade_mock),  # grade is locked
+            ]
+        )
+
+        body = RegradeRequestResolveRequest(
+            resolution="approved",
+            resolution_note="Score should be higher.",
+            new_criterion_score=5,
+        )
+
+        with pytest.raises(GradeLockedError):
+            await resolve_regrade_request(db, request_id, teacher_id, body)
