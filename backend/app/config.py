@@ -138,6 +138,10 @@ class Settings(BaseSettings):
     # all requests through without checking counters.  Set to False in CI E2E
     # environments where many accounts are created during the test run.
     rate_limit_enabled: bool = True
+    # Test-only escape hatch for CI E2E: allow login for unverified accounts
+    # when the email delivery stack is intentionally bypassed. Keep False in
+    # all non-test environments.
+    allow_unverified_login_in_test: bool = False
 
     # -------------------------------------------------------------------------
     # Validators

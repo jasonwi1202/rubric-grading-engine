@@ -272,6 +272,7 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       API_BASE_URL: http://localhost:8000
       MAILPIT_API_URL: http://localhost:8025
+      E2E_SKIP_EMAIL_VERIFICATION: "true"
 
     steps:
       - uses: actions/checkout@v4

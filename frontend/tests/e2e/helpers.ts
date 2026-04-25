@@ -285,19 +285,24 @@ export async function seedTeacher(
     throw new Error(`Signup failed: ${signupRes.status}`);
   }
 
-  // Verify email via Mailpit — allow up to 60 s for the Celery worker to
-  // process the verification task in a cold CI environment.
-  const { body } = await waitForEmail(email, "verify", 60_000);
-  const verifyUrl = extractLinkFromEmail(body);
-  const token = new URL(verifyUrl).searchParams.get("token");
-  if (!token) {
-    throw new Error("Verification token not found in email link");
-  }
-  const verifyRes = await fetch(
-    `${API_BASE}/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
-  );
-  if (!verifyRes.ok) {
-    throw new Error(`Email verification failed: ${verifyRes.status}`);
+  const skipEmailVerification =
+    (process.env.E2E_SKIP_EMAIL_VERIFICATION ?? "false").toLowerCase() === "true";
+
+  if (!skipEmailVerification) {
+    // Verify email via Mailpit — allow up to 60 s for the Celery worker to
+    // process the verification task in a cold CI environment.
+    const { body } = await waitForEmail(email, "verify", 60_000);
+    const verifyUrl = extractLinkFromEmail(body);
+    const token = new URL(verifyUrl).searchParams.get("token");
+    if (!token) {
+      throw new Error("Verification token not found in email link");
+    }
+    const verifyRes = await fetch(
+      `${API_BASE}/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
+    );
+    if (!verifyRes.ok) {
+      throw new Error(`Email verification failed: ${verifyRes.status}`);
+    }
   }
 
   return { email, password };

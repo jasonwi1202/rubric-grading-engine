@@ -540,7 +540,7 @@ async def login_user(
         await db.commit()
         raise ValidationError(_invalid_msg)
 
-    if not db_user.email_verified:
+    if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         audit = AuditLog(
             teacher_id=None,
             entity_type="user",
