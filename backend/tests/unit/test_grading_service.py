@@ -241,6 +241,38 @@ class TestGradeEssayHappyPath:
         assert grade_objs[0].prompt_version == "grading-v1"
 
     @pytest.mark.asyncio
+    async def test_grade_prompt_version_changes_with_setting(self) -> None:
+        """Changing GRADING_PROMPT_VERSION setting changes the prompt_version written to Grade."""
+        teacher_id = _make_uuid()
+
+        from app.models.grade import Grade as GradeModel
+
+        for version, expected in [("v1", "grading-v1"), ("v2", "grading-v2")]:
+            essay_iter = _make_essay()
+            essay_version_iter = _make_essay_version(essay_iter.id)
+            assignment_iter = _make_assignment(assignment_id=essay_iter.assignment_id)
+            criterion_id = assignment_iter.rubric_snapshot["criteria"][0]["id"]
+            grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
+
+            db = _make_db_mock(essay=essay_iter, essay_version=essay_version_iter, assignment=assignment_iter)
+            added_objects: list[object] = []
+            db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+            with (
+                patch("app.services.grading.call_grading", return_value=grading_resp),
+                patch("app.services.grading.settings") as mock_settings,
+            ):
+                mock_settings.grading_prompt_version = version
+                mock_settings.openai_grading_model = "gpt-4o"
+                await grade_essay(db, essay_iter.id, teacher_id, "balanced")
+
+            grade_objs = [o for o in added_objects if isinstance(o, GradeModel)]
+            assert len(grade_objs) == 1, f"Expected one Grade record for version={version}"
+            assert grade_objs[0].prompt_version == expected, (
+                f"Expected prompt_version='{expected}', got '{grade_objs[0].prompt_version}'"
+            )
+
+    @pytest.mark.asyncio
     async def test_total_score_computed_correctly(self) -> None:
         """total_score sums criterion scores; max_possible_score sums max values."""
         teacher_id = _make_uuid()
