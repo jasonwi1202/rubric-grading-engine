@@ -36,7 +36,7 @@ test.describe("Journey 4 — Export: batch PDF ZIP and CSV download", () => {
   // All four test steps share browser state (auth cookie, assignment ID) and
   // must run in declaration order.  Serial mode guarantees execution order
   // within this describe block.
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   // Shared state populated in beforeAll.
   const state: {

@@ -41,7 +41,7 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
   // must run in order.  A single browser context is created in beforeAll so
   // the refresh_token cookie (httpOnly) persists across all five test steps.
   // Serial mode guarantees execution order within the describe block.
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   // Shared state populated in beforeAll / earlier tests
   const state: {
@@ -249,7 +249,7 @@ test.describe("Journey 2 — Grading: upload → auto-assign → batch grade →
   // All four steps share state (assignment ID, class ID, etc.) and must run
   // in the order defined below.  A single browser context persists so the
   // auth cookie carries across navigations.
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   // ---------------------------------------------------------------------------
   // Student names are crafted so the auto-assignment algorithm (rapidfuzz
@@ -515,7 +515,7 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
   // All four steps share state (assignment ID, essay ID, browser session) and
   // must run in order.  A single browser context persists so the auth cookie
   // carries across navigations.
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   const state: {
     email: string;

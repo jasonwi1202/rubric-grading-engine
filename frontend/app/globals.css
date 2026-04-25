@@ -25,3 +25,21 @@ body {
     text-wrap: balance;
   }
 }
+
+/*
+  Accessibility hardening for MX.4:
+  Several public/auth pages used very light text utilities (gray-400, blue-100)
+  on light backgrounds, causing recurring axe "color-contrast" serious failures.
+  Override these utilities with darker tones that meet WCAG 2.1 AA.
+*/
+.text-gray-400 {
+  color: #4b5563;
+}
+
+.text-gray-500 {
+  color: #374151;
+}
+
+.text-blue-100 {
+  color: #1d4ed8;
+}
