@@ -77,13 +77,11 @@ export function middleware(request: NextRequest): NextResponse {
   // completed a successful login and the backend set a session cookie.
   const hasSession = request.cookies.has(REFRESH_TOKEN_COOKIE);
 
-  // Authenticated users visiting /login or /signup should go straight to the
-  // dashboard — they have no reason to see the auth entry pages.
-  if (hasSession && isAuthEntryPath(pathname)) {
-    const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/dashboard";
-    dashboardUrl.search = "";
-    return NextResponse.redirect(dashboardUrl);
+  // Allow auth-entry pages even when a refresh cookie exists. A present cookie
+  // can be stale/invalid, and forcing /login -> /dashboard creates redirect
+  // loops where users cannot re-authenticate.
+  if (isAuthEntryPath(pathname)) {
+    return NextResponse.next();
   }
 
   // Allow all public (marketing) paths through, regardless of session state.

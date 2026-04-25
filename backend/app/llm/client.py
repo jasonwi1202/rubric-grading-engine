@@ -24,6 +24,7 @@ Security invariants (non-negotiable):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import logging
 import types
@@ -34,6 +35,7 @@ from app.config import settings
 from app.exceptions import LLMError, LLMParseError, ValidationError
 from app.llm.parsers import (
     CriterionInfo,
+    ParsedCriterionScore,
     ParsedFeedbackResponse,
     ParsedGradingResponse,
     ParsedInstructionResponse,
@@ -43,6 +45,14 @@ from app.llm.parsers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_fake_mode() -> bool:
+    """Return whether deterministic fake LLM outputs are enabled."""
+    # Use an explicit identity check to avoid truthy MagicMock values when
+    # tests patch `settings` partially.
+    return getattr(settings, "llm_fake_mode", False) is True
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -227,6 +237,30 @@ async def call_grading(
         LLMError: On timeout or unrecoverable API failure.
     """
 
+    if _is_fake_mode():
+        fake_scores = []
+        for info in criteria:
+            midpoint = int((info.min_score + info.max_score) / 2)
+            fake_scores.append(
+                ParsedCriterionScore(
+                    criterion_id=info.criterion_id,
+                    score=midpoint,
+                    justification=(
+                        "Deterministic test justification generated in fake LLM mode. "
+                        "Teacher should still review before locking."
+                    ),
+                    confidence="high",
+                    ai_feedback="Deterministic test feedback.",
+                    score_clamped=False,
+                    needs_review=False,
+                    raw_score=midpoint,
+                )
+            )
+        return ParsedGradingResponse(
+            criterion_scores=fake_scores,
+            summary_feedback="Deterministic test summary feedback.",
+        )
+
     version = prompt_version or settings.grading_prompt_version
     module = _load_prompt_module("grading", version)
     client = _get_openai_client()
@@ -370,6 +404,13 @@ async def call_embedding(text: str) -> list[float]:
     """
     if not text.strip():
         raise ValidationError("text must not be empty or whitespace-only")
+
+    if _is_fake_mode():
+        # Generate a stable pseudo-embedding with the expected 1,536 dims.
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        base = [b / 255.0 for b in digest]
+        repeated = (base * ((1536 // len(base)) + 1))[:1536]
+        return repeated
 
     client = _get_openai_client()
     max_attempts = settings.llm_max_retries + 1

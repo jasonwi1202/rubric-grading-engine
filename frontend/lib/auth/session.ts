@@ -22,6 +22,7 @@ export { ApiError } from "@/lib/api/errors";
 // ---------------------------------------------------------------------------
 
 let _accessToken: string | null = null;
+let _refreshInFlight: Promise<string | null> | null = null;
 
 /** Read the current in-memory access token. */
 export function getAccessToken(): string | null {
@@ -68,15 +69,31 @@ export async function login(
  * Updates the in-memory token on success.
  */
 export async function silentRefresh(): Promise<string | null> {
+  // Multiple requests can receive 401 at once. Refresh token rotation is
+  // single-use, so dedupe refresh calls to a single in-flight promise.
+  if (_refreshInFlight) {
+    return _refreshInFlight;
+  }
+
+  _refreshInFlight = (async () => {
+    try {
+      const data = await baseFetch<{ access_token: string }>("/auth/refresh", {
+        method: "POST",
+        credentials: "include",
+      });
+      setSessionToken(data.access_token);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      _refreshInFlight = null;
+    }
+  })();
+
   try {
-    const data = await baseFetch<{ access_token: string }>("/auth/refresh", {
-      method: "POST",
-      credentials: "include",
-    });
-    setSessionToken(data.access_token);
-    return data.access_token;
-  } catch {
-    return null;
+    return await _refreshInFlight;
+  } finally {
+    // `_refreshInFlight` is cleared in the inner finally block above.
   }
 }
 

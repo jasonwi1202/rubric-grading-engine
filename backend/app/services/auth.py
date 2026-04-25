@@ -629,7 +629,12 @@ async def refresh_access_token(
 
     result = await db.execute(select(User).where(User.id == user_id))
     db_user = result.scalar_one_or_none()
-    if db_user is None or not db_user.email_verified:
+    if db_user is None:
+        raise ValidationError("Refresh token is invalid or has expired.", field="token")
+
+    # Keep refresh behavior consistent with login in CI/test mode where
+    # unverified-login bypass can be enabled for deterministic E2E runs.
+    if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         raise ValidationError("Refresh token is invalid or has expired.", field="token")
 
     # Write audit log

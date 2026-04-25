@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     llm_request_timeout_seconds: int = 60
     llm_max_retries: int = 3
     grading_prompt_version: str = "v2"
+    # Test-only mode: bypass external OpenAI calls and return deterministic
+    # synthetic grading/embedding outputs. Keep False outside CI/tests.
+    llm_fake_mode: bool = False
 
     # -------------------------------------------------------------------------
     # File Storage (S3 / MinIO)

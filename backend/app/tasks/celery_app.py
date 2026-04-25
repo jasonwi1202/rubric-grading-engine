@@ -32,7 +32,13 @@ import logging
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import before_task_publish, task_postrun, task_prerun, worker_init
+from celery.signals import (
+    before_task_publish,
+    task_postrun,
+    task_prerun,
+    worker_init,
+    worker_process_init,
+)
 
 from app.config import settings
 from app.logging_config import configure_logging, correlation_id_var
@@ -97,6 +103,57 @@ def _configure_worker_logging(**_kwargs: object) -> None:
     ``create_app()`` via ``configure_logging(settings.log_level)``.
     """
     configure_logging(settings.log_level)
+
+
+@worker_process_init.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
+def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
+    """Replace the inherited engine and session factory in each prefork child.
+
+    Celery prefork workers inherit the parent's asyncpg connections via fork.
+    Those connections are tied to the parent's event loop and produce
+    "another operation is in progress" errors when reused in a child.
+
+    Fix: abandon (not close) the inherited pool connections using
+    ``close=False`` — closing inherited asyncpg sockets from a forked child
+    is unsafe — then create a fresh engine and session factory so every task
+    in this child starts with a clean pool.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.config import settings
+    from app.db import session as session_module
+
+    # Do NOT call engine.dispose() here — closing the inherited asyncpg
+    # sockets from within a forked child is unsafe (they belong to the
+    # parent's event loop).  Simply replace the module-level references so
+    # all subsequent task code uses a new, uncontaminated engine.
+    # The old engine object will be garbage-collected once no references remain.
+
+    # Create a fresh engine bound to this child's (future) event loop.
+    new_engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+        echo=False,
+    )
+    session_module.engine = new_engine  # type: ignore[assignment]
+    new_session_factory = async_sessionmaker(
+        bind=new_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    session_module.AsyncSessionLocal = new_session_factory  # type: ignore[assignment]
+
+    # Patch the already-imported module-level names in task modules so they use
+    # the new session factory rather than the parent's captured binding.  Task
+    # modules do `from app.db.session import AsyncSessionLocal` at import time,
+    # so replacing session_module.AsyncSessionLocal alone is not enough.
+    import app.tasks.embedding as _embedding_module  # noqa: PLC0415
+    import app.tasks.grading as _grading_module  # noqa: PLC0415
+
+    _grading_module.AsyncSessionLocal = new_session_factory  # type: ignore[assignment]
+    _embedding_module.AsyncSessionLocal = new_session_factory  # type: ignore[assignment]
 
 
 @before_task_publish.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete

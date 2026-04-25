@@ -122,7 +122,7 @@ async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
         db: The active ``AsyncSession``.
         teacher_id: UUID of the authenticated teacher.
     """
-    await db.execute(
+    result = await db.execute(
         # NOTE: `sqlalchemy.text` cannot be imported at module level in this file
         # because tests/unit/test_session.py enforces (via AST analysis) that
         # session.py only imports from `sqlalchemy.ext.asyncio`, not from the
@@ -133,11 +133,12 @@ async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
         # (`SET app.current_teacher_id = $1` is a syntax error under asyncpg).
         # set_config(name, value, is_local) is parameter-safe and preserves the
         # same session-level behavior when is_local=false.
-        __import__("sqlalchemy").text(
-            "SELECT set_config('app.current_teacher_id', :tid, false)"
-        ),
+        __import__("sqlalchemy").text("SELECT set_config('app.current_teacher_id', :tid, false)"),
         {"tid": str(teacher_id)},
     )
+    # Consume the single-row result so the asyncpg connection is fully idle
+    # before subsequent statements run on this session.
+    result.scalar_one_or_none()
 
 
 @asynccontextmanager

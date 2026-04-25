@@ -278,6 +278,18 @@ def _cookie_secure() -> bool:
     return settings.environment != "development"
 
 
+def _cookie_samesite() -> str:
+    """Return SameSite policy for auth cookies.
+
+    Local development commonly runs frontend and backend on different ports
+    (e.g. localhost:3000 and localhost:8000). ``Lax`` keeps local auth flows
+    reliable there, while staging/production keep ``Strict``.
+    """
+    from app.config import settings
+
+    return "lax" if settings.environment == "development" else "strict"
+
+
 @router.post(
     "/login",
     summary="Authenticate a teacher and issue tokens",
@@ -314,7 +326,7 @@ async def login_endpoint(
         value=refresh_token,
         httponly=True,
         secure=_cookie_secure(),
-        samesite="strict",
+        samesite=_cookie_samesite(),
         max_age=_REFRESH_TOKEN_COOKIE_MAX_AGE,
         path="/",
     )
@@ -374,7 +386,7 @@ async def refresh_token_endpoint(
         value=new_refresh_token,
         httponly=True,
         secure=_cookie_secure(),
-        samesite="strict",
+        samesite=_cookie_samesite(),
         max_age=_REFRESH_TOKEN_COOKIE_MAX_AGE,
         path="/",
     )
