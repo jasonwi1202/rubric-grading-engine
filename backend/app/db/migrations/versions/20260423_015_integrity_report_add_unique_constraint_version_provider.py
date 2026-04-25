@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "015_integrity_report_unique_version_provider"
+revision: str = "015_ir_unique_version_provider"
 down_revision: str | None = "014_essay_embedding"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
