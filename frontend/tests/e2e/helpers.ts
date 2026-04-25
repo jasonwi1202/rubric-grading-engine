@@ -285,8 +285,9 @@ export async function seedTeacher(
     throw new Error(`Signup failed: ${signupRes.status}`);
   }
 
-  // Verify email via Mailpit
-  const { body } = await waitForEmail(email, "verify", 20_000);
+  // Verify email via Mailpit — allow up to 60 s for the Celery worker to
+  // process the verification task in a cold CI environment.
+  const { body } = await waitForEmail(email, "verify", 60_000);
   const verifyUrl = extractLinkFromEmail(body);
   const token = new URL(verifyUrl).searchParams.get("token");
   if (!token) {

@@ -121,7 +121,8 @@ test.describe("Full sign-up → email verification flow", () => {
     await expect(page.getByText(/check your email/i)).toBeVisible();
 
     // --- Step 3: Poll Mailpit for the verification email ---
-    const { body } = await waitForEmail(email, "verify", 15_000);
+    // Allow up to 60 s for the Celery worker to process the task in CI.
+    const { body } = await waitForEmail(email, "verify", 60_000);
     const verifyUrl = extractLinkFromEmail(body);
     expect(verifyUrl).toContain("/auth/verify");
 

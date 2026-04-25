@@ -90,6 +90,11 @@ async def _check_rate_limit(
     error_message: str,
 ) -> None:
     """Increment an IP/email counter; raise RateLimitError when exceeded."""
+    from app.config import settings
+
+    if not settings.rate_limit_enabled:
+        return
+
     current: int = await redis_client.incr(key)
     if current == 1:
         await redis_client.expire(key, window_seconds)
