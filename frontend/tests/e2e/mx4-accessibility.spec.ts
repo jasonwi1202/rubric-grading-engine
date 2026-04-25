@@ -229,18 +229,23 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
     await page.goto(`/dashboard/assignments/${state.assignmentId}`);
 
-    // Focus the first essay link in the queue
-    const firstLink = page.getByRole("listitem").getByRole("link").first();
-    await expect(firstLink).toBeVisible({ timeout: 15_000 });
-    await firstLink.focus();
+    // Wait for the essay list to load
+    const links = page.getByRole("listitem").getByRole("link");
+    await expect(links.first()).toBeVisible({ timeout: 15_000 });
 
-    // ArrowDown should move focus to the next item (if there is one)
+    // We seeded two essays; ArrowDown on the first should move focus to second.
+    const firstLink = links.nth(0);
+    const secondLink = links.nth(1);
+
+    // Focus the first essay link in the queue
+    await firstLink.focus();
+    await expect(firstLink).toBeFocused({ timeout: 5_000 });
+
+    // ArrowDown should move focus to the next item
     await page.keyboard.press("ArrowDown");
 
-    // We seeded two essays, so the next item should be focused
-    // (the component manages focus on the containing list container)
-    // Just verify no JavaScript exception was thrown and the page is intact.
-    await expect(page.locator("main").first()).toBeVisible();
+    // Verify focus moved to the second essay link
+    await expect(secondLink).toBeFocused({ timeout: 3_000 });
   });
 
   // ── Test 7: Score inputs have accessible labels ───────────────────────────
@@ -270,7 +275,10 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
         const hasLabelFor =
           id !== null &&
           (await page.locator(`label[for="${id}"]`).count()) > 0;
-        expect(hasAriaLabel || hasLabelFor).toBe(true);
+        expect(
+          hasAriaLabel || hasLabelFor,
+          `Score input at index ${i} (id="${id ?? "none"}") is missing an accessible label`,
+        ).toBe(true);
       }
     }
   });
@@ -294,8 +302,14 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
       for (let i = 0; i < linkCount; i++) {
         const link = essayLinks.nth(i);
         const label = await link.getAttribute("aria-label");
-        expect(label).not.toBeNull();
-        expect(label!.length).toBeGreaterThan(0);
+        expect(
+          label,
+          `Essay link at index ${i} is missing an aria-label`,
+        ).not.toBeNull();
+        expect(
+          label!.length,
+          `Essay link at index ${i} has an empty aria-label`,
+        ).toBeGreaterThan(0);
       }
     }
   });

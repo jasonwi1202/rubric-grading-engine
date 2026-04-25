@@ -128,16 +128,20 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
     }
   }, [menuOpen]);
 
-  // Close the menu when clicking outside or pressing Escape
+  // Close the menu when clicking outside (no focus management — user
+  // intentionally clicked elsewhere) or pressing Escape (returns focus
+  // to the trigger button via closeMenu).
   useEffect(() => {
     if (!menuOpen) return;
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        closeMenu();
+        // Only dismiss; do NOT steal focus from wherever the user clicked.
+        setMenuOpen(false);
       }
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // Dismiss and return focus to the trigger.
         closeMenu();
       }
     }
