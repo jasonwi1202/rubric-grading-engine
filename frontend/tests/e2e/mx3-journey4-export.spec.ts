@@ -135,11 +135,22 @@ test.describe("Journey 4 — Export: batch PDF ZIP and CSV download", () => {
     // enqueues a Celery task and returns 202 immediately.
     await pdfButton.click();
 
-    // The ExportPanel transitions to in-progress state immediately after the
-    // POST responds; the spinner and progress text should appear promptly.
-    await expect(page.getByText(/export in progress/i)).toBeVisible({
-      timeout: 15_000,
+    // The ExportPanel should transition promptly after the POST responds, but
+    // for small fixtures the export can finish before the transient
+    // "Export in progress" state is observed.  Accept either the in-progress
+    // text or the final download link as evidence that the export flow started
+    // and the UI advanced.
+    const progressText = page.getByText(/export in progress/i);
+    const downloadLink = page.getByRole("link", {
+      name: /download the exported pdf zip file/i,
     });
+    await expect
+      .poll(
+        async () =>
+          (await progressText.isVisible()) || (await downloadLink.isVisible()),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
   });
 
   // ── Test 3: Export completes; download link active; file downloads ─────────

@@ -560,9 +560,14 @@ export async function seedLockedGrades(
       data: { status: string };
     };
     lastStatus = statusBody.data.status;
-    if (lastStatus === "complete" || lastStatus === "partial") {
+    if (lastStatus === "complete") {
       reachedTerminal = true;
       break;
+    }
+    if (lastStatus === "partial") {
+      throw new Error(
+        'seedLockedGrades: batch grading completed partially — some essays do not have grades, so grades cannot be locked',
+      );
     }
     if (lastStatus === "failed") {
       throw new Error(
