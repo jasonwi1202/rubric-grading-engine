@@ -136,14 +136,14 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
         poolclass=NullPool,
         echo=False,
     )
-    session_module.engine = new_engine  # type: ignore[assignment]
+    session_module.engine = new_engine
     new_session_factory = async_sessionmaker(
         bind=new_engine,
         class_=AsyncSession,
         expire_on_commit=False,
         autoflush=False,
     )
-    session_module.AsyncSessionLocal = new_session_factory  # type: ignore[assignment]
+    session_module.AsyncSessionLocal = new_session_factory
 
     # Patch the already-imported module-level names in task modules so they use
     # the new session factory rather than the parent's captured binding.  Task
@@ -152,8 +152,8 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
     import app.tasks.embedding as _embedding_module  # noqa: PLC0415
     import app.tasks.grading as _grading_module  # noqa: PLC0415
 
-    _grading_module.AsyncSessionLocal = new_session_factory  # type: ignore[assignment]
-    _embedding_module.AsyncSessionLocal = new_session_factory  # type: ignore[assignment]
+    _grading_module.AsyncSessionLocal = new_session_factory
+    _embedding_module.AsyncSessionLocal = new_session_factory
 
 
 @before_task_publish.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -278,7 +279,7 @@ def _cookie_secure() -> bool:
     return settings.environment != "development"
 
 
-def _cookie_samesite() -> str:
+def _cookie_samesite() -> Literal["lax", "strict"]:
     """Return SameSite policy for auth cookies.
 
     Local development commonly runs frontend and backend on different ports

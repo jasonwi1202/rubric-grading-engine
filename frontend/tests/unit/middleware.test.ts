@@ -116,27 +116,22 @@ describe("middleware", () => {
   // Authenticated user (refresh_token cookie present)
   // ---------------------------------------------------------------------------
   describe("authenticated user", () => {
-    it("redirects /login to /dashboard", () => {
-      middleware(makeRequest("/login", { hasCookie: true }));
-      expect(NextResponse.redirect).toHaveBeenCalledOnce();
-      const redirectUrl = vi.mocked(NextResponse.redirect).mock
-        .calls[0][0] as URL;
-      expect(redirectUrl.pathname).toBe("/dashboard");
+    it("passes /login through without redirect (stale cookie must not force /dashboard)", () => {
+      const result = middleware(makeRequest("/login", { hasCookie: true }));
+      expect(result).toBe(NEXT_SENTINEL);
+      expect(NextResponse.redirect).not.toHaveBeenCalled();
     });
 
-    it("redirects /signup to /dashboard", () => {
-      middleware(makeRequest("/signup", { hasCookie: true }));
-      const redirectUrl = vi.mocked(NextResponse.redirect).mock
-        .calls[0][0] as URL;
-      expect(redirectUrl.pathname).toBe("/dashboard");
+    it("passes /signup through without redirect (stale cookie must not force /dashboard)", () => {
+      const result = middleware(makeRequest("/signup", { hasCookie: true }));
+      expect(result).toBe(NEXT_SENTINEL);
+      expect(NextResponse.redirect).not.toHaveBeenCalled();
     });
 
-    it("strips query string from the auth-entry redirect to /dashboard", () => {
-      middleware(makeRequest("/login", { hasCookie: true, search: "?next=/classes" }));
-      const redirectUrl = vi.mocked(NextResponse.redirect).mock
-        .calls[0][0] as URL;
-      expect(redirectUrl.pathname).toBe("/dashboard");
-      expect(redirectUrl.search).toBe("");
+    it("passes /login with query string through without redirect", () => {
+      const result = middleware(makeRequest("/login", { hasCookie: true, search: "?next=/classes" }));
+      expect(result).toBe(NEXT_SENTINEL);
+      expect(NextResponse.redirect).not.toHaveBeenCalled();
     });
 
     it("passes public marketing paths through (e.g. /product)", () => {
