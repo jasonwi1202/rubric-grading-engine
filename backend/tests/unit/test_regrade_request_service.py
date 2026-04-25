@@ -151,9 +151,9 @@ class TestCreateRegradeRequest:
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),   # tenant-scoped grade load
-                _scalar_one_or_none_mock(grade.id), # FOR UPDATE lock
-                _scalar_one_mock(0),                # count of existing requests
+                _scalar_one_or_none_mock(grade),  # tenant-scoped grade load
+                _scalar_one_or_none_mock(grade.id),  # FOR UPDATE lock
+                _scalar_one_mock(0),  # count of existing requests
                 # no criterion_score_id, so no CS ownership check
             ]
         )
@@ -216,9 +216,9 @@ class TestCreateRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),    # tenant-scoped grade load
-                _scalar_one_or_none_mock(grade.id), # FOR UPDATE lock
-                _scalar_one_mock(1),                 # count = 1 = max_per_grade
+                _scalar_one_or_none_mock(grade),  # tenant-scoped grade load
+                _scalar_one_or_none_mock(grade.id),  # FOR UPDATE lock
+                _scalar_one_mock(1),  # count = 1 = max_per_grade
             ]
         )
 
@@ -241,7 +241,7 @@ class TestCreateRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(None),      # tenant-scoped: not found
+                _scalar_one_or_none_mock(None),  # tenant-scoped: not found
                 _scalar_one_or_none_mock(grade_id),  # existence check: exists
             ]
         )
@@ -280,10 +280,10 @@ class TestCreateRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(grade),         # tenant-scoped grade
-                _scalar_one_or_none_mock(grade.id),      # FOR UPDATE lock
-                _scalar_one_mock(0),                      # count = 0
-                _scalar_one_or_none_mock(None),           # CS ownership: not found
+                _scalar_one_or_none_mock(grade),  # tenant-scoped grade
+                _scalar_one_or_none_mock(grade.id),  # FOR UPDATE lock
+                _scalar_one_mock(0),  # count = 0
+                _scalar_one_or_none_mock(None),  # CS ownership: not found
             ]
         )
 
@@ -323,7 +323,7 @@ class TestListRegradeRequestsForAssignment:
         db.execute = AsyncMock(
             side_effect=[
                 _scalar_one_or_none_mock(assignment_mock),  # tenant-scoped assignment
-                _scalars_mock([rr1, rr2]),                  # list query
+                _scalars_mock([rr1, rr2]),  # list query
             ]
         )
 
@@ -343,7 +343,7 @@ class TestListRegradeRequestsForAssignment:
         db.execute = AsyncMock(
             side_effect=[
                 _scalar_one_or_none_mock(assignment_mock),  # tenant-scoped assignment
-                _scalars_mock([]),                           # empty list
+                _scalars_mock([]),  # empty list
             ]
         )
 
@@ -360,8 +360,8 @@ class TestListRegradeRequestsForAssignment:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(None),         # tenant-scoped: not found
-                _scalar_one_or_none_mock(assignment_id), # existence check: exists
+                _scalar_one_or_none_mock(None),  # tenant-scoped: not found
+                _scalar_one_or_none_mock(assignment_id),  # existence check: exists
             ]
         )
 
@@ -392,8 +392,8 @@ class TestResolveRegradeRequest:
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),               # 1: tenant-scoped request load
-                _scalar_one_or_none_mock(rr.id),            # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request load
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
                 # no new_criterion_score, so no CS/grade queries
             ]
         )
@@ -423,8 +423,8 @@ class TestResolveRegradeRequest:
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),    # 1: tenant-scoped request load
-                _scalar_one_or_none_mock(rr.id), # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request load
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
             ]
         )
         db.refresh = AsyncMock(side_effect=lambda obj: None)
@@ -453,8 +453,8 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),    # 1: tenant-scoped request load
-                _scalar_one_or_none_mock(rr.id), # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request load
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
             ]
         )
 
@@ -507,12 +507,12 @@ class TestResolveRegradeRequest:
         db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),               # 1: tenant-scoped request
-                _scalar_one_or_none_mock(rr.id),            # 2: FOR UPDATE lock
-                _scalar_one_or_none_mock(cs),               # 3: load criterion score
-                _scalar_one_or_none_mock(grade_mock),       # 4: load grade (is_locked check)
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(cs),  # 3: load criterion score
+                _scalar_one_or_none_mock(grade_mock),  # 4: load grade (is_locked check)
                 _scalar_one_or_none_mock(assignment_mock),  # 5: load assignment (rubric_snapshot)
-                _scalars_mock([4, 3]),                      # 6: final_scores for recompute
+                _scalars_mock([4, 3]),  # 6: final_scores for recompute
             ]
         )
         db.refresh = AsyncMock(side_effect=lambda obj: None)
@@ -552,8 +552,8 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(None),       # tenant-scoped: not found
-                _scalar_one_or_none_mock(request_id), # existence check: exists
+                _scalar_one_or_none_mock(None),  # tenant-scoped: not found
+                _scalar_one_or_none_mock(request_id),  # existence check: exists
             ]
         )
 
@@ -596,8 +596,8 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),    # 1: tenant-scoped request load
-                _scalar_one_or_none_mock(rr.id), # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request load
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
             ]
         )
 
@@ -625,8 +625,8 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),    # 1: tenant-scoped request load
-                _scalar_one_or_none_mock(rr.id), # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request load
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
             ]
         )
 
@@ -653,8 +653,8 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),    # 1: tenant-scoped request
-                _scalar_one_or_none_mock(rr.id), # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
                 _scalar_one_or_none_mock(None),  # 3: criterion score not found
             ]
         )
@@ -690,9 +690,9 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),         # 1: tenant-scoped request
-                _scalar_one_or_none_mock(rr.id),      # 2: FOR UPDATE lock
-                _scalar_one_or_none_mock(cs),          # 3: criterion score found
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(cs),  # 3: criterion score found
                 _scalar_one_or_none_mock(grade_mock),  # 4: grade is locked
             ]
         )
@@ -745,11 +745,11 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),              # 1: tenant-scoped request
-                _scalar_one_or_none_mock(rr.id),           # 2: FOR UPDATE lock
-                _scalar_one_or_none_mock(cs),              # 3: load criterion score
-                _scalar_one_or_none_mock(grade_mock),      # 4: load grade (is_locked check)
-                _scalar_one_or_none_mock(assignment_mock), # 5: load assignment (rubric_snapshot)
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(cs),  # 3: load criterion score
+                _scalar_one_or_none_mock(grade_mock),  # 4: load grade (is_locked check)
+                _scalar_one_or_none_mock(assignment_mock),  # 5: load assignment (rubric_snapshot)
             ]
         )
 
@@ -803,11 +803,11 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),              # 1: tenant-scoped request
-                _scalar_one_or_none_mock(rr.id),           # 2: FOR UPDATE lock
-                _scalar_one_or_none_mock(cs),              # 3: load criterion score
-                _scalar_one_or_none_mock(grade_mock),      # 4: load grade (is_locked check)
-                _scalar_one_or_none_mock(assignment_mock), # 5: load assignment (rubric_snapshot)
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(cs),  # 3: load criterion score
+                _scalar_one_or_none_mock(grade_mock),  # 4: load grade (is_locked check)
+                _scalar_one_or_none_mock(assignment_mock),  # 5: load assignment (rubric_snapshot)
             ]
         )
 
@@ -838,8 +838,8 @@ class TestResolveRegradeRequest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_one_or_none_mock(rr),    # 1: tenant-scoped request load
-                _scalar_one_or_none_mock(rr.id), # 2: FOR UPDATE lock
+                _scalar_one_or_none_mock(rr),  # 1: tenant-scoped request load
+                _scalar_one_or_none_mock(rr.id),  # 2: FOR UPDATE lock
             ]
         )
 

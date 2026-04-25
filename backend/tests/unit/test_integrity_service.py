@@ -80,9 +80,7 @@ def _make_db_tenant_miss(*, exists: bool) -> AsyncMock:
 
     # Second execute call = bare existence check.
     existence_result = MagicMock()
-    existence_result.scalar_one_or_none = MagicMock(
-        return_value=uuid.uuid4() if exists else None
-    )
+    existence_result.scalar_one_or_none = MagicMock(return_value=uuid.uuid4() if exists else None)
 
     db.execute = AsyncMock(side_effect=[ownership_result, existence_result])
     return db
@@ -284,9 +282,7 @@ class TestOriginalityAiProvider:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(
-            side_effect=httpx.TransportError("Connection refused")
-        )
+        mock_client.post = AsyncMock(side_effect=httpx.TransportError("Connection refused"))
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             provider = OriginalityAiProvider(api_key="fake-key-for-testing")
@@ -311,9 +307,7 @@ class TestOriginalityAiProvider:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(
-            side_effect=httpx.TimeoutException("Request timed out")
-        )
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Request timed out"))
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             provider = OriginalityAiProvider(api_key="fake-key-for-testing")
@@ -506,7 +500,11 @@ class TestOriginalityAiProvider:
         api_response: dict[str, object] = {
             "score": {"ai": 0.5},
             # Mix of valid and invalid sentence types.
-            "sentences": ["plain string", None, {"sentence": "Real sentence.", "generated_prob": 0.95}],
+            "sentences": [
+                "plain string",
+                None,
+                {"sentence": "Real sentence.", "generated_prob": 0.95},
+            ],
         }
 
         mock_response = MagicMock()
@@ -949,11 +947,14 @@ class TestRunIntegrityCheck:
 
         internal_provider = InternalProvider()
 
-        with patch.object(
-            internal_provider,
-            "check",
-            side_effect=IntegrityProviderUnavailableError("Should not happen"),
-        ), pytest.raises(IntegrityProviderUnavailableError):
+        with (
+            patch.object(
+                internal_provider,
+                "check",
+                side_effect=IntegrityProviderUnavailableError("Should not happen"),
+            ),
+            pytest.raises(IntegrityProviderUnavailableError),
+        ):
             await run_integrity_check(
                 db=db,
                 essay_version_id=essay_version_id,

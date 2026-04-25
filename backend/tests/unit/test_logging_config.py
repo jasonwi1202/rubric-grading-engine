@@ -141,9 +141,7 @@ class TestJsonFormatterExtraFields:
         output = json.loads(formatter.format(record))
         assert output.get("error_type") == "LLMError"
 
-    def test_reserved_fields_cannot_be_overwritten_by_extra(
-        self, formatter: JsonFormatter
-    ) -> None:
+    def test_reserved_fields_cannot_be_overwritten_by_extra(self, formatter: JsonFormatter) -> None:
         """Fixed output fields must not be overrideable via extra= kwargs."""
         record = logging.LogRecord(
             name="app.test",
@@ -215,9 +213,7 @@ class TestJsonFormatterPIISafety:
         pii_message = "essay submitted by <student_name> contained invalid content"
         record = self._make_exc_record("an error occurred", ValueError(pii_message))
         output = formatter.format(record)
-        assert pii_message not in output, (
-            f"PII found in log output: {output!r}"
-        )
+        assert pii_message not in output, f"PII found in log output: {output!r}"
 
     def test_exception_type_name_is_in_output(self, formatter: JsonFormatter) -> None:
         record = self._make_exc_record("an error occurred", ValueError("boom"))
@@ -228,17 +224,13 @@ class TestJsonFormatterPIISafety:
         email = "<student_email>@example.invalid"
         record = self._make_exc_record("auth failure", RuntimeError(f"no account for {email}"))
         output = formatter.format(record)
-        assert email not in output, (
-            f"Student email found in log output: {output!r}"
-        )
+        assert email not in output, f"Student email found in log output: {output!r}"
 
     def test_traceback_not_in_output(self, formatter: JsonFormatter) -> None:
         """Tracebacks are excluded — they can reveal code paths and PII values."""
         record = self._make_exc_record("failed", RuntimeError("boom"))
         output = formatter.format(record)
-        assert "Traceback" not in output, (
-            f"Traceback found in log output: {output!r}"
-        )
+        assert "Traceback" not in output, f"Traceback found in log output: {output!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +258,7 @@ class TestCorrelationIdFilter:
         record = self._make_record()
         assert filter_.filter(record) is True
 
-    def test_correlation_id_injected_from_contextvar(
-        self, filter_: CorrelationIdFilter
-    ) -> None:
+    def test_correlation_id_injected_from_contextvar(self, filter_: CorrelationIdFilter) -> None:
         record = self._make_record()
         token = correlation_id_var.set("abc-123")
         try:
@@ -280,9 +270,7 @@ class TestCorrelationIdFilter:
             f"Expected 'abc-123', got {getattr(record, 'correlation_id', None)!r}"
         )
 
-    def test_empty_string_when_no_correlation_id_set(
-        self, filter_: CorrelationIdFilter
-    ) -> None:
+    def test_empty_string_when_no_correlation_id_set(self, filter_: CorrelationIdFilter) -> None:
         """Outside a request context the correlation_id field is an empty string."""
         token = correlation_id_var.set("")
         try:

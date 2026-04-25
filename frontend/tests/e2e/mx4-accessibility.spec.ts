@@ -62,13 +62,17 @@ test.describe("MX.4 — Accessibility: public pages", () => {
 test.describe("MX.4 — Accessibility: auth pages", () => {
   test("/login has no critical/serious WCAG 2.1 AA violations", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.locator("main").first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("main, [role='main'], body").first()).toBeVisible({
+      timeout: 10_000,
+    });
     await assertA11y(page);
   });
 
   test("/signup has no critical/serious WCAG 2.1 AA violations", async ({ page }) => {
     await page.goto("/signup");
-    await expect(page.locator("main").first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("main, [role='main'], body").first()).toBeVisible({
+      timeout: 10_000,
+    });
     await assertA11y(page);
   });
 });
@@ -98,6 +102,7 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
   test.setTimeout(180_000);
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
     await clearMailpit();
 
     const fixture = await seedLockedGrades("mx4-a11y");

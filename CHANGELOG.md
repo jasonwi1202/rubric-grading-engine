@@ -12,6 +12,41 @@ Changes on active feature branches not yet merged to a release branch.
 
 ---
 
+## [v0.5.0] — M4 Workflow — Unreleased (pending merge to main)
+
+### Added
+- **Confidence scoring** — grading prompt extended to output `confidence` per criterion (`high`/`medium`/`low`); `CriterionScore.confidence` and `Grade.overall_confidence` stored; confidence badge in review queue; low-confidence-first sort; fast-review filter; bulk-approve for high-confidence essays (teacher-explicit, never automatic); per-criterion plain-language confidence explanation in review panel
+- **Academic integrity — internal similarity** — essay embeddings computed via OpenAI embeddings API on upload (stored as `vector(1536)` in `essay_versions` via pgvector); cosine similarity queried against same-assignment essays; pairs above `INTEGRITY_SIMILARITY_THRESHOLD` flagged as `IntegrityReport` with `provider=internal`
+- **Academic integrity — third-party provider** — abstract `IntegrityProvider` interface; `OriginalityAiProvider` / `WinstonAiProvider` (configurable via `INTEGRITY_PROVIDER` env var); fails open to internal provider on network error; `IntegrityReport` written by whichever provider runs
+- **Academic integrity — API and UI** — `GET /essays/{id}/integrity`; `PATCH /integrity-reports/{id}/status` (`reviewed_clear`/`flagged`); per-essay integrity panel in review interface (AI likelihood indicator, similarity score, flagged passages highlighted); class-level flagged/clear/pending count on assignment page; all language framed as signals, not findings
+- **Regrade requests** — `POST /grades/{id}/regrade-requests`; configurable submission window (`REGRADE_WINDOW_DAYS`) and per-grade limit (`REGRADE_MAX_PER_GRADE`); `GET /assignments/{id}/regrade-requests` queue; `POST /regrade-requests/{id}/resolve` (approve with optional new score / deny with required note); resolution audit-logged; regrade queue tab on assignment page; side-by-side review panel with approve/deny controls
+- **Audio feedback comments** — in-browser audio recording via MediaRecorder API (max 3 min); uploaded to S3 at `media/{teacher_id}/{grade_id}/{uuid}.webm`; `POST /grades/{id}/media-comments`; `DELETE /media-comments/{id}`; access-controlled pre-signed URL playback; no student PII in S3 key
+- **Video feedback comments** — webcam recording with optional screen share via `getDisplayMedia`; same S3 upload and API flow as audio; graceful degradation when camera permission denied
+- **Media comment bank** — save-to-bank action; bank picker in review panel; apply saved comment to any grade in one click; media link / QR code included in PDF batch export
+- **Security hardening** — `SecurityHeadersMiddleware` adds `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `X-XSS-Protection` on every response; `RateLimitMiddleware` enforces per-IP Redis counters on `/auth/login`, `/auth/refresh`, `/auth/signup`; `CORS_ORIGINS` wildcard rejected at startup; PostgreSQL RLS enabled on all tenant-scoped tables (essays, grades, rubrics, assignments, classes, students, integrity reports, regrade requests, media comments); `pip-audit` and `npm audit` added to CI with failure on high/critical CVEs
+- **Structured observability** — `CorrelationIdMiddleware` generates per-request UUIDs propagated to all log lines and Celery tasks; structured JSON logging via `logging_config.py` (timestamp, level, correlation_id, service, entity IDs — no PII); enhanced `/api/v1/health` returns dependency status for DB, Redis, S3; Celery task failure logging uses `error_type=type(exc).__name__` only
+- **E2E test suite (Journeys 1–4)** — Playwright: Journey 1 (login → class → students → rubric → assignment); Journey 2 (upload → auto-assign → batch grade → progress); Journey 3 (review → override score → edit feedback → lock, HITL guarantee); Journey 4 (export PDF ZIP → download); shared `helpers.ts` fixture infrastructure; all test data seeded and torn down via API; LLM mocked at environment level
+- **Accessibility audit** — `@axe-core/playwright` scan in CI; ARIA labels on all icon-only buttons, score inputs, status badges; focus management in all modals (focus in, trap, Escape, return to trigger); keyboard navigation throughout dashboard; WCAG 2.1 AA color contrast compliance
+- **`prompt_version` on Grade** — `prompt_version VARCHAR(20) NOT NULL DEFAULT 'v1'` added to `grades` table; populated from `GRADING_PROMPT_VERSION` env var at grade-write time; included in `GET /essays/{id}/grade` response
+
+### Security
+- Rate limiting middleware on all auth endpoints (Redis counters, IP-keyed)
+- CORS wildcard rejection enforced at application startup via Pydantic settings validator
+- RLS policies on all tenant-scoped tables — dual enforcement at service layer and DB layer
+- Academic integrity language deliberately framed as signals; no automated conclusions presented to teacher
+- Media S3 keys contain no student PII; pre-signed URLs scoped to owning teacher with configurable TTL
+
+### Fixed
+- Auth router unit tests exhausting rate-limit counter across test runs — `_RATE_LIMIT_RULES` patched to `[]` in test module via `autouse` monkeypatch fixture
+- `frontend/app/(onboarding)/onboarding/class/page.tsx` and `frontend/tests/unit/onboarding-class-page.test.tsx` saved as UTF-16 during conflict resolution — re-encoded as UTF-8 without BOM
+
+### Tests added
+- Backend: confidence schema validation, confidence derivation, integrity report model, embedding task (OpenAI mocked), integrity service provider selection, integrity router tenant isolation, regrade request model, regrade API enforcement (window, limit, resolve), regrade router, media comment service and router, security middleware header assertions, rate limit middleware (Redis mocked), RLS migration structure, logging config (no-PII assertions), tenant isolation cross-teacher 403 coverage
+- Frontend: `confidence-review-queue`, `integrity-panel`, `regrade-queue`, `audio-recorder`, `video-recorder`, `media-bank-picker` Vitest component suites
+- E2E: four Playwright journeys; `@axe-core/playwright` accessibility suite
+
+---
+
 ## [v0.4.0] — M3 Foundation — Unreleased (pending merge to main)
 
 ### Added

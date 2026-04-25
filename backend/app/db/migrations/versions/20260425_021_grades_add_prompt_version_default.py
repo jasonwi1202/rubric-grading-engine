@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "021_grades_prompt_version_default"
+revision: str = "021_grades_prompt_version"
 down_revision: str | None = "020_rls_tenant_isolation"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

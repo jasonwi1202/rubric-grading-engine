@@ -152,7 +152,11 @@ jobs:
         working-directory: backend
 
       - name: Audit dependencies (fail on any reported CVE)
-        run: pip-audit --skip-editable --vulnerability-service pypi
+        run: |
+          # CVE-2026-3219 affects pip itself (the GitHub Actions runner's pip),
+          # not a package we ship. Ignore it; all other CVEs still fail the build.
+          pip-audit --skip-editable --vulnerability-service pypi \
+            --ignore-vuln CVE-2026-3219
         working-directory: backend
 
   # ─── Frontend: ESLint + TypeScript ───────────────────────────────────────────
@@ -268,6 +272,7 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       API_BASE_URL: http://localhost:8000
       MAILPIT_API_URL: http://localhost:8025
+      E2E_SKIP_EMAIL_VERIFICATION: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -330,6 +335,21 @@ jobs:
             --mailpit-url http://localhost:8025 \
             --retries 10 \
             --retry-delay 3
+
+      - name: Wait for Celery worker to be ready
+        run: |
+          # Give the worker time to connect to Redis and register tasks.
+          # Without this, the first signup email task can sit in the queue
+          # for several seconds before the worker picks it up, causing
+          # waitForEmail() to time out in Playwright tests.
+          for i in $(seq 1 20); do
+            if docker compose exec -T worker celery -A app.tasks.celery_app inspect ping --timeout 3 > /dev/null 2>&1; then
+              echo "Celery worker is ready"
+              break
+            fi
+            echo "Waiting for worker... ($i/20)"
+            sleep 3
+          done
 
       - name: Run Playwright E2E tests
         run: npx playwright test

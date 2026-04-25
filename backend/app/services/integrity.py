@@ -257,8 +257,7 @@ class OriginalityAiProvider(IntegrityProvider):
         # Idempotency guard: if a report for this version already exists, return
         # it immediately without spending an API credit.
         idempotency_check = await db.execute(
-            select(IntegrityReport)
-            .where(
+            select(IntegrityReport).where(
                 IntegrityReport.essay_version_id == essay_version_id,
                 IntegrityReport.provider == "originality_ai",
                 IntegrityReport.teacher_id == teacher_id,
@@ -317,9 +316,7 @@ class OriginalityAiProvider(IntegrityProvider):
                     "error_type": type(exc).__name__,
                 },
             )
-            raise IntegrityProviderUnavailableError(
-                "Originality.ai is unavailable"
-            ) from exc
+            raise IntegrityProviderUnavailableError("Originality.ai is unavailable") from exc
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
             if status_code >= 500 or status_code == 429:
@@ -331,9 +328,7 @@ class OriginalityAiProvider(IntegrityProvider):
                         "status_code": status_code,
                     },
                 )
-                raise IntegrityProviderUnavailableError(
-                    "Originality.ai is unavailable"
-                ) from exc
+                raise IntegrityProviderUnavailableError("Originality.ai is unavailable") from exc
             raise
 
         # Normalise response fields; ignore unrecognised keys gracefully.
@@ -368,7 +363,10 @@ class OriginalityAiProvider(IntegrityProvider):
                     continue
                 prob = s.get("generated_prob")
                 # Only flag when probability is a valid numeric value above threshold.
-                if isinstance(prob, (int, float)) and prob >= settings.integrity_ai_likelihood_threshold:
+                if (
+                    isinstance(prob, (int, float))
+                    and prob >= settings.integrity_ai_likelihood_threshold
+                ):
                     flagged_passages.append(
                         {
                             "text": s.get("sentence", ""),
@@ -392,9 +390,7 @@ class OriginalityAiProvider(IntegrityProvider):
                 flagged_passages=flagged_passages if flagged_passages else None,
                 status=IntegrityReportStatus.pending,
             )
-            .on_conflict_do_nothing(
-                index_elements=["essay_version_id", "provider"]
-            )
+            .on_conflict_do_nothing(index_elements=["essay_version_id", "provider"])
             .returning(IntegrityReport.id)
         )
         insert_result = await db.execute(stmt)
@@ -597,9 +593,7 @@ async def get_integrity_report_for_essay(
     essay = essay_result.scalar_one_or_none()
     if essay is None:
         # Distinguish between not found vs. forbidden.
-        exists_result = await db.execute(
-            select(Essay.id).where(Essay.id == essay_id)
-        )
+        exists_result = await db.execute(select(Essay.id).where(Essay.id == essay_id))
         if exists_result.scalar_one_or_none() is None:
             raise NotFoundError("Essay not found.")
         raise ForbiddenError("You do not have access to this essay.")
@@ -631,6 +625,10 @@ async def get_integrity_report_for_essay(
     if report is None:
         raise NotFoundError("No integrity report found for this essay.")
 
+    from app.schemas.integrity import FlaggedPassage
+
+    raw_passages = report.flagged_passages or []
+    passages = [FlaggedPassage.model_validate(p) for p in raw_passages]
     return IntegrityReportResponse(
         id=report.id,
         essay_id=essay.id,
@@ -638,7 +636,7 @@ async def get_integrity_report_for_essay(
         provider=report.provider,
         ai_likelihood=report.ai_likelihood,
         similarity_score=report.similarity_score,
-        flagged_passages=report.flagged_passages or [],
+        flagged_passages=passages,
         status=report.status,
         reviewed_at=report.reviewed_at,
         created_at=report.created_at,
@@ -679,9 +677,7 @@ async def update_integrity_report_status(
         )
 
     # Load and authorise.
-    report_result = await db.execute(
-        select(IntegrityReport).where(IntegrityReport.id == report_id)
-    )
+    report_result = await db.execute(select(IntegrityReport).where(IntegrityReport.id == report_id))
     report = report_result.scalar_one_or_none()
     if report is None:
         raise NotFoundError("Integrity report not found.")
@@ -705,6 +701,10 @@ async def update_integrity_report_status(
         extra={"report_id": str(report_id), "status": status.value},
     )
 
+    from app.schemas.integrity import FlaggedPassage
+
+    raw_passages = report.flagged_passages or []
+    passages = [FlaggedPassage.model_validate(p) for p in raw_passages]
     return IntegrityReportResponse(
         id=report.id,
         essay_id=essay_id,
@@ -712,7 +712,7 @@ async def update_integrity_report_status(
         provider=report.provider,
         ai_likelihood=report.ai_likelihood,
         similarity_score=report.similarity_score,
-        flagged_passages=report.flagged_passages or [],
+        flagged_passages=passages,
         status=report.status,
         reviewed_at=report.reviewed_at,
         created_at=report.created_at,
@@ -800,9 +800,7 @@ async def get_integrity_summary_for_assignment(
             func.max(IntegrityReport.created_at).label("max_created_at"),
         )
         .where(
-            IntegrityReport.essay_version_id.in_(
-                select(latest_versions_subq.c.version_id)
-            ),
+            IntegrityReport.essay_version_id.in_(select(latest_versions_subq.c.version_id)),
             IntegrityReport.teacher_id == teacher_id,
         )
         .group_by(IntegrityReport.essay_version_id)

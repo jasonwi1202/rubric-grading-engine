@@ -389,7 +389,9 @@ def downgrade() -> None:
     op.execute(sa.text("ALTER TABLE criterion_scores NO FORCE ROW LEVEL SECURITY"))
     op.execute(sa.text("ALTER TABLE criterion_scores DISABLE ROW LEVEL SECURITY"))
 
-    op.execute(sa.text("DROP POLICY IF EXISTS system_template_criteria_readable ON rubric_criteria"))
+    op.execute(
+        sa.text("DROP POLICY IF EXISTS system_template_criteria_readable ON rubric_criteria")
+    )
     op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON rubric_criteria"))
     op.execute(sa.text("ALTER TABLE rubric_criteria NO FORCE ROW LEVEL SECURITY"))
     op.execute(sa.text("ALTER TABLE rubric_criteria DISABLE ROW LEVEL SECURITY"))

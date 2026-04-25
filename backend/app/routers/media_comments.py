@@ -61,9 +61,13 @@ media_comments_router = APIRouter(prefix="/media-comments", tags=["media-comment
 )
 async def create_media_comment_endpoint(
     grade_id: uuid.UUID,
-    file: UploadFile | None = File(None, description="Media blob (audio/webm, audio/ogg, audio/mp4, video/webm)"),
+    file: UploadFile | None = File(
+        None, description="Media blob (audio/webm, audio/ogg, audio/mp4, video/webm)"
+    ),
     duration_seconds: int | None = Form(None, ge=1, le=180),
-    source_id: uuid.UUID | None = Form(None, description="UUID of a banked media comment to apply instead of uploading a new file"),
+    source_id: uuid.UUID | None = Form(
+        None, description="UUID of a banked media comment to apply instead of uploading a new file"
+    ),
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
@@ -241,6 +245,7 @@ async def get_media_comment_url_endpoint(
         status_code=200,
         content={"data": url_response.model_dump(mode="json")},
     )
+
 
 # ---------------------------------------------------------------------------
 # POST /media-comments/{media_comment_id}/save-to-bank

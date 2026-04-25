@@ -69,9 +69,9 @@ _MIME_TO_EXT: dict[str, str] = {
 # Sanity-check: every base MIME type in ALLOWED_MIME_TYPES must have an entry
 # in _MIME_TO_EXT, so adding a new allowed type without a corresponding
 # extension mapping is caught immediately at import time.
-assert all(
-    m.split(";")[0].strip() in _MIME_TO_EXT for m in ALLOWED_MIME_TYPES
-), "All base MIME types in ALLOWED_MIME_TYPES must have an entry in _MIME_TO_EXT"
+assert all(m.split(";")[0].strip() in _MIME_TO_EXT for m in ALLOWED_MIME_TYPES), (
+    "All base MIME types in ALLOWED_MIME_TYPES must have an entry in _MIME_TO_EXT"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +137,7 @@ async def _load_media_comment_tenant_scoped(
 
     if mc is None:
         # Determine 403 vs 404.
-        exists_stmt = select(MediaComment.id).where(
-            MediaComment.id == media_comment_id
-        )
+        exists_stmt = select(MediaComment.id).where(MediaComment.id == media_comment_id)
         exists_result = await db.execute(exists_stmt)
         if exists_result.scalar_one_or_none() is None:
             raise NotFoundError("Media comment not found.")

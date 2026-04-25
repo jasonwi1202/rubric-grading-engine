@@ -22,6 +22,9 @@ export default defineConfig({
   fullyParallel: false, // Sequential — tests share a live backend; avoid race conditions
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // Seed helpers can take >30s in CI (signup + email verification + batch grading).
+  // Raise the default test/hook timeout to avoid beforeAll hook timeouts.
+  timeout: 180_000,
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
 

@@ -131,9 +131,7 @@ class TestRunComputeEssayEmbedding:
                 new=AsyncMock(return_value=expected),
             ),
         ):
-            result = await _run_compute_essay_embedding(
-                essay_version_id, assignment_id, teacher_id
-            )
+            result = await _run_compute_essay_embedding(essay_version_id, assignment_id, teacher_id)
 
         assert result == 2
 

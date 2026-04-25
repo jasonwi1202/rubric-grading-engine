@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     llm_request_timeout_seconds: int = 60
     llm_max_retries: int = 3
     grading_prompt_version: str = "v2"
+    # Test-only mode: bypass external OpenAI calls and return deterministic
+    # synthetic grading/embedding outputs. Keep False outside CI/tests.
+    llm_fake_mode: bool = False
 
     # -------------------------------------------------------------------------
     # File Storage (S3 / MinIO)
@@ -134,6 +137,14 @@ class Settings(BaseSettings):
     # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
     # enable in production behind a trusted proxy; leave False in development.
     trust_proxy_headers: bool = False
+    # When False, the RateLimitMiddleware is registered but immediately passes
+    # all requests through without checking counters.  Set to False in CI E2E
+    # environments where many accounts are created during the test run.
+    rate_limit_enabled: bool = True
+    # Test-only escape hatch for CI E2E: allow login for unverified accounts
+    # when the email delivery stack is intentionally bypassed. Keep False in
+    # all non-test environments.
+    allow_unverified_login_in_test: bool = False
 
     # -------------------------------------------------------------------------
     # Validators

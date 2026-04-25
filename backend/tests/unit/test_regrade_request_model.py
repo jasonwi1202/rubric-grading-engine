@@ -60,9 +60,7 @@ class TestRegradeRequestModel:
             "resolved_at",
             "created_at",
         }
-        assert expected <= set(table.c.keys()), (
-            f"Missing columns: {expected - set(table.c.keys())}"
-        )
+        assert expected <= set(table.c.keys()), f"Missing columns: {expected - set(table.c.keys())}"
 
     def test_id_is_uuid(self) -> None:
         assert _type_name(RegradeRequest, "id") == "UUID"
@@ -140,28 +138,24 @@ class TestMigrationRevisionChain:
 
     def test_revision_id(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260423_017_regrade_request_create_regrade_requests_table"
+            "app.db.migrations.versions.20260423_017_regrade_request_create_regrade_requests_table"
         )
         assert mod.revision == "017_regrade_request"
 
     def test_down_revision_points_to_016(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260423_017_regrade_request_create_regrade_requests_table"
+            "app.db.migrations.versions.20260423_017_regrade_request_create_regrade_requests_table"
         )
         assert mod.down_revision == "016_integrity_report_reviewed_at"
 
     def test_upgrade_callable(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260423_017_regrade_request_create_regrade_requests_table"
+            "app.db.migrations.versions.20260423_017_regrade_request_create_regrade_requests_table"
         )
         assert callable(mod.upgrade)
 
     def test_downgrade_callable(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260423_017_regrade_request_create_regrade_requests_table"
+            "app.db.migrations.versions.20260423_017_regrade_request_create_regrade_requests_table"
         )
         assert callable(mod.downgrade)

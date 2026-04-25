@@ -26,6 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.session import get_db, set_tenant_context
 from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import decode_access_token
@@ -80,7 +81,7 @@ async def get_current_teacher(
     if db_user is None:
         raise UnauthorizedError("Account not found.")
 
-    if not db_user.email_verified:
+    if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         raise UnauthorizedError("Email address is not verified.")
 
     # Activate PostgreSQL RLS policies for this teacher.  This is done here

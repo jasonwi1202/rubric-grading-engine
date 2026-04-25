@@ -31,11 +31,12 @@ import asyncio
 import logging
 import uuid
 
-from app.db.session import AsyncSessionLocal
+from app.db import session as session_module
 from app.exceptions import ForbiddenError, LLMError, NotFoundError, ValidationError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
+AsyncSessionLocal = session_module.AsyncSessionLocal
 
 
 # ---------------------------------------------------------------------------
