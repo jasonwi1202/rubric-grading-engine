@@ -47,11 +47,13 @@ def upgrade() -> None:
             )
         )
     # Attach the constraint to the pre-built index (instant, no lock).
-    op.create_unique_constraint(
-        _CONSTRAINT_NAME,
-        _TABLE,
-        ["essay_version_id", "provider"],
-        postgresql_using_index=_INDEX_NAME,
+    # ALTER TABLE ... ADD CONSTRAINT ... USING INDEX is the correct DDL form;
+    # SQLAlchemy's create_unique_constraint does not support postgresql_using_index.
+    op.execute(
+        sa.text(
+            f"ALTER TABLE {_TABLE} ADD CONSTRAINT {_CONSTRAINT_NAME} "
+            f"UNIQUE USING INDEX {_INDEX_NAME}"
+        )
     )
 
 
