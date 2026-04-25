@@ -59,6 +59,7 @@ test.describe("Journey 4 — Export: batch PDF ZIP and CSV download", () => {
   test.setTimeout(180_000);
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
     // Clear stale verification emails so seedTeacher's waitForEmail() picks
     // up the right message and doesn't find a previous run's email.
     await clearMailpit();

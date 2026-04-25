@@ -65,6 +65,7 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
   };
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
     // Clear stale emails so waitForEmail() picks up the right message.
     await clearMailpit();
 
@@ -278,6 +279,7 @@ test.describe("Journey 2 — Grading: upload → auto-assign → batch grade →
   };
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
     // 1. Seed a fresh verified teacher account (independent of Journey 1).
     await clearMailpit();
     const creds = await seedTeacher("journey2");
@@ -538,6 +540,7 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
   test.setTimeout(180_000);
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(180_000);
     // Clear stale emails so seedTeacher's waitForEmail() picks up the right
     // verification message.
     await clearMailpit();
