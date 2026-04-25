@@ -25,7 +25,6 @@
 import { promises as fs } from "fs";
 import { test, expect, BrowserContext, Page } from "@playwright/test";
 import {
-  clearMailpit,
   seedLockedGrades,
 } from "./helpers";
 
@@ -62,10 +61,6 @@ test.describe("Journey 4 — Export: batch PDF ZIP and CSV download", () => {
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(180_000);
-    // Clear stale verification emails so seedTeacher's waitForEmail() picks
-    // up the right message and doesn't find a previous run's email.
-    await clearMailpit();
-
     // Seed a complete fixture independently of Journeys 1–3:
     //   teacher → class → 2 students → rubric → assignment
     //   → 2 essays → batch grading → lock both grades

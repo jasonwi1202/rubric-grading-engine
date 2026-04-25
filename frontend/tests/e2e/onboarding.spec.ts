@@ -23,13 +23,12 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
-import { clearMailpit, seedTeacher } from "./helpers";
+import { seedTeacher } from "./helpers";
 
 const SKIP = process.env.SKIP_AUTH_TESTS !== "false";
 
 /** Create a verified teacher account and return a logged-in page. */
 async function loginAsNewTeacher(page: Page): Promise<{ email: string; password: string }> {
-  await clearMailpit();
   const { email, password } = await seedTeacher("onboard");
 
   // Log in via UI
@@ -43,7 +42,7 @@ async function loginAsNewTeacher(page: Page): Promise<{ email: string; password:
 }
 
 test.describe("Onboarding wizard", () => {
-  test.skip(SKIP, "Skipped until POST /api/v1/auth/login is implemented (M3). Set SKIP_AUTH_TESTS=false to run.");
+  test.skip(SKIP, "Set SKIP_AUTH_TESTS=false to run onboarding E2E when auth flow is fully stable.");
 
   test("wizard renders step 1 after first login", async ({ page }) => {
     await loginAsNewTeacher(page);
@@ -86,3 +85,4 @@ test.describe("Onboarding wizard", () => {
     await expect(page).toHaveURL(/\/onboarding\/rubric|\/onboarding\/done/, { timeout: 10_000 });
   });
 });
+

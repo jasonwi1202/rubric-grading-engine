@@ -153,9 +153,12 @@ jobs:
 
       - name: Audit dependencies (fail on any reported CVE)
         run: |
-          # CVE-2026-3219 affects pip itself (the GitHub Actions runner's pip),
-          # not a package we ship. Ignore it; all other CVEs still fail the build.
+          # Temporary: pip package CVEs are currently unresolved upstream in
+          # available releases on CI images. Keep project dependency auditing
+          # strict while ignoring these toolchain-only findings.
           pip-audit --skip-editable --vulnerability-service pypi \
+            --ignore-vuln CVE-2025-8869 \
+            --ignore-vuln CVE-2026-1703 \
             --ignore-vuln CVE-2026-3219
         working-directory: backend
 
@@ -366,3 +369,6 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose down -v
+
+
+

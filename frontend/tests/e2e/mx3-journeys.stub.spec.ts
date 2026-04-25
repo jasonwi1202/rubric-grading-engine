@@ -21,7 +21,6 @@
 
 import { test, expect, BrowserContext, Page } from "@playwright/test";
 import {
-  clearMailpit,
   loginApi,
   seedAssignment,
   seedClass,
@@ -66,9 +65,6 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(180_000);
-    // Clear stale emails so waitForEmail() picks up the right message.
-    await clearMailpit();
-
     // Seed a fresh, verified teacher account via the API.
     const creds = await seedTeacher("journey1");
     state.email = creds.email;
@@ -284,7 +280,6 @@ test.describe("Journey 2 — Grading: upload → auto-assign → batch grade →
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(180_000);
     // 1. Seed a fresh verified teacher account (independent of Journey 1).
-    await clearMailpit();
     const creds = await seedTeacher("journey2");
     state.email = creds.email;
     state.password = creds.password;
@@ -544,10 +539,6 @@ test.describe("Journey 3 — Review: open queue → override → edit feedback �
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(180_000);
-    // Clear stale emails so seedTeacher's waitForEmail() picks up the right
-    // verification message.
-    await clearMailpit();
-
     // Seed a complete graded-essay fixture independently of Journeys 1 & 2.
     // seedGradedEssay: creates teacher → class → student → rubric → assignment
     //                  → uploads essay → triggers batch grading → polls until done.

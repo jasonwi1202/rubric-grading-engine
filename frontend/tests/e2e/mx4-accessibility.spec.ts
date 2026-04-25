@@ -24,7 +24,7 @@
  */
 
 import { test, expect, BrowserContext, Page } from "@playwright/test";
-import { clearMailpit, seedLockedGrades, assertA11y } from "./helpers";
+import { seedLockedGrades, assertA11y } from "./helpers";
 
 // ---------------------------------------------------------------------------
 // Block 1: Public pages (no auth required)
@@ -103,7 +103,6 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(180_000);
-    await clearMailpit();
 
     const fixture = await seedLockedGrades("mx4-a11y");
     state.email = fixture.email;
