@@ -1,4 +1,4 @@
-"""grades: add server default 'v1' to prompt_version column
+"""grades: add server default 'grading-v1' to prompt_version column
 
 Revision ID: 021_grades_prompt_version_default
 Revises: 020_rls_tenant_isolation
@@ -6,8 +6,9 @@ Create Date: 2026-04-25 00:00:00.000000
 
 The ``prompt_version`` column was added to ``grades`` in migration
 006_core_schema as ``VARCHAR(100) NOT NULL`` without a server-side default.
-This migration adds ``DEFAULT 'v1'`` so that the column fully matches the
-specification in ``docs/roadmap.md`` MX.5.
+This migration adds ``DEFAULT 'grading-v1'`` so that the column fully matches
+the specification in ``docs/roadmap.md`` MX.5 and the ``grading-{version}``
+format written by the grading service.
 
 All existing rows already have an explicit value written by the grading
 service, so no data back-fill is required.
@@ -28,12 +29,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Add server default 'v1' to the existing NOT NULL column.
+    # Add server default matching the grading service's 'grading-{version}' format.
     op.alter_column(
         "grades",
         "prompt_version",
         existing_type=sa.String(100),
-        server_default="v1",
+        server_default="grading-v1",
         existing_nullable=False,
     )
 
