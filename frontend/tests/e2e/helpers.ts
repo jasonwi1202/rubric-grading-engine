@@ -6,6 +6,7 @@
  */
 
 import { Page, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const MAILPIT_API = process.env.MAILPIT_API_URL ?? "http://localhost:8025";
 
@@ -648,4 +649,46 @@ export async function assertBasicA11y(page: Page): Promise<void> {
   await expect(page.locator("main, [role='main']").first()).toBeVisible();
   const title = await page.title();
   expect(title.length).toBeGreaterThan(0);
+}
+
+/**
+ * Run axe-core against the current page and assert zero critical or serious
+ * WCAG 2.1 AA violations.
+ *
+ * Tags checked: wcag2a, wcag2aa, wcag21a, wcag21aa.
+ * Impact levels that fail: "critical" and "serious".
+ * Moderate and minor violations are not asserted by this helper and do not
+ * fail the test.
+ *
+ * Call after the page has fully rendered (all async content resolved).
+ */
+export async function assertA11y(page: Page): Promise<void> {
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+
+  const blocking = results.violations.filter(
+    (v) => v.impact === "critical" || v.impact === "serious",
+  );
+
+  if (blocking.length > 0) {
+    const summary = blocking
+      .map((v) => {
+        const nodes = v.nodes
+          .slice(0, 3)
+          .map((n) => {
+            const selectorSummary =
+              Array.isArray(n.target) && n.target.length > 0
+                ? n.target.join(", ")
+                : "(no selector available)";
+            return `  • target: ${selectorSummary}`;
+          })
+          .join("\n");
+        return `[${v.impact}] ${v.id}: ${v.description}\n${nodes}`;
+      })
+      .join("\n\n");
+    throw new Error(
+      `axe-core found ${blocking.length} critical/serious accessibility violation(s):\n\n${summary}`,
+    );
+  }
 }
