@@ -37,12 +37,15 @@ _TABLE = "integrity_reports"
 
 def upgrade() -> None:
     # Build the unique index concurrently so the table is not locked.
-    op.execute(
-        sa.text(
-            f"CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {_INDEX_NAME} "
-            f"ON {_TABLE} (essay_version_id, provider)"
+    # autocommit_block() ensures the statement runs outside any transaction,
+    # which is required by PostgreSQL for CONCURRENTLY index operations.
+    with op.get_context().autocommit_block():
+        op.execute(
+            sa.text(
+                f"CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {_INDEX_NAME} "
+                f"ON {_TABLE} (essay_version_id, provider)"
+            )
         )
-    )
     # Attach the constraint to the pre-built index (instant, no lock).
     op.create_unique_constraint(
         _CONSTRAINT_NAME,
@@ -54,4 +57,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint(_CONSTRAINT_NAME, _TABLE, type_="unique")
-    op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}"))
+    with op.get_context().autocommit_block():
+        op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}"))
