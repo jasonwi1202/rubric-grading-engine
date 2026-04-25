@@ -25,6 +25,11 @@ down_revision: str | None = "014_essay_embedding"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+# Setting this to False tells Alembic to run this migration outside the default
+# per-migration transaction so the concurrent index build succeeds.
+transaction_per_migration = False
+
 _INDEX_NAME = "ix_uq_integrity_reports_version_provider"
 _CONSTRAINT_NAME = "uq_integrity_reports_version_provider"
 _TABLE = "integrity_reports"
