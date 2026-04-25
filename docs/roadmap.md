@@ -22,7 +22,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **M1** | Project Scaffold | Monorepo, CI, Docker Compose, authentication, and local dev environment. No product features — everything else depends on this. | 10 | ✅ Complete |
 | **M2** | Public Website & Onboarding | Marketing site, legal pages, pricing, AI transparency page, sign-up, and trial onboarding wizard. Can be built in parallel with M3 once M1.2 and M1.3 are done. | 10 | ✅ Complete |
 | **M3** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 | ✅ Complete |
-| **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | 🔲 Planned |
+| **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | ✅ Complete |
 | **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | 🔲 Planned |
 | **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | 🔲 Planned |
 | **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | 🔲 Planned |
@@ -146,7 +146,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M4 — Workflow
+## M4 — Workflow ✅ Complete
 
 > Confidence scoring, academic integrity, assignment workflow polish, regrade requests, and media feedback.
 
@@ -154,33 +154,33 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 | # | Issue Title | Description |
 |---|---|---|
-| M4.1 | Confidence scoring in grading | Extend grading prompt/response to include `confidence` field per criterion (`high` / `medium` / `low`). Store on `CriterionScore`. Compute overall essay confidence from criteria. |
-| M4.2 | Confidence-based review queue | Surface confidence indicator on each essay in review queue. Sort low-confidence first by default. Fast-review mode: filter to low-confidence only. Bulk-approve high-confidence essays (teacher-explicit action — never automatic). Show plain-language explanation of why a criterion is low-confidence. |
+| ~~M4.1~~ | ~~Confidence scoring in grading~~ | ✅ Done — PR #132. `confidence` field per criterion and `overall_confidence` on `Grade`. |
+| ~~M4.2~~ | ~~Confidence-based review queue~~ | ✅ Done — PR #133. Low-confidence-first sort, fast-review filter, bulk-approve. |
 
 ### Academic Integrity
 
 | # | Issue Title | Description |
 |---|---|---|
-| M4.3 | Add `IntegrityReport` migration and model | Alembic migration for `integrity_reports` table. SQLAlchemy model. Relationship to `EssayVersion`. |
-| M4.4 | Internal cross-submission similarity | Add `embedding` (pgvector) column to `essay_versions`. Compute embedding via OpenAI embeddings API in a Celery task on essay upload. Query for cosine similarity against same-assignment essays. Flag pairs above threshold. |
-| M4.5 | Third-party integrity API integration | Abstract `IntegrityProvider` interface. Implement provider for Originality.ai or Winston AI (configurable via `INTEGRITY_PROVIDER` env var). Fallback to internal-only if provider unavailable. Write `IntegrityReport` record. |
-| M4.6 | Integrity report API and UI | `GET /essays/{id}/integrity`. Per-essay integrity report panel in review interface (AI likelihood indicator, similarity score, flagged passages highlighted in essay text). Class-level integrity overview on assignment page. Teacher review status actions (`reviewed_clear`, `flagged`). All language framed as signals, not findings. |
+| ~~M4.3~~ | ~~Add `IntegrityReport` migration and model~~ | ✅ Done — PR #134. |
+| ~~M4.4~~ | ~~Internal cross-submission similarity~~ | ✅ Done — PR #135. pgvector embeddings, cosine similarity, flag pairs above threshold. |
+| ~~M4.5~~ | ~~Third-party integrity API integration~~ | ✅ Done — PR #136. Abstract `IntegrityProvider`, configurable via `INTEGRITY_PROVIDER` env var, fails open to internal. |
+| ~~M4.6~~ | ~~Integrity report API and UI~~ | ✅ Done — PR #137. `GET /essays/{id}/integrity`, status actions, integrity panel in review interface. |
 
 ### Regrade Requests
 
 | # | Issue Title | Description |
 |---|---|---|
-| M4.7 | Regrade request data model and migration | Alembic migration for `regrade_requests` table (linked to grade, criterion, teacher_id, dispute text, status, resolution). |
-| M4.8 | Regrade request API | `POST /grades/{id}/regrade-requests` (teacher logs on behalf of student or via form link). `GET /assignments/{id}/regrade-requests` (queue). `POST /regrade-requests/{id}/resolve` (approve with new score / deny with note). Configurable submission window. Request limit enforcement. Audit log entries on resolution. |
-| M4.9 | Regrade request UI | Regrade queue view on assignment page. Log request form. Side-by-side review panel (essay, original score, justification). Approve/deny controls with required note on deny. Close regrade window action. Outcome tracking display. |
+| ~~M4.7~~ | ~~Regrade request data model and migration~~ | ✅ Done — PR #138. |
+| ~~M4.8~~ | ~~Regrade request API~~ | ✅ Done — PR #139. Submission window enforcement, per-grade limit, resolve with audit log. |
+| ~~M4.9~~ | ~~Regrade request UI~~ | ✅ Done — PR #140. Queue tab, log form, side-by-side review panel, approve/deny controls. |
 
 ### Media Feedback
 
 | # | Issue Title | Description |
 |---|---|---|
-| M4.10 | Media comment recording and storage | In-browser audio recording via MediaRecorder API. Max 3-minute limit. Upload to S3 on save. Associate with `Grade` or `CriterionScore`. API: `POST /grades/{id}/media-comments`, `DELETE /media-comments/{id}`. |
-| M4.11 | Video comment recording | Extend media comment to support webcam + optional screen share. Same storage and association model. |
-| M4.12 | Media comment bank and export | Save media comment to reusable bank. Apply saved comment to new essay in one action. Include media link/QR code in PDF export. Access-controlled pre-signed URLs for playback. |
+| ~~M4.10~~ | ~~Media comment recording and storage~~ | ✅ Done — PR #141. Audio via MediaRecorder, S3 upload, pre-signed URL playback. |
+| ~~M4.11~~ | ~~Video comment recording~~ | ✅ Done — PR #142. Webcam + optional screen share. |
+| ~~M4.12~~ | ~~Media comment bank and export~~ | ✅ Done — PR #143. Bank picker, apply to grade, QR code in PDF export. |
 
 ---
 
@@ -275,8 +275,12 @@ These issues can be worked in parallel with any milestone they support.
 
 | # | Issue Title | Description |
 |---|---|---|
-| MX.1 | Security hardening | Implement all items in `security.md`: security response headers middleware, CORS allowlist, rate limiting middleware (Redis counters), RLS policies on all tenant-scoped tables, `pip-audit` in CI, `npm audit` in CI. |
-| MX.2 | Error handling and observability | Global FastAPI exception handler. Structured JSON logging throughout backend and Celery workers. No PII in any log line. Health check endpoints on all services. Correlation IDs on all requests. |
-| MX.3 | End-to-end tests (Playwright) | 5 critical E2E journeys: (1) login → class → students → rubric → assignment, (2) upload → auto-assign → grade batch → progress, (3) review → override score → edit feedback → lock, (4) export PDF ZIP → download, (5) view student profile across two assignments. |
-| MX.4 | Accessibility audit | Keyboard navigation throughout. ARIA labels on interactive elements. Focus management in modals and panels. Color contrast compliance. Screen reader testing on grading interface. |
-| MX.5 | `prompt_version` field on Grade | Add `prompt_version VARCHAR(20)` column to `grades` table via Alembic migration. Populate from `GRADING_PROMPT_VERSION` env var at grade-write time. |
+| ~~MX.1~~ | ~~Security hardening~~ | ✅ Done — PR #144. Security headers middleware, CORS wildcard rejection, rate limiting, RLS on all tenant tables, pip-audit + npm audit in CI. |
+| ~~MX.2~~ | ~~Error handling and observability~~ | ✅ Done — PR #145. Structured JSON logging, correlation IDs, enhanced health check. |
+| ~~MX.3a~~ | ~~E2E Journey 1 — Login, class, rubric, assignment~~ | ✅ Done — PR #146. |
+| ~~MX.3b~~ | ~~E2E Journey 2 — Upload, auto-assign, batch grade~~ | ✅ Done — PR #147. |
+| ~~MX.3c~~ | ~~E2E Journey 3 — Review, override, lock~~ | ✅ Done — PR #148. |
+| ~~MX.3d~~ | ~~E2E Journey 4 — Export PDF ZIP and CSV~~ | ✅ Done — PR #149. |
+| MX.3e | E2E Journey 5 — Student profile across two assignments | 🔲 Blocked — requires M5.2 and M5.5 (StudentSkillProfile). Branch off `release/m5`. |
+| ~~MX.4~~ | ~~Accessibility audit~~ | ✅ Done — PR #150. axe-core Playwright scan in CI, ARIA labels, focus management, WCAG 2.1 AA contrast. |
+| ~~MX.5~~ | ~~`prompt_version` field on Grade~~ | ✅ Done — PR #151. |
