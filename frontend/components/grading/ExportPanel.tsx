@@ -119,12 +119,14 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
 
   // ArrowDown/Up/Home/End keyboard navigation within the menu (ARIA menu pattern).
   // Activation (Enter/Space) is handled natively by the underlying <button> elements.
+  // The menu items are native <button> elements so we exclude by both the HTML
+  // `disabled` attribute and `aria-disabled="true"` to be defensive.
   const handleMenuKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (!menuRef.current) return;
       const items = Array.from(
         menuRef.current.querySelectorAll<HTMLElement>(
-          '[role="menuitem"]:not([disabled])',
+          '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
         ),
       );
       if (items.length === 0) return;
@@ -163,7 +165,7 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
       // Use rAF so the DOM has rendered before we move focus
       const id = requestAnimationFrame(() => {
         const firstEnabled = menuRef.current?.querySelector<HTMLElement>(
-          '[role="menuitem"]:not([disabled])',
+          '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
         );
         firstEnabled?.focus();
       });

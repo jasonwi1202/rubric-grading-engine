@@ -197,8 +197,9 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
     // Navigate to the review queue and click into the first essay
     await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
-    const firstRow = page.getByRole("listitem").first();
-    await expect(firstRow).toBeVisible({ timeout: 15_000 });
+    const reviewQueue = page.getByRole("list", { name: /essays in this assignment/i });
+    await expect(reviewQueue).toBeVisible({ timeout: 15_000 });
+    const firstRow = reviewQueue.getByRole("listitem").first();
     await firstRow.click();
 
     // Wait for the grade review section to load
@@ -217,9 +218,10 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
     await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
 
-    // Wait for the review queue rows (anchors with role="listitem") to load
-    const queueItems = page.getByRole("listitem");
-    await expect(queueItems.first()).toBeVisible({ timeout: 15_000 });
+    // ReviewQueue rows are anchors with role="listitem" inside role="list"
+    const reviewQueue = page.getByRole("list", { name: /essays in this assignment/i });
+    await expect(reviewQueue).toBeVisible({ timeout: 15_000 });
+    const queueItems = reviewQueue.getByRole("listitem");
 
     // We seeded two essays; ArrowDown on the first should move focus to second.
     const firstQueueItem = queueItems.nth(0);
@@ -244,9 +246,9 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
     // Navigate to the review queue and click into the first essay
     await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
-    const firstRow = page.getByRole("listitem").first();
-    await expect(firstRow).toBeVisible({ timeout: 15_000 });
-    await firstRow.click();
+    const reviewQueue = page.getByRole("list", { name: /essays in this assignment/i });
+    await expect(reviewQueue).toBeVisible({ timeout: 15_000 });
+    await reviewQueue.getByRole("listitem").first().click();
     await expect(
       page.getByRole("region", { name: /grade review/i }),
     ).toBeVisible({ timeout: 15_000 });
@@ -285,8 +287,9 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
     // ReviewQueue rows are anchors with role="listitem"; status badges are
     // aria-hidden, so the row itself must carry a full accessible name.
-    const reviewRows = page.getByRole("listitem");
-    await expect(reviewRows.first()).toBeVisible({ timeout: 15_000 });
+    const reviewQueue = page.getByRole("list", { name: /essays in this assignment/i });
+    await expect(reviewQueue).toBeVisible({ timeout: 15_000 });
+    const reviewRows = reviewQueue.getByRole("listitem");
 
     const rowCount = await reviewRows.count();
     expect(
@@ -316,9 +319,9 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
 
     // Navigate to the review queue and click into the first essay
     await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
-    const firstRow = page.getByRole("listitem").first();
-    await expect(firstRow).toBeVisible({ timeout: 15_000 });
-    await firstRow.click();
+    const reviewQueue9 = page.getByRole("list", { name: /essays in this assignment/i });
+    await expect(reviewQueue9).toBeVisible({ timeout: 15_000 });
+    await reviewQueue9.getByRole("listitem").first().click();
     await expect(
       page.getByRole("region", { name: /grade review/i }),
     ).toBeVisible({ timeout: 15_000 });
