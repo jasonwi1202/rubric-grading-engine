@@ -25,7 +25,7 @@
 import { promises as fs } from "fs";
 import { test, expect, BrowserContext, Page } from "@playwright/test";
 import {
-  clearMailpit,
+  seedGradedAssignmentWithoutLocks,
   seedLockedGrades,
 } from "./helpers";
 
@@ -62,10 +62,6 @@ test.describe("Journey 4 — Export: batch PDF ZIP and CSV download", () => {
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(180_000);
-    // Clear stale verification emails so seedTeacher's waitForEmail() picks
-    // up the right message and doesn't find a previous run's email.
-    await clearMailpit();
-
     // Seed a complete fixture independently of Journeys 1–3:
     //   teacher → class → 2 students → rubric → assignment
     //   → 2 essays → batch grading → lock both grades
@@ -294,4 +290,71 @@ test.describe("Journey 4 — Export: batch PDF ZIP and CSV download", () => {
       expect(stats.size).toBeGreaterThan(0);
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// Journey 4: Deterministic export gating (disabled -> enabled after lock)
+// ---------------------------------------------------------------------------
+test.describe("Journey 4 — Export controls gate on locked grades", () => {
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
+
+  const state: {
+    email: string;
+    password: string;
+    assignmentId: string;
+    context: BrowserContext | null;
+    page: Page | null;
+  } = {
+    email: "",
+    password: "",
+    assignmentId: "",
+    context: null,
+    page: null,
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    const fixture = await seedGradedAssignmentWithoutLocks("journey4-gating");
+    state.email = fixture.email;
+    state.password = fixture.password;
+    state.assignmentId = fixture.assignmentId;
+
+    state.context = await browser.newContext({
+      baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    });
+    state.page = await state.context.newPage();
+
+    await state.page.goto("/dashboard");
+    await expect(state.page).toHaveURL(/\/login/);
+    await state.page.getByLabel("Email").fill(state.email);
+    await state.page.getByLabel("Password").fill(state.password);
+    await state.page.getByRole("button", { name: /sign in/i }).click();
+    await expect(state.page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+  });
+
+  test.afterAll(async () => {
+    await state.context?.close();
+  });
+
+  test("export options are disabled before any grade is locked", async () => {
+    if (!state.page) throw new Error("Browser context not initialized in beforeAll");
+    const page = state.page;
+
+    await page.goto(`/dashboard/assignments/${state.assignmentId}`);
+
+    const exportButton = page.getByRole("button", { name: /export options/i });
+    await expect(exportButton).toBeVisible({ timeout: 15_000 });
+    await exportButton.click();
+
+    const pdfButton = page.getByRole("menuitem", {
+      name: /export feedback as pdf zip/i,
+    });
+    const csvButton = page.getByRole("menuitem", {
+      name: /export grades as csv/i,
+    });
+
+    await expect(pdfButton).toBeDisabled();
+    await expect(csvButton).toBeDisabled();
+    await expect(page.getByText(/lock at least one grade to enable export/i)).toBeVisible();
+  });
+
 });
