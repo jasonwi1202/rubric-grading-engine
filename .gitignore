@@ -153,4 +153,3 @@ test-results/
 # MinIO local data (Docker Compose volume)
 # -----------------------------------------------------------------------------
 .minio-data/
-frontend/package-lock.json

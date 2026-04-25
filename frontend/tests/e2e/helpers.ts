@@ -657,7 +657,8 @@ export async function assertBasicA11y(page: Page): Promise<void> {
  *
  * Tags checked: wcag2a, wcag2aa, wcag21a, wcag21aa.
  * Impact levels that fail: "critical" and "serious".
- * Moderate and minor violations are reported but do not fail the test.
+ * Moderate and minor violations are not asserted by this helper and do not
+ * fail the test.
  *
  * Call after the page has fully rendered (all async content resolved).
  */
@@ -672,14 +673,19 @@ export async function assertA11y(page: Page): Promise<void> {
 
   if (blocking.length > 0) {
     const summary = blocking
-      .map(
-        (v) =>
-          `[${v.impact}] ${v.id}: ${v.description}\n` +
-          v.nodes
-            .slice(0, 3)
-            .map((n) => `  • ${n.html}`)
-            .join("\n"),
-      )
+      .map((v) => {
+        const nodes = v.nodes
+          .slice(0, 3)
+          .map((n) => {
+            const selectorSummary =
+              Array.isArray(n.target) && n.target.length > 0
+                ? n.target.join(", ")
+                : "(no selector available)";
+            return `  • target: ${selectorSummary}`;
+          })
+          .join("\n");
+        return `[${v.impact}] ${v.id}: ${v.description}\n${nodes}`;
+      })
       .join("\n\n");
     throw new Error(
       `axe-core found ${blocking.length} critical/serious accessibility violation(s):\n\n${summary}`,

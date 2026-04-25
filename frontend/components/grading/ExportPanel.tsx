@@ -117,6 +117,41 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
     triggerRef.current?.focus();
   }, []);
 
+  // ArrowDown/Up/Home/End keyboard navigation within the menu (ARIA menu pattern).
+  const handleMenuKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!menuRef.current) return;
+      const items = Array.from(
+        menuRef.current.querySelectorAll<HTMLElement>(
+          '[role="menuitem"]:not([disabled])',
+        ),
+      );
+      if (items.length === 0) return;
+      const idx = items.indexOf(document.activeElement as HTMLElement);
+      switch (event.key) {
+        case "ArrowDown":
+          event.preventDefault();
+          items[(idx + 1) % items.length]?.focus();
+          break;
+        case "ArrowUp":
+          event.preventDefault();
+          items[(idx - 1 + items.length) % items.length]?.focus();
+          break;
+        case "Home":
+          event.preventDefault();
+          items[0]?.focus();
+          break;
+        case "End":
+          event.preventDefault();
+          items[items.length - 1]?.focus();
+          break;
+        default:
+          break;
+      }
+    },
+    [],
+  );
+
   // Move focus to the first menu item when the menu opens
   useEffect(() => {
     if (menuOpen) {
@@ -297,6 +332,7 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
           data-testid="export-panel-menu"
           role="menu"
           aria-label="Export options"
+          onKeyDown={handleMenuKeyDown}
           className="absolute right-0 z-10 mt-2 w-72 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg focus:outline-none"
         >
           <div className="p-3">
