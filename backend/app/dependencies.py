@@ -31,6 +31,7 @@ from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import decode_access_token
 
 if TYPE_CHECKING:
+    from app.config import settings
     from app.models.user import User
 
 # HTTPBearer scheme — raises 403 automatically when the header is absent.
@@ -80,7 +81,7 @@ async def get_current_teacher(
     if db_user is None:
         raise UnauthorizedError("Account not found.")
 
-    if not db_user.email_verified:
+    if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         raise UnauthorizedError("Email address is not verified.")
 
     # Activate PostgreSQL RLS policies for this teacher.  This is done here
