@@ -70,9 +70,7 @@ class PatchIntegrityStatusRequest(BaseModel):
         """Raise ValueError if the status is not a valid teacher action."""
         allowed = {IntegrityReportStatus.reviewed_clear, IntegrityReportStatus.flagged}
         if v not in allowed:
-            raise ValueError(
-                f"Status must be one of: {', '.join(s.value for s in allowed)}."
-            )
+            raise ValueError(f"Status must be one of: {', '.join(s.value for s in allowed)}.")
         return v
 
 

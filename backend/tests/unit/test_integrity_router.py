@@ -250,9 +250,7 @@ class TestPatchIntegrityStatus:
         with patch(
             "app.routers.integrity.update_integrity_report_status",
             new_callable=AsyncMock,
-            side_effect=ForbiddenError(
-                "You do not have access to this integrity report."
-            ),
+            side_effect=ForbiddenError("You do not have access to this integrity report."),
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.patch(self._url(), json={"status": "flagged"})
@@ -389,9 +387,7 @@ class TestIntegrityTenantIsolation:
         with patch(
             "app.routers.integrity.update_integrity_report_status",
             new_callable=AsyncMock,
-            side_effect=ForbiddenError(
-                "You do not have access to this integrity report."
-            ),
+            side_effect=ForbiddenError("You do not have access to this integrity report."),
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.patch(

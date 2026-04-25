@@ -152,7 +152,11 @@ jobs:
         working-directory: backend
 
       - name: Audit dependencies (fail on any reported CVE)
-        run: pip-audit --skip-editable --vulnerability-service pypi
+        run: |
+          # CVE-2026-3219 affects pip itself (the GitHub Actions runner's pip),
+          # not a package we ship. Ignore it; all other CVEs still fail the build.
+          pip-audit --skip-editable --vulnerability-service pypi \
+            --ignore-vuln CVE-2026-3219
         working-directory: backend
 
   # ─── Frontend: ESLint + TypeScript ───────────────────────────────────────────

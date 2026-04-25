@@ -49,6 +49,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint(_CONSTRAINT_NAME, _TABLE, type_="unique")
-    op.execute(
-        sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}")
-    )
+    op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}"))

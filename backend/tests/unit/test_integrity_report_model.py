@@ -59,9 +59,7 @@ class TestIntegrityReportModel:
             "created_at",
             "updated_at",
         }
-        assert expected <= set(table.c.keys()), (
-            f"Missing columns: {expected - set(table.c.keys())}"
-        )
+        assert expected <= set(table.c.keys()), f"Missing columns: {expected - set(table.c.keys())}"
 
     def test_id_is_uuid(self) -> None:
         assert _type_name(IntegrityReport, "id") == "UUID"

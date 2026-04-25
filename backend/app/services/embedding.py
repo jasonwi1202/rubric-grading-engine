@@ -91,9 +91,7 @@ async def compute_and_store_embedding(
 
     # Gracefully handle essays with no extractable text (e.g. failed OCR).
     if not (version.content or "").strip():
-        raise ValidationError(
-            "EssayVersion has no text content — cannot compute embedding."
-        )
+        raise ValidationError("EssayVersion has no text content — cannot compute embedding.")
 
     # Call the OpenAI embeddings API — may raise LLMError on failure.
     embedding = await call_embedding(version.content)

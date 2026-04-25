@@ -183,15 +183,11 @@ async def create_regrade_request(
     # Lock the grade row so the count-check and insert are atomic under concurrent
     # submissions — prevents two simultaneous requests from both seeing
     # existing_count < regrade_max_per_grade and both inserting.
-    await db.execute(
-        select(Grade.id).where(Grade.id == grade_id).with_for_update()
-    )
+    await db.execute(select(Grade.id).where(Grade.id == grade_id).with_for_update())
 
     # Enforce per-grade request limit.
     count_result = await db.execute(
-        select(func.count()).select_from(RegradeRequest).where(
-            RegradeRequest.grade_id == grade_id
-        )
+        select(func.count()).select_from(RegradeRequest).where(RegradeRequest.grade_id == grade_id)
     )
     existing_count = count_result.scalar_one()
     if existing_count >= settings.regrade_max_per_grade:
@@ -341,9 +337,7 @@ async def resolve_regrade_request(
     # is held until db.commit() at the end of the resolution pipeline, covering
     # the full status-check → mutation → audit-write sequence.
     await db.execute(
-        select(RegradeRequest.id)
-        .where(RegradeRequest.id == request_id)
-        .with_for_update()
+        select(RegradeRequest.id).where(RegradeRequest.id == request_id).with_for_update()
     )
 
     # Guard: only open requests can be resolved.
@@ -386,9 +380,7 @@ async def resolve_regrade_request(
             raise NotFoundError("Criterion score not found.")
 
         # Reject edits on locked grades (mirrors override_criterion invariant).
-        grade_result = await db.execute(
-            select(Grade).where(Grade.id == regrade_request.grade_id)
-        )
+        grade_result = await db.execute(select(Grade).where(Grade.id == regrade_request.grade_id))
         grade = grade_result.scalar_one_or_none()
         if grade is not None and grade.is_locked:
             raise GradeLockedError("Grade is locked and cannot be edited.")
@@ -457,11 +449,7 @@ async def resolve_regrade_request(
                 )
             )
             grade.total_score = Decimal(
-                sum(
-                    score
-                    for score in total_result.scalars().all()
-                    if score is not None
-                )
+                sum(score for score in total_result.scalars().all() if score is not None)
             )
 
     # Resolve the request.

@@ -98,6 +98,14 @@ def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
         Check("Frontend: /dashboard/classes responds",              f"{frontend}/dashboard/classes"),
         Check("Frontend: /dashboard/rubrics/new responds",          f"{frontend}/dashboard/rubrics/new"),
 
+        # --- M4 API endpoints (unauthenticated — confirm routes are registered) ---
+        Check("Backend: integrity endpoint registered",     f"{api}/api/v1/essays/00000000-0000-0000-0000-000000000000/integrity",  expected_status=401),
+        Check("Backend: regrade-requests endpoint registered", f"{api}/api/v1/grades/00000000-0000-0000-0000-000000000000/regrade-requests", expected_status=401),
+        Check("Backend: media-comments endpoint registered", f"{api}/api/v1/grades/00000000-0000-0000-0000-000000000000/media-comments", expected_status=401),
+
+        # --- M4 dashboard routes ---
+        Check("Frontend: assignment review responds",  f"{frontend}/dashboard/classes/test/assignments/test/review"),
+
         # --- Mailpit ---
         Check("Mailpit: web UI reachable",          f"{mailpit}/"),
         Check("Mailpit: API messages endpoint",     f"{mailpit}/api/v1/messages", body_contains='"messages"'),
