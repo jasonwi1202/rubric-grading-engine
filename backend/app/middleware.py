@@ -204,6 +204,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        from app.config import settings
+
+        if not settings.rate_limit_enabled:
+            return await call_next(request)
+
         method = request.method
         path = request.url.path
 

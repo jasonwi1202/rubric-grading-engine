@@ -134,6 +134,10 @@ class Settings(BaseSettings):
     # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
     # enable in production behind a trusted proxy; leave False in development.
     trust_proxy_headers: bool = False
+    # When False, the RateLimitMiddleware is registered but immediately passes
+    # all requests through without checking counters.  Set to False in CI E2E
+    # environments where many accounts are created during the test run.
+    rate_limit_enabled: bool = True
 
     # -------------------------------------------------------------------------
     # Validators
