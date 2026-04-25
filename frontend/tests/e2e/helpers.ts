@@ -463,6 +463,168 @@ export async function seedGradedEssay(
   };
 }
 
+/** Return type of {@link seedLockedGrades}. */
+export interface LockedGradesFixture {
+  email: string;
+  password: string;
+  assignmentId: string;
+}
+
+/**
+ * Seed a fixture with two locked grades for Journey 4 (export) tests.
+ *
+ * Creates a fresh verified teacher account, class, two students, rubric, and
+ * assignment; uploads one text essay per student; triggers batch grading; polls
+ * until grading reaches a terminal state; then locks both grades via the API so
+ * the assignment is ready for export.
+ *
+ * Call `clearMailpit()` in the test's `beforeAll` before invoking this helper
+ * so that the verification email lookup finds the right message.
+ *
+ * Security:
+ * - Synthetic student names only — no real student PII.
+ * - Essay bodies are generic placeholder text — no real essay content.
+ */
+export async function seedLockedGrades(
+  tag: string,
+): Promise<LockedGradesFixture> {
+  const creds = await seedTeacher(tag);
+  const token = await loginApi(creds.email, creds.password);
+
+  const ts = Date.now();
+  const classId = await seedClass(token, `J4 Class ${ts}`);
+  const student1Id = await seedStudent(token, classId, "Delta Writer");
+  const student2Id = await seedStudent(token, classId, "Epsilon Writer");
+  const rubricId = await seedRubric(token, `J4 Rubric ${ts}`);
+  const assignmentId = await seedAssignment(
+    token,
+    classId,
+    rubricId,
+    `J4 Assignment ${ts}`,
+  );
+
+  const essay1Id = await seedEssay(
+    token,
+    assignmentId,
+    student1Id,
+    "Delta Writer",
+  );
+  const essay2Id = await seedEssay(
+    token,
+    assignmentId,
+    student2Id,
+    "Epsilon Writer",
+  );
+
+  // Trigger batch grading.
+  const gradeRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}/grade`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ strictness: "balanced" }),
+    },
+  );
+  if (!gradeRes.ok) {
+    const text = await gradeRes.text().catch(() => "");
+    throw new Error(
+      `seedLockedGrades (trigger grading) failed: ${gradeRes.status} ${gradeRes.statusText} — ${text}`,
+    );
+  }
+
+  // Poll until the batch reaches a terminal state.
+  const deadline = Date.now() + 120_000;
+  let lastStatus = "pending";
+  let pollCount = 0;
+  let reachedTerminal = false;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    pollCount += 1;
+    const statusRes = await fetch(
+      `${API_BASE}/api/v1/assignments/${assignmentId}/grading-status`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!statusRes.ok) {
+      const text = await statusRes.text().catch(() => "");
+      if (statusRes.status < 500) {
+        throw new Error(
+          `seedLockedGrades (poll grading status) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
+        );
+      }
+      continue;
+    }
+    const statusBody = (await statusRes.json()) as {
+      data: { status: string };
+    };
+    lastStatus = statusBody.data.status;
+    if (lastStatus === "complete") {
+      reachedTerminal = true;
+      break;
+    }
+    if (lastStatus === "partial") {
+      throw new Error(
+        'seedLockedGrades: batch grading completed partially — some essays do not have grades, so grades cannot be locked',
+      );
+    }
+    if (lastStatus === "failed") {
+      throw new Error(
+        "seedLockedGrades: batch grading failed — essays cannot be locked",
+      );
+    }
+  }
+  if (!reachedTerminal) {
+    throw new Error(
+      `seedLockedGrades: grading did not reach a terminal state within 120 s ` +
+        `(last status: "${lastStatus}", polls: ${pollCount})`,
+    );
+  }
+
+  // Lock both grades via the API.
+  for (const essayId of [essay1Id, essay2Id]) {
+    // Retrieve the grade ID for this essay.
+    const fetchGradeRes = await fetch(
+      `${API_BASE}/api/v1/essays/${essayId}/grade`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!fetchGradeRes.ok) {
+      const text = await fetchGradeRes.text().catch(() => "");
+      throw new Error(
+        `seedLockedGrades (fetch grade for essay ${essayId}) failed: ${fetchGradeRes.status} ${fetchGradeRes.statusText} — ${text}`,
+      );
+    }
+    const gradeBody = (await fetchGradeRes.json()) as { data: { id: string } };
+    const gradeId = gradeBody.data.id;
+
+    // Lock the grade — transitions essay status to "locked".
+    const lockRes = await fetch(
+      `${API_BASE}/api/v1/grades/${gradeId}/lock`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      },
+    );
+    if (!lockRes.ok) {
+      const text = await lockRes.text().catch(() => "");
+      throw new Error(
+        `seedLockedGrades (lock grade ${gradeId}) failed: ${lockRes.status} ${lockRes.statusText} — ${text}`,
+      );
+    }
+  }
+
+  return {
+    email: creds.email,
+    password: creds.password,
+    assignmentId,
+  };
+}
+
 /** Wait for the backend health endpoint to be reachable. Useful after compose up. */
 export async function waitForBackend(
   apiBase = "http://localhost:8000",
