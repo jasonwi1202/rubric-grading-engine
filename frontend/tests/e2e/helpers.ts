@@ -477,6 +477,120 @@ export interface LockedGradesFixture {
   assignmentId: string;
 }
 
+/** Return type of {@link seedGradedAssignmentWithoutLocks}. */
+export interface GradedAssignmentFixture {
+  email: string;
+  password: string;
+  assignmentId: string;
+}
+
+/**
+ * Seed a fixture with graded essays but no locked grades.
+ *
+ * Creates a fresh verified teacher account, class, two students, rubric, and
+ * assignment; uploads one text essay per student; triggers batch grading; and
+ * waits for the grading pipeline to complete. It intentionally does NOT lock
+ * any grades so export controls remain disabled until a teacher locks a grade.
+ */
+export async function seedGradedAssignmentWithoutLocks(
+  tag: string,
+): Promise<GradedAssignmentFixture> {
+  const creds = await seedTeacher(tag);
+  const token = await loginApi(creds.email, creds.password);
+
+  const ts = Date.now();
+  const classId = await seedClass(token, `J4-UL Class ${ts}`);
+  const student1Id = await seedStudent(token, classId, "Theta Writer");
+  const student2Id = await seedStudent(token, classId, "Iota Writer");
+  const rubricId = await seedRubric(token, `J4-UL Rubric ${ts}`);
+  const assignmentId = await seedAssignment(
+    token,
+    classId,
+    rubricId,
+    `J4-UL Assignment ${ts}`,
+  );
+
+  await seedEssay(
+    token,
+    assignmentId,
+    student1Id,
+    "Theta Writer",
+  );
+  await seedEssay(
+    token,
+    assignmentId,
+    student2Id,
+    "Iota Writer",
+  );
+
+  // Trigger batch grading.
+  const gradeRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}/grade`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ strictness: "balanced" }),
+    },
+  );
+  if (!gradeRes.ok) {
+    const text = await gradeRes.text().catch(() => "");
+    throw new Error(
+      `seedGradedAssignmentWithoutLocks (trigger grading) failed: ${gradeRes.status} ${gradeRes.statusText} — ${text}`,
+    );
+  }
+
+  // Poll until grading reaches terminal state.
+  const deadline = Date.now() + 120_000;
+  let lastStatus = "pending";
+  let pollCount = 0;
+  let reachedTerminal = false;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    pollCount += 1;
+    const statusRes = await fetch(
+      `${API_BASE}/api/v1/assignments/${assignmentId}/grading-status`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!statusRes.ok) {
+      const text = await statusRes.text().catch(() => "");
+      if (statusRes.status < 500) {
+        throw new Error(
+          `seedGradedAssignmentWithoutLocks (poll grading status) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
+        );
+      }
+      continue;
+    }
+    const statusBody = (await statusRes.json()) as {
+      data: { status: string };
+    };
+    lastStatus = statusBody.data.status;
+    if (lastStatus === "complete") {
+      reachedTerminal = true;
+      break;
+    }
+    if (lastStatus === "partial" || lastStatus === "failed") {
+      throw new Error(
+        `seedGradedAssignmentWithoutLocks: grading ended in ${lastStatus} state`,
+      );
+    }
+  }
+  if (!reachedTerminal) {
+    throw new Error(
+      `seedGradedAssignmentWithoutLocks: grading did not reach terminal state within 120 s ` +
+        `(last status: "${lastStatus}", polls: ${pollCount})`,
+    );
+  }
+
+  return {
+    email: creds.email,
+    password: creds.password,
+    assignmentId,
+  };
+}
+
 /**
  * Seed a fixture with two locked grades for Journey 4 (export) tests.
  *
