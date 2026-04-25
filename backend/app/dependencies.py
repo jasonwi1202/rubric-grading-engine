@@ -26,12 +26,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.session import get_db, set_tenant_context
 from app.exceptions import UnauthorizedError, ValidationError
 from app.services.auth import decode_access_token
 
 if TYPE_CHECKING:
-    from app.config import settings
     from app.models.user import User
 
 # HTTPBearer scheme — raises 403 automatically when the header is absent.

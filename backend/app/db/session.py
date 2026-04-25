@@ -128,7 +128,14 @@ async def set_tenant_context(db: AsyncSession, teacher_id: uuid.UUID) -> None:
         # session.py only imports from `sqlalchemy.ext.asyncio`, not from the
         # synchronous `sqlalchemy` package.  Using __import__ at call-time
         # satisfies both the runtime requirement and that AST constraint.
-        __import__("sqlalchemy").text("SET app.current_teacher_id = :tid"),
+        #
+        # PostgreSQL does not allow bind parameters in a raw SET statement
+        # (`SET app.current_teacher_id = $1` is a syntax error under asyncpg).
+        # set_config(name, value, is_local) is parameter-safe and preserves the
+        # same session-level behavior when is_local=false.
+        __import__("sqlalchemy").text(
+            "SELECT set_config('app.current_teacher_id', :tid, false)"
+        ),
         {"tid": str(teacher_id)},
     )
 
