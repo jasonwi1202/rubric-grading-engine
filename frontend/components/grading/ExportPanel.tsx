@@ -157,12 +157,15 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
     [],
   );
 
-  // Move focus to the first menu item when the menu opens
+  // Move focus to the first enabled menu item when the menu opens
   useEffect(() => {
     if (menuOpen) {
       // Use rAF so the DOM has rendered before we move focus
       const id = requestAnimationFrame(() => {
-        firstMenuItemRef.current?.focus();
+        const firstEnabled = menuRef.current?.querySelector<HTMLElement>(
+          '[role="menuitem"]:not([disabled])',
+        );
+        firstEnabled?.focus();
       });
       return () => cancelAnimationFrame(id);
     }

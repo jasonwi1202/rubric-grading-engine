@@ -84,14 +84,12 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     email: string;
     password: string;
     assignmentId: string;
-    essayId: string | null;
     context: BrowserContext | null;
     page: Page | null;
   } = {
     email: "",
     password: "",
     assignmentId: "",
-    essayId: null,
     context: null,
     page: null,
   };
@@ -197,21 +195,12 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     if (!state.page) throw new Error("Page not initialised in beforeAll");
     const page = state.page;
 
-    // Navigate to the assignment detail and pick the first essay link
-    await page.goto(`/dashboard/assignments/${state.assignmentId}`);
-    const firstEssayLink = page
-      .getByRole("listitem")
-      .filter({ has: page.getByRole("link") })
-      .first()
-      .getByRole("link");
+    // Navigate to the review queue and click into the first essay
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
+    const firstRow = page.getByRole("listitem").first();
+    await expect(firstRow).toBeVisible({ timeout: 15_000 });
+    await firstRow.click();
 
-    // Fall back to any link that navigates into /review/
-    const reviewLink =
-      (await firstEssayLink.count()) > 0
-        ? firstEssayLink
-        : page.getByRole("link", { name: /review/i }).first();
-
-    await reviewLink.click();
     // Wait for the grade review section to load
     await expect(
       page.getByRole("region", { name: /grade review/i }),
@@ -226,25 +215,25 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     if (!state.page) throw new Error("Page not initialised in beforeAll");
     const page = state.page;
 
-    await page.goto(`/dashboard/assignments/${state.assignmentId}`);
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
 
-    // Wait for the essay list to load
-    const links = page.getByRole("listitem").getByRole("link");
-    await expect(links.first()).toBeVisible({ timeout: 15_000 });
+    // Wait for the review queue rows (anchors with role="listitem") to load
+    const queueItems = page.getByRole("listitem");
+    await expect(queueItems.first()).toBeVisible({ timeout: 15_000 });
 
     // We seeded two essays; ArrowDown on the first should move focus to second.
-    const firstLink = links.nth(0);
-    const secondLink = links.nth(1);
+    const firstQueueItem = queueItems.nth(0);
+    const secondQueueItem = queueItems.nth(1);
 
-    // Focus the first essay link in the queue
-    await firstLink.focus();
-    await expect(firstLink).toBeFocused({ timeout: 5_000 });
+    // Focus the first essay row in the queue
+    await firstQueueItem.focus();
+    await expect(firstQueueItem).toBeFocused({ timeout: 5_000 });
 
     // ArrowDown should move focus to the next item
     await page.keyboard.press("ArrowDown");
 
-    // Verify focus moved to the second essay link
-    await expect(secondLink).toBeFocused({ timeout: 3_000 });
+    // Verify focus moved to the second essay row
+    await expect(secondQueueItem).toBeFocused({ timeout: 3_000 });
   });
 
   // ── Test 7: Score inputs have accessible labels ───────────────────────────
@@ -253,10 +242,11 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     if (!state.page) throw new Error("Page not initialised in beforeAll");
     const page = state.page;
 
-    // Navigate into the first essay review page
-    await page.goto(`/dashboard/assignments/${state.assignmentId}`);
-    const reviewLink = page.getByRole("link", { name: /review/i }).first();
-    await reviewLink.click();
+    // Navigate to the review queue and click into the first essay
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
+    const firstRow = page.getByRole("listitem").first();
+    await expect(firstRow).toBeVisible({ timeout: 15_000 });
+    await firstRow.click();
     await expect(
       page.getByRole("region", { name: /grade review/i }),
     ).toBeVisible({ timeout: 15_000 });
@@ -264,21 +254,24 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     // Every number input must have an accessible label
     const scoreInputs = page.getByRole("spinbutton");
     const count = await scoreInputs.count();
-    if (count > 0) {
-      for (let i = 0; i < count; i++) {
-        const input = scoreInputs.nth(i);
-        const label = await input.getAttribute("aria-label");
-        const id = await input.getAttribute("id");
-        // Either aria-label or an associated <label for="id"> is required
-        const hasAriaLabel = label !== null && label.length > 0;
-        const hasLabelFor =
-          id !== null &&
-          (await page.locator(`label[for="${id}"]`).count()) > 0;
-        expect(
-          hasAriaLabel || hasLabelFor,
-          `Score input at index ${i} (id="${id ?? "none"}") is missing an accessible label`,
-        ).toBe(true);
-      }
+    expect(
+      count,
+      "Grade review panel loaded but did not render any score inputs",
+    ).toBeGreaterThan(0);
+
+    for (let i = 0; i < count; i++) {
+      const input = scoreInputs.nth(i);
+      const label = await input.getAttribute("aria-label");
+      const id = await input.getAttribute("id");
+      // Either aria-label or an associated <label for="id"> is required
+      const hasAriaLabel = label !== null && label.length > 0;
+      const hasLabelFor =
+        id !== null &&
+        (await page.locator(`label[for="${id}"]`).count()) > 0;
+      expect(
+        hasAriaLabel || hasLabelFor,
+        `Score input at index ${i} (id="${id ?? "none"}") is missing an accessible label`,
+      ).toBe(true);
     }
   });
 
@@ -288,28 +281,30 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     if (!state.page) throw new Error("Page not initialised in beforeAll");
     const page = state.page;
 
-    await page.goto(`/dashboard/assignments/${state.assignmentId}`);
-    await expect(
-      page.getByRole("button", { name: /export options/i }),
-    ).toBeVisible({ timeout: 15_000 });
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
 
-    // Status badges use aria-hidden="true"; the containing link has a full
-    // aria-label that includes status and score.  Assert the link labels exist.
-    const essayLinks = page.getByRole("listitem").getByRole("link");
-    const linkCount = await essayLinks.count();
-    if (linkCount > 0) {
-      for (let i = 0; i < linkCount; i++) {
-        const link = essayLinks.nth(i);
-        const label = await link.getAttribute("aria-label");
-        expect(
-          label,
-          `Essay link at index ${i} is missing an aria-label`,
-        ).not.toBeNull();
-        expect(
-          label!.length,
-          `Essay link at index ${i} has an empty aria-label`,
-        ).toBeGreaterThan(0);
-      }
+    // ReviewQueue rows are anchors with role="listitem"; status badges are
+    // aria-hidden, so the row itself must carry a full accessible name.
+    const reviewRows = page.getByRole("listitem");
+    await expect(reviewRows.first()).toBeVisible({ timeout: 15_000 });
+
+    const rowCount = await reviewRows.count();
+    expect(
+      rowCount,
+      "Expected at least one review queue row to exist",
+    ).toBeGreaterThan(0);
+
+    for (let i = 0; i < rowCount; i++) {
+      const row = reviewRows.nth(i);
+      const label = await row.getAttribute("aria-label");
+      expect(
+        label,
+        `Review queue row at index ${i} is missing an aria-label`,
+      ).not.toBeNull();
+      expect(
+        label!.length,
+        `Review queue row at index ${i} has an empty aria-label`,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -319,10 +314,11 @@ test.describe("MX.4 — Accessibility: grading interface", () => {
     if (!state.page) throw new Error("Page not initialised in beforeAll");
     const page = state.page;
 
-    // The seeded essays have locked grades — navigate to the first one
-    await page.goto(`/dashboard/assignments/${state.assignmentId}`);
-    const reviewLink = page.getByRole("link", { name: /review/i }).first();
-    await reviewLink.click();
+    // Navigate to the review queue and click into the first essay
+    await page.goto(`/dashboard/assignments/${state.assignmentId}/review`);
+    const firstRow = page.getByRole("listitem").first();
+    await expect(firstRow).toBeVisible({ timeout: 15_000 });
+    await firstRow.click();
     await expect(
       page.getByRole("region", { name: /grade review/i }),
     ).toBeVisible({ timeout: 15_000 });
