@@ -74,8 +74,8 @@ def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
     return [
         # --- Backend ---
         Check("Backend: health endpoint",           f"{api}/api/v1/health", body_contains='"status"'),
-        Check("Backend: OpenAPI schema reachable",  f"{api}/openapi.json",  body_contains='"openapi"'),
-        Check("Backend: API docs page",             f"{api}/docs"),
+        Check("Backend: OpenAPI schema reachable",  f"{api}/api/v1/openapi.json",  body_contains='"openapi"'),
+        Check("Backend: API docs page",             f"{api}/api/v1/docs"),
 
         # --- Frontend public pages ---
         Check("Frontend: homepage (/)",             f"{frontend}/"),
@@ -100,7 +100,7 @@ def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
 
         # --- M4 API endpoints (unauthenticated — confirm routes are registered) ---
         Check("Backend: integrity endpoint registered",     f"{api}/api/v1/essays/00000000-0000-0000-0000-000000000000/integrity",  expected_status=401),
-        Check("Backend: regrade-requests endpoint registered", f"{api}/api/v1/grades/00000000-0000-0000-0000-000000000000/regrade-requests", expected_status=401),
+        Check("Backend: regrade-requests endpoint registered", f"{api}/api/v1/assignments/00000000-0000-0000-0000-000000000000/regrade-requests", expected_status=401),
         Check("Backend: media-comments endpoint registered", f"{api}/api/v1/grades/00000000-0000-0000-0000-000000000000/media-comments", expected_status=401),
 
         # --- M4 dashboard routes ---
@@ -186,7 +186,7 @@ def main() -> int:
     if failed == 0:
         print(f"\n{GREEN}{BOLD}✓ Demo stack is healthy.{RESET}")
         print(f"  Open the app:       http://localhost:3000")
-        print(f"  API docs:           http://localhost:8000/docs")
+        print(f"  API docs:           http://localhost:8000/api/v1/docs")
         print(f"  Mailpit (email UI): http://localhost:8025")
         print(f"  MinIO console:      http://localhost:9001  (minioadmin / minioadmin)\n")
     else:
