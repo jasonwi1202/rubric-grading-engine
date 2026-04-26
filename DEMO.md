@@ -5,6 +5,8 @@ This guide walks you through spinning up the full GradeWise stack locally in a s
 **No API keys are required to explore the UI and backend.**  
 You only need an OpenAI key if you want to run actual AI grading jobs.
 
+The demo stack now seeds a ready-to-login teacher account and sample grading data automatically.
+
 ---
 
 ## Prerequisites
@@ -34,7 +36,7 @@ This pulls all images and starts:
 | `redis` | Task broker / cache | — |
 | `minio` | S3-compatible file storage | [localhost:9001](http://localhost:9001) |
 | `mailpit` | Email sink (catches all outbound mail) | [localhost:8025](http://localhost:8025) |
-| `backend` | FastAPI app + Uvicorn | [localhost:8000/docs](http://localhost:8000/docs) |
+| `backend` | FastAPI app + Uvicorn | [localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs) |
 | `demo-seed` | Runs DB migrations (one-shot) | — |
 | `worker` | Celery worker for async grading | — |
 | `frontend` | Next.js app | [localhost:3000](http://localhost:3000) |
@@ -73,7 +75,7 @@ Results: 22 passed, 0 failed / 22 total
 
 ✓ Demo stack is healthy.
   Open the app:       http://localhost:3000
-  API docs:           http://localhost:8000/docs
+  API docs:           http://localhost:8000/api/v1/docs
   Mailpit (email UI): http://localhost:8025
   MinIO console:      http://localhost:9001  (minioadmin / minioadmin)
 ```
@@ -83,15 +85,31 @@ Results: 22 passed, 0 failed / 22 total
 | URL | What you'll find |
 |---|---|
 | [http://localhost:3000](http://localhost:3000) | GradeWise frontend |
-| [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive API docs (Swagger UI) |
+| [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs) | Interactive API docs (Swagger UI) |
 | [http://localhost:8025](http://localhost:8025) | Mailpit — see all emails sent by the app |
 | [http://localhost:9001](http://localhost:9001) | MinIO console — browse uploaded files (`minioadmin` / `minioadmin`) |
+
+### Demo login (pre-seeded)
+
+Use the pre-seeded teacher account:
+
+- **Email:** `demo@gradewise.app`
+- **Password:** `DemoPass123!`
+
+Seeded data includes:
+
+- 1 class (`Demo English 8`)
+- 2 enrolled students
+- 1 rubric with 2 criteria
+- 1 assignment in review state
+- 2 essays with locked grades
+- 1 integrity report and 1 open regrade request
 
 ---
 
 ## Using the App
 
-### Sign up
+### Sign up (optional)
 
 1. Go to [http://localhost:3000/signup](http://localhost:3000/signup)
 2. Fill in your name, email, and a password
