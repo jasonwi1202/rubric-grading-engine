@@ -126,7 +126,7 @@ One document per feature. Each covers purpose, user story, key capabilities, acc
 
 | Document | Description |
 |---|---|
-| [release-notes/](release-notes/) | One file per completed milestone. Named `milestone-{number}.md`. Added as milestones ship. |
+| [releasenotes/](releasenotes/) | One file per completed milestone. Named `m{number}-{audience}.md` (for example, `m2-technical.md`). Added as milestones ship. |
 
 ---
 
