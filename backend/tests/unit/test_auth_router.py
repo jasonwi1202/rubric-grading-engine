@@ -19,6 +19,19 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limit_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear middleware-level rate-limit rules for all auth router tests.
+
+    The RateLimitMiddleware uses a shared Redis counter keyed by IP.  Unit
+    tests all originate from the same testclient IP (testclient), so the
+    5-per-hour signup limit is exhausted after a few tests in the same run.
+    The service-layer rate limit (app.services.auth) is mocked per-test where
+    needed; the middleware layer is not under test here.
+    """
+    monkeypatch.setattr("app.middleware._RATE_LIMIT_RULES", [])
+
+
 @pytest.fixture()
 def client() -> TestClient:
     return TestClient(create_app(), raise_server_exceptions=False)

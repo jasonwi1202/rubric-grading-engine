@@ -19,7 +19,7 @@
  *   never rendered.
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   startExport,
@@ -100,6 +100,8 @@ export interface ExportPanelProps {
 export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
 
   // Active export task ID — set when a PDF export is started.
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -109,17 +111,83 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
 
-  // Close the menu when clicking outside or pressing Escape
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    // Return focus to the trigger button when the menu closes
+    triggerRef.current?.focus();
+  }, []);
+
+  // ArrowDown/Up/Home/End keyboard navigation within the menu (ARIA menu pattern).
+  // Activation (Enter/Space) is handled natively by the underlying <button> elements.
+  // The menu items are native <button> elements so we exclude by both the HTML
+  // `disabled` attribute and `aria-disabled="true"` to be defensive.
+  const handleMenuKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!menuRef.current) return;
+      const items = Array.from(
+        menuRef.current.querySelectorAll<HTMLElement>(
+          '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
+        ),
+      );
+      if (items.length === 0) return;
+      const idx = items.indexOf(document.activeElement as HTMLElement);
+      switch (event.key) {
+        case "ArrowDown":
+          event.preventDefault();
+          // If no item is focused, go to first; otherwise advance and wrap.
+          items[idx === -1 ? 0 : (idx + 1) % items.length]?.focus();
+          break;
+        case "ArrowUp":
+          event.preventDefault();
+          // If no item is focused, go to last; otherwise retreat and wrap.
+          items[
+            idx === -1 ? items.length - 1 : (idx - 1 + items.length) % items.length
+          ]?.focus();
+          break;
+        case "Home":
+          event.preventDefault();
+          items[0]?.focus();
+          break;
+        case "End":
+          event.preventDefault();
+          items[items.length - 1]?.focus();
+          break;
+        default:
+          break;
+      }
+    },
+    [],
+  );
+
+  // Move focus to the first enabled menu item when the menu opens
+  useEffect(() => {
+    if (menuOpen) {
+      // Use rAF so the DOM has rendered before we move focus
+      const id = requestAnimationFrame(() => {
+        const firstEnabled = menuRef.current?.querySelector<HTMLElement>(
+          '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
+        );
+        firstEnabled?.focus();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [menuOpen]);
+
+  // Close the menu when clicking outside (no focus management — user
+  // intentionally clicked elsewhere) or pressing Escape (returns focus
+  // to the trigger button via closeMenu).
   useEffect(() => {
     if (!menuOpen) return;
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        // Only dismiss; do NOT steal focus from wherever the user clicked.
         setMenuOpen(false);
       }
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setMenuOpen(false);
+        // Dismiss and return focus to the trigger.
+        closeMenu();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -128,7 +196,7 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, closeMenu]);
 
   // ----- Export status polling -----
   const {
@@ -227,10 +295,12 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
     <div className="relative" ref={menuRef}>
       {/* Export trigger button */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setMenuOpen((v) => !v)}
-        aria-haspopup="true"
+        aria-haspopup="menu"
         aria-expanded={menuOpen}
+        aria-controls="export-panel-menu"
         aria-label="Export options"
         className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
       >
@@ -268,8 +338,11 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
       {/* Dropdown panel */}
       {menuOpen && (
         <div
+          id="export-panel-menu"
           data-testid="export-panel-menu"
-          aria-label="Export options menu"
+          role="menu"
+          aria-label="Export options"
+          onKeyDown={handleMenuKeyDown}
           className="absolute right-0 z-10 mt-2 w-72 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg focus:outline-none"
         >
           <div className="p-3">
@@ -287,6 +360,8 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
             {/* PDF ZIP export */}
             <div className="mb-2">
               <button
+                ref={firstMenuItemRef}
+                role="menuitem"
                 type="button"
                 disabled={pdfDisabled}
                 onClick={handleStartPdfExport}
@@ -318,6 +393,9 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
                     </span>
                     <span className="block text-xs text-gray-500">
                       Generates a ZIP of per-student PDF feedback files
+                    </span>
+                    <span className="mt-0.5 block text-xs text-blue-600" data-testid="export-media-note">
+                      Media comments are included as links in each PDF
                     </span>
                   </span>
                 </span>
@@ -408,6 +486,7 @@ export function ExportPanel({ assignmentId, hasLockedGrades }: ExportPanelProps)
 
             {/* CSV grades export */}
             <button
+              role="menuitem"
               type="button"
               disabled={csvDisabled}
               onClick={handleCsvExport}

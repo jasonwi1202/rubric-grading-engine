@@ -23,36 +23,13 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
-import { testEmail, clearMailpit, waitForEmail, extractLinkFromEmail } from "./helpers";
+import { seedTeacher } from "./helpers";
 
 const SKIP = process.env.SKIP_AUTH_TESTS !== "false";
-const API_BASE = process.env.API_BASE_URL ?? "http://localhost:8000";
 
 /** Create a verified teacher account and return a logged-in page. */
 async function loginAsNewTeacher(page: Page): Promise<{ email: string; password: string }> {
-  const email = testEmail("onboard");
-  const password = "OnboardPass1!";
-  await clearMailpit();
-
-  // Create account
-  const signupRes = await fetch(`${API_BASE}/api/v1/auth/signup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      first_name: "E2E",
-      last_name: "Onboard",
-      email,
-      password,
-      school_name: "E2E School",
-    }),
-  });
-  if (!signupRes.ok) throw new Error(`Signup failed: ${signupRes.status}`);
-
-  // Verify email
-  const { body } = await waitForEmail(email, "verify", 15_000);
-  const verifyUrl = extractLinkFromEmail(body);
-  const token = new URL(verifyUrl).searchParams.get("token");
-  await fetch(`${API_BASE}/api/v1/auth/verify-email?token=${token}`);
+  const { email, password } = await seedTeacher("onboard");
 
   // Log in via UI
   await page.goto("/login");
@@ -65,7 +42,7 @@ async function loginAsNewTeacher(page: Page): Promise<{ email: string; password:
 }
 
 test.describe("Onboarding wizard", () => {
-  test.skip(SKIP, "Skipped until POST /api/v1/auth/login is implemented (M3). Set SKIP_AUTH_TESTS=false to run.");
+  test.skip(SKIP, "Set SKIP_AUTH_TESTS=false to run onboarding E2E when auth flow is fully stable.");
 
   test("wizard renders step 1 after first login", async ({ page }) => {
     await loginAsNewTeacher(page);
@@ -108,3 +85,4 @@ test.describe("Onboarding wizard", () => {
     await expect(page).toHaveURL(/\/onboarding\/rubric|\/onboarding\/done/, { timeout: 10_000 });
   });
 });
+

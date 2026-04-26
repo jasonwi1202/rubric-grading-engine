@@ -115,6 +115,7 @@ def _build_grade_response(grade: Grade, criterion_scores: list[CriterionScore]) 
         prompt_version=grade.prompt_version,
         is_locked=grade.is_locked,
         locked_at=grade.locked_at,
+        overall_confidence=grade.overall_confidence,
         created_at=grade.created_at,
         criterion_scores=[
             CriterionScoreResponse(

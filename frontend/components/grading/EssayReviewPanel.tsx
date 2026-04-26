@@ -28,6 +28,10 @@ import {
 } from "@/lib/api/grades";
 import type { GradeResponse, CriterionScoreResponse, PatchCriterionRequest } from "@/lib/api/grades";
 import { ApiError } from "@/lib/api/errors";
+import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
+import { AudioRecorder } from "@/components/grading/AudioRecorder";
+import { VideoRecorder } from "@/components/grading/VideoRecorder";
+import { MediaBankPicker } from "@/components/grading/MediaBankPicker";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,16 +39,9 @@ import { ApiError } from "@/lib/api/errors";
 
 /**
  * One criterion entry from assignment.rubric_snapshot.criteria.
- * Matches the shape produced by the backend `build_rubric_snapshot` function.
+ * Defined in the shared rubric helper; re-exported here for backward compatibility.
  */
-export interface RubricSnapshotCriterion {
-  id: string;
-  name: string;
-  description: string;
-  weight: number;
-  min_score: number;
-  max_score: number;
-}
+export type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
 // Score recalculation helper — exported for unit testing
@@ -371,6 +368,19 @@ function CriterionCard({
         <span className="font-medium text-gray-700">AI justification: </span>
         {criterionScore.ai_justification}
       </p>
+
+      {/* Low-confidence explanation — M4.2 */}
+      {criterionScore.confidence === "low" && (
+        <p
+          role="note"
+          className="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700"
+        >
+          <span className="font-semibold">Why low confidence? </span>
+          The AI was uncertain about this score. The essay evidence was ambiguous,
+          incomplete, or conflicting for this criterion — please review carefully
+          before accepting the score.
+        </p>
+      )}
 
       {/* Score row */}
       <div className="mb-3 flex flex-wrap items-center gap-4">
@@ -704,6 +714,22 @@ export function EssayReviewPanel({
             Saving…
           </p>
         )}
+      </div>
+
+      {/* Audio comment recorder */}
+      <div className="border-t border-gray-200 pt-4">
+        <AudioRecorder gradeId={grade.id} isLocked={isLocked} />
+      </div>
+
+      {/* Video comment recorder */}
+      <div className="border-t border-gray-200 pt-4">
+        <VideoRecorder gradeId={grade.id} isLocked={isLocked} />
+      </div>
+
+      {/* Media comment bank picker */}
+      <div className="border-t border-gray-200 pt-4">
+        <h3 className="text-sm font-medium text-gray-700">Media comment bank</h3>
+        <MediaBankPicker gradeId={grade.id} isLocked={isLocked} />
       </div>
 
       {/* Per-criterion cards */}

@@ -195,6 +195,7 @@ The grading result for a specific essay version. One grade per essay version.
 | prompt_version | VARCHAR(100) | Prompt version string that produced this grade (e.g. `grading-v1`) |
 | is_locked | BOOLEAN | Default false |
 | locked_at | TIMESTAMPTZ | Nullable |
+| overall_confidence | ENUM (`confidencelevel`) | Nullable — derived from criterion confidence levels: `low` if any criterion is `low`; `medium` if any is `medium` (and none is `low`); `high` if all are `high`. NULL for grades produced before M4.1. |
 | created_at | TIMESTAMPTZ | |
 
 ---
@@ -225,13 +226,14 @@ Academic integrity signals for an essay version.
 |---|---|---|
 | id | UUID | Primary key |
 | essay_version_id | UUID | FK → EssayVersion |
-| ai_likelihood | ENUM | `low`, `moderate`, `high` |
-| ai_likelihood_score | DECIMAL(5,4) | Raw score 0.0–1.0 |
-| similarity_score | DECIMAL(5,4) | Overall similarity percentage |
-| flagged_passages | JSONB | Array of `{text, start_char, end_char, signal_type, source}` |
-| review_status | ENUM | `pending`, `reviewed_clear`, `flagged` |
-| reviewed_at | TIMESTAMPTZ | Nullable |
+| teacher_id | UUID | FK → User (owner) |
+| provider | VARCHAR(100) | Integrity-check provider name, e.g. `gptzero`, `originality_ai` |
+| ai_likelihood | FLOAT | Nullable — probability [0.0, 1.0] that text is AI-generated |
+| similarity_score | FLOAT | Nullable — similarity [0.0, 1.0] vs. known sources |
+| flagged_passages | JSONB | Nullable — array of provider-specific passage objects |
+| status | ENUM | `pending`, `reviewed_clear`, `flagged` |
 | created_at | TIMESTAMPTZ | |
+| updated_at | TIMESTAMPTZ | |
 
 ---
 

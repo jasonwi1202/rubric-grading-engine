@@ -97,10 +97,13 @@ class TestUploadEssays:
 
         app = _app_with_teacher(teacher)
 
-        with patch(
-            "app.routers.essays.ingest_essay",
-            new_callable=AsyncMock,
-            return_value=(essay, version, _make_auto_result()),
+        with (
+            patch(
+                "app.routers.essays.ingest_essay",
+                new_callable=AsyncMock,
+                return_value=(essay, version, _make_auto_result()),
+            ),
+            patch("app.routers.essays._compute_embedding_task") as mock_task,
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.post(
@@ -116,6 +119,9 @@ class TestUploadEssays:
         assert item["essay_id"] == str(essay.id)
         assert item["essay_version_id"] == str(version.id)
         assert item["assignment_id"] == str(assignment_id)
+        mock_task.delay.assert_called_once_with(
+            str(version.id), str(essay.assignment_id), str(teacher.id)
+        )
 
     def test_multiple_files_returned_in_order(self) -> None:
         teacher = _make_teacher()
@@ -128,13 +134,16 @@ class TestUploadEssays:
 
         app = _app_with_teacher(teacher)
 
-        with patch(
-            "app.routers.essays.ingest_essay",
-            new_callable=AsyncMock,
-            side_effect=[
-                (essay1, version1, _make_auto_result()),
-                (essay2, version2, _make_auto_result()),
-            ],
+        with (
+            patch(
+                "app.routers.essays.ingest_essay",
+                new_callable=AsyncMock,
+                side_effect=[
+                    (essay1, version1, _make_auto_result()),
+                    (essay2, version2, _make_auto_result()),
+                ],
+            ),
+            patch("app.routers.essays._compute_embedding_task"),
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.post(

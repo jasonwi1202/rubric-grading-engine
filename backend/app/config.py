@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     llm_request_timeout_seconds: int = 60
     llm_max_retries: int = 3
     grading_prompt_version: str = "v2"
+    # Test-only mode: bypass external OpenAI calls and return deterministic
+    # synthetic grading/embedding outputs. Keep False outside CI/tests.
+    llm_fake_mode: bool = False
 
     # -------------------------------------------------------------------------
     # File Storage (S3 / MinIO)
@@ -96,6 +99,16 @@ class Settings(BaseSettings):
     integrity_api_key: str | None = None
     integrity_similarity_threshold: float = 0.25
     integrity_ai_likelihood_threshold: float = 0.7
+
+    # -------------------------------------------------------------------------
+    # Regrade Requests
+    # -------------------------------------------------------------------------
+    # Number of days after a grade is created within which regrade requests may
+    # be submitted.  Requests submitted after this window are rejected.
+    regrade_window_days: int = 7
+    # Maximum number of regrade requests allowed per grade.  Once this limit is
+    # reached, no further requests are accepted for that grade.
+    regrade_max_per_grade: int = 1
 
     # -------------------------------------------------------------------------
     # Application
@@ -124,10 +137,44 @@ class Settings(BaseSettings):
     # X-Forwarded-For header (set by Cloudflare / reverse proxies).  Only
     # enable in production behind a trusted proxy; leave False in development.
     trust_proxy_headers: bool = False
+    # When False, the RateLimitMiddleware is registered but immediately passes
+    # all requests through without checking counters.  Set to False in CI E2E
+    # environments where many accounts are created during the test run.
+    rate_limit_enabled: bool = True
+    # Test-only escape hatch for CI E2E: allow login for unverified accounts
+    # when the email delivery stack is intentionally bypassed. Keep False in
+    # all non-test environments.
+    allow_unverified_login_in_test: bool = False
 
     # -------------------------------------------------------------------------
     # Validators
     # -------------------------------------------------------------------------
+
+    @field_validator("cors_origins")
+    @classmethod
+    def cors_origins_no_wildcard(cls, v: str) -> str:
+        """Reject wildcard '*' in CORS_ORIGINS.
+
+        A wildcard origin disables the same-origin protections that CORS is
+        meant to provide and would allow any web page to make credentialed
+        cross-origin requests to the API.  All production and staging
+        deployments must use an explicit allowlist.
+        """
+        origins = [o.strip() for o in v.split(",") if o.strip()]
+        for origin in origins:
+            if origin == "*":
+                raise ValueError(
+                    "Wildcard '*' is not permitted in CORS_ORIGINS; "
+                    "specify an explicit list of allowed origins instead."
+                )
+        return v
+
+    @field_validator("integrity_similarity_threshold")
+    @classmethod
+    def integrity_similarity_threshold_in_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("INTEGRITY_SIMILARITY_THRESHOLD must be between 0.0 and 1.0")
+        return v
 
     @field_validator("jwt_secret_key")
     @classmethod
@@ -186,10 +233,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def integrity_api_key_required(self) -> "Settings":
-        """Require INTEGRITY_API_KEY when provider is not 'internal'."""
-        if self.integrity_provider != "internal" and not self.integrity_api_key:
+        """Require INTEGRITY_API_KEY only for known third-party providers.
+
+        Unknown/misspelt provider names fall back to InternalProvider (see
+        ``get_provider()`` in ``app.services.integrity``) and therefore do not
+        require an API key.  Only explicitly recognised third-party providers
+        that make external API calls should gate on the key.
+        """
+        _known_third_party: frozenset[str] = frozenset({"originality_ai"})
+        provider = (self.integrity_provider or "internal").lower()
+        if provider in _known_third_party and not self.integrity_api_key:
             raise ValueError(
-                "INTEGRITY_API_KEY is required when INTEGRITY_PROVIDER is not 'internal'"
+                "INTEGRITY_API_KEY is required when INTEGRITY_PROVIDER is 'originality_ai'"
             )
         return self
 

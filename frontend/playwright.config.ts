@@ -19,10 +19,15 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: false, // Sequential — tests share a live backend; avoid race conditions
+  fullyParallel: false, // Keep each file's tests ordered; files can still run across workers
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1,
+  // Seed helpers can take >30s in CI (signup + email verification + batch grading).
+  // Raise the default test/hook timeout to avoid beforeAll hook timeouts.
+  timeout: 180_000,
+  // Run files in parallel to reduce wall-clock time; each critical journey
+  // suite still uses serial mode internally where required.
+  workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? "github" : "list",
 
   use: {

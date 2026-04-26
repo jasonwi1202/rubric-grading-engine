@@ -27,8 +27,11 @@ import {
 } from "@/lib/api/assignments";
 import type { AssignmentStatus, SubmissionStatusItem } from "@/lib/api/assignments";
 import { listEssays } from "@/lib/api/essays";
+import { getIntegritySummary } from "@/lib/api/integrity";
 import { BatchGradingPanel } from "@/components/grading/BatchGradingPanel";
 import { ExportPanel } from "@/components/grading/ExportPanel";
+import { RegradeQueue } from "@/components/grading/RegradeQueue";
+import { parseRubricSnapshot } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
 // Status badge helpers
@@ -92,6 +95,17 @@ export default function AssignmentOverviewPage() {
       !!assignment &&
       !["draft", "open"].includes(assignment.status),
     staleTime: 30_000,
+  });
+
+  // Fetch class-level integrity summary — only once grading has started.
+  const { data: integritySummary } = useQuery({
+    queryKey: ["assignments", assignmentId, "integrity-summary"],
+    queryFn: () => getIntegritySummary(assignmentId),
+    enabled:
+      !!assignmentId &&
+      !!assignment &&
+      !["draft", "open"].includes(assignment.status),
+    staleTime: 60_000,
   });
 
   // At least one essay has a locked grade → export is available.
@@ -270,6 +284,47 @@ export default function AssignmentOverviewPage() {
             />
           </div>
 
+          {/* Integrity signals summary — shown once grading has started */}
+          {integritySummary && integritySummary.total > 0 && (
+            <section aria-labelledby="integrity-summary-heading" className="mb-8">
+              <h2
+                id="integrity-summary-heading"
+                className="mb-3 text-base font-semibold text-gray-900"
+              >
+                Integrity signals
+              </h2>
+              <p className="mb-3 text-xs text-gray-400">
+                Potential signals only — teacher review required before any action.
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-center">
+                  <p className="text-2xl font-bold text-red-700">
+                    {integritySummary.flagged}
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-red-600">
+                    Flagged
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center">
+                  <p className="text-2xl font-bold text-gray-700">
+                    {integritySummary.pending}
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-gray-500">
+                    Pending review
+                  </p>
+                </div>
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-center">
+                  <p className="text-2xl font-bold text-green-700">
+                    {integritySummary.reviewed_clear}
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-green-600">
+                    Reviewed — clear
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Submission status table */}
           <section aria-labelledby="submission-status-heading">
             <h2
@@ -351,6 +406,22 @@ export default function AssignmentOverviewPage() {
               </div>
             )}
           </section>
+
+          {/* Regrade request queue — shown once grading has started */}
+          {(assignment.status === "grading" ||
+            assignment.status === "review" ||
+            assignment.status === "complete" ||
+            assignment.status === "returned") && (
+            <div className="mt-8">
+              <RegradeQueue
+                assignmentId={assignmentId}
+                essays={essays ?? []}
+                rubricCriteria={parseRubricSnapshot(
+                  assignment.rubric_snapshot as Record<string, unknown>,
+                )}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

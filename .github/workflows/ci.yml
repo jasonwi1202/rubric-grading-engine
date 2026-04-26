@@ -147,13 +147,19 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Audit dependencies
+      - name: Install project dependencies
+        run: pip install -e ".[dev]"
+        working-directory: backend
+
+      - name: Audit dependencies (fail on any reported CVE)
         run: |
-          if [ -f "pyproject.toml" ]; then
-            pip-audit --requirement <(pip install -e ".[dev]" --dry-run 2>&1 | grep "^  " | awk '{print $1}') || true
-          else
-            echo "pyproject.toml not yet created — skipping"
-          fi
+          # Temporary: pip package CVEs are currently unresolved upstream in
+          # available releases on CI images. Keep project dependency auditing
+          # strict while ignoring these toolchain-only findings.
+          pip-audit --skip-editable --vulnerability-service pypi \
+            --ignore-vuln CVE-2025-8869 \
+            --ignore-vuln CVE-2026-1703 \
+            --ignore-vuln CVE-2026-3219
         working-directory: backend
 
   # ─── Frontend: ESLint + TypeScript ───────────────────────────────────────────
@@ -245,10 +251,10 @@ jobs:
           fi
         working-directory: frontend
 
-      - name: npm audit
+      - name: npm audit (fail on high/critical CVEs)
         run: |
           if [ -f "package.json" ]; then
-            npm audit --audit-level=critical
+            npm audit --audit-level=high
           else
             echo "package.json not yet created — skipping"
           fi
@@ -269,6 +275,7 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       API_BASE_URL: http://localhost:8000
       MAILPIT_API_URL: http://localhost:8025
+      E2E_SKIP_EMAIL_VERIFICATION: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -332,6 +339,21 @@ jobs:
             --retries 10 \
             --retry-delay 3
 
+      - name: Wait for Celery worker to be ready
+        run: |
+          # Give the worker time to connect to Redis and register tasks.
+          # Without this, the first signup email task can sit in the queue
+          # for several seconds before the worker picks it up, causing
+          # waitForEmail() to time out in Playwright tests.
+          for i in $(seq 1 20); do
+            if docker compose exec -T worker celery -A app.tasks.celery_app inspect ping --timeout 3 > /dev/null 2>&1; then
+              echo "Celery worker is ready"
+              break
+            fi
+            echo "Waiting for worker... ($i/20)"
+            sleep 3
+          done
+
       - name: Run Playwright E2E tests
         run: npx playwright test
         working-directory: frontend
@@ -347,3 +369,6 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose down -v
+
+
+

@@ -5,6 +5,8 @@ This guide walks you through spinning up the full GradeWise stack locally in a s
 **No API keys are required to explore the UI and backend.**  
 You only need an OpenAI key if you want to run actual AI grading jobs.
 
+The demo stack now seeds a ready-to-login teacher account and sample grading data automatically.
+
 ---
 
 ## Prerequisites
@@ -34,7 +36,7 @@ This pulls all images and starts:
 | `redis` | Task broker / cache | — |
 | `minio` | S3-compatible file storage | [localhost:9001](http://localhost:9001) |
 | `mailpit` | Email sink (catches all outbound mail) | [localhost:8025](http://localhost:8025) |
-| `backend` | FastAPI app + Uvicorn | [localhost:8000/docs](http://localhost:8000/docs) |
+| `backend` | FastAPI app + Uvicorn | [localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs) |
 | `demo-seed` | Runs DB migrations (one-shot) | — |
 | `worker` | Celery worker for async grading | — |
 | `frontend` | Next.js app | [localhost:3000](http://localhost:3000) |
@@ -47,7 +49,7 @@ The first run downloads ~1 GB of images and builds the backend and frontend imag
 python scripts/smoke_test_demo.py
 ```
 
-The script automatically waits up to 120 seconds for the backend to become healthy, then runs 18 checks across all services. Example output:
+The script automatically waits up to 120 seconds for the backend to become healthy, then runs 22 checks across all services. Example output:
 
 ```
 GradeWise demo smoke test
@@ -58,7 +60,7 @@ GradeWise demo smoke test
 ⏳ Waiting for backend to be ready (up to 120s)...
 ✓ Backend ready after ~45s
 
-Running 18 checks...
+Running 22 checks...
 
   ✓  Backend: health endpoint                        HTTP 200   38ms
   ✓  Backend: OpenAPI schema reachable               HTTP 200   12ms
@@ -69,11 +71,11 @@ Running 18 checks...
   ✓  Mailpit: web UI reachable                       HTTP 200   2ms
   ✓  Mailpit: API messages endpoint                  HTTP 200   1ms
 
-Results: 18 passed, 0 failed / 18 total
+Results: 22 passed, 0 failed / 22 total
 
 ✓ Demo stack is healthy.
   Open the app:       http://localhost:3000
-  API docs:           http://localhost:8000/docs
+  API docs:           http://localhost:8000/api/v1/docs
   Mailpit (email UI): http://localhost:8025
   MinIO console:      http://localhost:9001  (minioadmin / minioadmin)
 ```
@@ -83,15 +85,31 @@ Results: 18 passed, 0 failed / 18 total
 | URL | What you'll find |
 |---|---|
 | [http://localhost:3000](http://localhost:3000) | GradeWise frontend |
-| [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive API docs (Swagger UI) |
+| [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs) | Interactive API docs (Swagger UI) |
 | [http://localhost:8025](http://localhost:8025) | Mailpit — see all emails sent by the app |
 | [http://localhost:9001](http://localhost:9001) | MinIO console — browse uploaded files (`minioadmin` / `minioadmin`) |
+
+### Demo login (pre-seeded)
+
+Use the pre-seeded teacher account:
+
+- **Email:** `demo@gradewise.app`
+- **Password:** `DemoPass123!`
+
+Seeded data includes:
+
+- 1 class (`Demo English 8`)
+- 2 enrolled students
+- 1 rubric with 2 criteria
+- 1 assignment in review state
+- 2 essays with locked grades
+- 1 integrity report and 1 open regrade request
 
 ---
 
 ## Using the App
 
-### Sign up
+### Sign up (optional)
 
 1. Go to [http://localhost:3000/signup](http://localhost:3000/signup)
 2. Fill in your name, email, and a password
@@ -100,6 +118,46 @@ Results: 18 passed, 0 failed / 18 total
 5. You'll be redirected to the onboarding wizard
 
 All email is trapped locally by Mailpit. Nothing is sent to a real inbox.
+
+### M4 feature walkthrough
+
+After signing up and completing onboarding, you can explore the M4 Workflow features. All of these require at least one assignment with graded essays.
+
+#### Confidence scoring
+
+1. Open an assignment that has completed grading
+2. The review queue shows a **confidence badge** (High / Medium / Low) on each essay
+3. Essays sort low-confidence first by default — click any essay to open the review panel
+4. Each criterion score shows a plain-language explanation of why the AI is confident or uncertain
+5. Select multiple high-confidence essays → click **Bulk Approve** to lock them in one action (you must click the button; nothing approves automatically)
+
+#### Academic integrity signals
+
+1. Open any graded essay in the review panel
+2. Click the **Integrity** tab
+3. The panel shows an AI-generated content likelihood indicator and a similarity score against other submissions in the same assignment
+4. If any text segments are flagged, they are highlighted in the essay view
+5. Use the **Mark as Reviewed** / **Flag** actions to record your assessment — all language is framed as signals, not findings
+
+To use a third-party integrity provider instead of the built-in similarity check, set `INTEGRITY_PROVIDER=originality_ai` and `INTEGRITY_API_KEY=<your-key>` before starting the stack.
+
+#### Regrade requests
+
+1. From the essay review panel, click **Log Regrade Request** and enter the dispute text
+2. Go to the assignment page and click the **Regrade Queue** tab
+3. Each request shows the original score, the dispute, and the essay side by side
+4. Click **Approve** (optionally enter a new score) or **Deny** (a written note is required)
+5. All resolutions are recorded in the audit log
+
+#### Audio and video feedback comments
+
+1. Open a graded essay in the review panel
+2. Click the **microphone** icon to record an audio comment (up to 3 minutes)
+3. Click the **camera** icon to record a video comment (webcam + optional screen share)
+4. After recording, click **Save** — the comment is uploaded and appears in the panel with a playback button
+5. Click **Save to Bank** to add a comment to your reusable library
+6. On any other essay, click **Add from Bank** to apply a saved comment in one click
+7. Media comments appear as links or QR codes in the PDF batch export
 
 ### AI grading (optional — requires OpenAI API key)
 

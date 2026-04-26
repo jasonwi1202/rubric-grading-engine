@@ -7,12 +7,13 @@
  *
  * Two-panel layout:
  *   Left  — Essay text panel (placeholder until a dedicated API endpoint is
- *            available to serve extracted essay content).
+ *            available to serve extracted essay content) + Integrity panel.
  *   Right — Rubric scores + feedback editing panel (EssayReviewPanel).
  *
  * Data loading:
  *   1. GET /assignments/{assignmentId}   → assignment with rubric_snapshot
  *   2. GET /essays/{essayId}/grade       → grade with all criterion scores
+ *   3. GET /essays/{essayId}/integrity   → integrity report (404 = no report)
  *
  * The rubric_snapshot provides criterion names, weights, and score ranges
  * that are cross-referenced with the criterion scores by rubric_criterion_id.
@@ -30,33 +31,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAssignment } from "@/lib/api/assignments";
 import { getGrade } from "@/lib/api/grades";
 import type { GradeResponse } from "@/lib/api/grades";
+import { getIntegrityReport } from "@/lib/api/integrity";
+import type { IntegrityReportResponse } from "@/lib/api/integrity";
+import { ApiError } from "@/lib/api/errors";
 import {
   EssayReviewPanel,
   type RubricSnapshotCriterion,
 } from "@/components/grading/EssayReviewPanel";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Parse the rubric_snapshot to extract typed criterion metadata.
- * The snapshot shape is defined by `build_rubric_snapshot` in the backend.
- */
-function parseCriteria(
-  snapshot: Record<string, unknown>,
-): RubricSnapshotCriterion[] {
-  const raw = snapshot.criteria;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((c) => ({
-    id: String((c as Record<string, unknown>).id ?? ""),
-    name: String((c as Record<string, unknown>).name ?? "Unnamed"),
-    description: String((c as Record<string, unknown>).description ?? ""),
-    weight: Number((c as Record<string, unknown>).weight ?? 0),
-    min_score: Number((c as Record<string, unknown>).min_score ?? 0),
-    max_score: Number((c as Record<string, unknown>).max_score ?? 0),
-  }));
-}
+import { parseRubricSnapshot } from "@/lib/rubric/parseRubricSnapshot";
+import {
+  IntegrityPanel,
+  IntegrityPanelSkeleton,
+  IntegrityPanelEmpty,
+} from "@/components/grading/IntegrityPanel";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -71,6 +58,9 @@ export default function EssayReviewPage() {
 
   // Local grade state — updated optimistically after each successful save
   const [localGrade, setLocalGrade] = useState<GradeResponse | null>(null);
+  // Local integrity report state — updated after teacher status actions
+  const [localIntegrity, setLocalIntegrity] =
+    useState<IntegrityReportResponse | null>(null);
 
   // Load assignment for rubric_snapshot (criterion names/weights)
   const {
@@ -96,15 +86,37 @@ export default function EssayReviewPage() {
     staleTime: 30_000,
   });
 
+  // Load the integrity report — 404 is not an error; it means no report yet.
+  const {
+    data: remoteIntegrity,
+    isLoading: integrityLoading,
+  } = useQuery({
+    queryKey: ["integrity", essayId],
+    queryFn: async () => {
+      try {
+        return await getIntegrityReport(essayId);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    enabled: !!essayId,
+    staleTime: 60_000,
+  });
+
   // Effective grade: prefer local optimistic state; fall back to server state
   const grade = localGrade ?? remoteGrade ?? null;
+  // Effective integrity report: prefer local after teacher action
+  const integrity = localIntegrity ?? remoteIntegrity ?? null;
 
   const isLoading = assignmentLoading || gradeLoading;
   const isError = assignmentError || gradeError;
 
   // Parse criteria from rubric_snapshot once the assignment loads
   const criteria: RubricSnapshotCriterion[] = assignment
-    ? parseCriteria(
+    ? parseRubricSnapshot(
         assignment.rubric_snapshot as Record<string, unknown>,
       )
     : [];
@@ -113,6 +125,11 @@ export default function EssayReviewPage() {
     setLocalGrade(updatedGrade);
     // Also update the React Query cache so any other consumers see the update
     queryClient.setQueryData(["grade", essayId], updatedGrade);
+  };
+
+  const handleIntegrityUpdate = (updatedReport: IntegrityReportResponse) => {
+    setLocalIntegrity(updatedReport);
+    queryClient.setQueryData(["integrity", essayId], updatedReport);
   };
 
   return (
@@ -208,8 +225,8 @@ export default function EssayReviewPage() {
       {/* Two-panel review layout */}
       {!isLoading && !isError && grade && (
         <div className="flex flex-col gap-6 lg:flex-row">
-          {/* Left panel — essay text */}
-          <div className="flex-1 lg:max-w-none">
+          {/* Left panel — essay text + integrity */}
+          <div className="flex-1 space-y-4 lg:max-w-none">
             <div className="sticky top-8 rounded-lg border border-gray-200 bg-white shadow-sm">
               <div className="border-b border-gray-200 px-4 py-3">
                 <h2 className="text-sm font-semibold text-gray-900">
@@ -246,6 +263,18 @@ export default function EssayReviewPage() {
                 </div>
               </div>
             </div>
+
+            {/* Integrity panel */}
+            {integrityLoading ? (
+              <IntegrityPanelSkeleton />
+            ) : integrity ? (
+              <IntegrityPanel
+                report={integrity}
+                onStatusUpdate={handleIntegrityUpdate}
+              />
+            ) : (
+              <IntegrityPanelEmpty />
+            )}
           </div>
 
           {/* Right panel — rubric scores + feedback editing */}

@@ -90,6 +90,11 @@ async def _check_rate_limit(
     error_message: str,
 ) -> None:
     """Increment an IP/email counter; raise RateLimitError when exceeded."""
+    from app.config import settings
+
+    if not settings.rate_limit_enabled:
+        return
+
     current: int = await redis_client.incr(key)
     if current == 1:
         await redis_client.expire(key, window_seconds)
@@ -535,7 +540,7 @@ async def login_user(
         await db.commit()
         raise ValidationError(_invalid_msg)
 
-    if not db_user.email_verified:
+    if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         audit = AuditLog(
             teacher_id=None,
             entity_type="user",
@@ -624,7 +629,12 @@ async def refresh_access_token(
 
     result = await db.execute(select(User).where(User.id == user_id))
     db_user = result.scalar_one_or_none()
-    if db_user is None or not db_user.email_verified:
+    if db_user is None:
+        raise ValidationError("Refresh token is invalid or has expired.", field="token")
+
+    # Keep refresh behavior consistent with login in CI/test mode where
+    # unverified-login bypass can be enabled for deterministic E2E runs.
+    if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         raise ValidationError("Refresh token is invalid or has expired.", field="token")
 
     # Write audit log

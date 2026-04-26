@@ -149,6 +149,11 @@ class TestIntegrityApiKeyValidator:
         s = _make(integrity_provider="originality_ai", integrity_api_key="api-key-123")
         assert s.integrity_api_key == "api-key-123"
 
+    def test_unknown_provider_no_key_ok(self) -> None:
+        """Unknown provider values fall back to InternalProvider — no API key required."""
+        s = _make(integrity_provider="typo_provider", integrity_api_key=None)
+        assert s.integrity_provider == "typo_provider"
+
 
 # ---------------------------------------------------------------------------
 # cors_origins_list helper

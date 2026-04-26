@@ -1,7 +1,16 @@
 # Feature: Confidence Scoring
 
 **Phase:** 2 — Workflow
-**Status:** Planned
+**Status:** Partially Implemented (M4.2)
+
+**Shipped:**
+- Per-criterion low-confidence explanation callout in the essay review panel (`EssayReviewPanel`) — active today, no backend change needed
+- Queue-level UI: confidence badges, confidence sort (with deterministic tie-breaker), fast-review toggle, low-confidence filter, and bulk-approve — code is complete and degrades gracefully; these features activate automatically once the backend essay list endpoint (`GET /assignments/{id}/essays`) returns `overall_confidence` per essay
+
+**Pending backend support (not yet active):**
+- `GET /assignments/{id}/essays` does not yet return `overall_confidence` (or `grade_id` / score summary fields); fast-review and low-confidence filter are hidden in the UI until at least one essay carries confidence data
+- Teacher-configurable confidence thresholds
+- Borderline-grade (score-band) flagging
 
 ---
 

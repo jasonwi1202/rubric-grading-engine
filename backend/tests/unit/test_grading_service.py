@@ -241,6 +241,43 @@ class TestGradeEssayHappyPath:
         assert grade_objs[0].prompt_version == "grading-v1"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "setting_version, expected_prompt_version",
+        [
+            ("v1", "grading-v1"),
+            ("v2", "grading-v2"),
+        ],
+    )
+    async def test_grade_prompt_version_changes_with_setting(
+        self, setting_version: str, expected_prompt_version: str
+    ) -> None:
+        """Changing GRADING_PROMPT_VERSION setting changes the prompt_version written to Grade."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+        grading_resp = _make_grading_response(criterion_id=criterion_id, score=3)
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        added_objects: list[object] = []
+        db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        from app.models.grade import Grade as GradeModel
+
+        with (
+            patch("app.services.grading.call_grading", return_value=grading_resp),
+            patch("app.services.grading.settings") as mock_settings,
+        ):
+            mock_settings.grading_prompt_version = setting_version
+            mock_settings.openai_grading_model = "gpt-4o"
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        grade_objs = [o for o in added_objects if isinstance(o, GradeModel)]
+        assert len(grade_objs) == 1, "Expected exactly one Grade record to be added"
+        assert grade_objs[0].prompt_version == expected_prompt_version
+
+    @pytest.mark.asyncio
     async def test_total_score_computed_correctly(self) -> None:
         """total_score sums criterion scores; max_possible_score sums max values."""
         teacher_id = _make_uuid()
@@ -879,3 +916,164 @@ class TestGradeEssayFeedbackTone:
         cs_objs = [o for o in added_objects if isinstance(o, CriterionScoreModel)]
         assert len(cs_objs) == 1
         assert cs_objs[0].ai_feedback is None
+
+
+# ---------------------------------------------------------------------------
+# Tests — _derive_overall_confidence (M4.1)
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveOverallConfidence:
+    """Unit tests for the _derive_overall_confidence helper.
+
+    No database or LLM calls — pure logic.
+    """
+
+    def test_all_high_returns_high(self) -> None:
+        """All criteria high → overall high."""
+        from app.llm.parsers import ParsedCriterionScore  # noqa: PLC0415
+        from app.models.grade import ConfidenceLevel  # noqa: PLC0415
+        from app.services.grading import _derive_overall_confidence  # noqa: PLC0415
+
+        scores = [
+            ParsedCriterionScore(
+                criterion_id="c1", score=4, justification="Just.", confidence="high"
+            ),
+            ParsedCriterionScore(
+                criterion_id="c2", score=3, justification="Just.", confidence="high"
+            ),
+        ]
+        assert _derive_overall_confidence(scores) == ConfidenceLevel.high
+
+    def test_any_medium_returns_medium(self) -> None:
+        """Mix of high and medium → overall medium."""
+        from app.llm.parsers import ParsedCriterionScore  # noqa: PLC0415
+        from app.models.grade import ConfidenceLevel  # noqa: PLC0415
+        from app.services.grading import _derive_overall_confidence  # noqa: PLC0415
+
+        scores = [
+            ParsedCriterionScore(
+                criterion_id="c1", score=4, justification="Just.", confidence="high"
+            ),
+            ParsedCriterionScore(
+                criterion_id="c2", score=3, justification="Just.", confidence="medium"
+            ),
+        ]
+        assert _derive_overall_confidence(scores) == ConfidenceLevel.medium
+
+    def test_any_low_returns_low(self) -> None:
+        """Mix of high, medium, and low → overall low."""
+        from app.llm.parsers import ParsedCriterionScore  # noqa: PLC0415
+        from app.models.grade import ConfidenceLevel  # noqa: PLC0415
+        from app.services.grading import _derive_overall_confidence  # noqa: PLC0415
+
+        scores = [
+            ParsedCriterionScore(
+                criterion_id="c1", score=4, justification="Just.", confidence="high"
+            ),
+            ParsedCriterionScore(
+                criterion_id="c2", score=3, justification="Just.", confidence="medium"
+            ),
+            ParsedCriterionScore(
+                criterion_id="c3", score=2, justification="Just.", confidence="low"
+            ),
+        ]
+        assert _derive_overall_confidence(scores) == ConfidenceLevel.low
+
+    def test_all_low_returns_low(self) -> None:
+        """All criteria low → overall low."""
+        from app.llm.parsers import ParsedCriterionScore  # noqa: PLC0415
+        from app.models.grade import ConfidenceLevel  # noqa: PLC0415
+        from app.services.grading import _derive_overall_confidence  # noqa: PLC0415
+
+        scores = [
+            ParsedCriterionScore(
+                criterion_id="c1", score=1, justification="Just.", confidence="low"
+            ),
+        ]
+        assert _derive_overall_confidence(scores) == ConfidenceLevel.low
+
+    def test_empty_list_returns_low(self) -> None:
+        """Empty criterion list → overall low (safest default)."""
+        from app.models.grade import ConfidenceLevel  # noqa: PLC0415
+        from app.services.grading import _derive_overall_confidence  # noqa: PLC0415
+
+        assert _derive_overall_confidence([]) == ConfidenceLevel.low
+
+    def test_low_dominates_medium(self) -> None:
+        """Low confidence dominates medium — overall is low even if most are medium."""
+        from app.llm.parsers import ParsedCriterionScore  # noqa: PLC0415
+        from app.models.grade import ConfidenceLevel  # noqa: PLC0415
+        from app.services.grading import _derive_overall_confidence  # noqa: PLC0415
+
+        scores = [
+            ParsedCriterionScore(
+                criterion_id="c1", score=3, justification="Just.", confidence="medium"
+            ),
+            ParsedCriterionScore(
+                criterion_id="c2", score=3, justification="Just.", confidence="medium"
+            ),
+            ParsedCriterionScore(
+                criterion_id="c3", score=1, justification="Just.", confidence="low"
+            ),
+        ]
+        assert _derive_overall_confidence(scores) == ConfidenceLevel.low
+
+
+# ---------------------------------------------------------------------------
+# Tests — overall_confidence stored on Grade (M4.1)
+# ---------------------------------------------------------------------------
+
+
+class TestGradeEssayOverallConfidence:
+    """Tests that overall_confidence is computed and stored on the Grade record."""
+
+    @pytest.mark.asyncio
+    async def test_overall_confidence_high_when_all_high(self) -> None:
+        """All criteria high → Grade.overall_confidence is 'high'."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        grading_resp = _make_grading_response(criterion_id=criterion_id, confidence="high")
+
+        added_objects: list[object] = []
+        db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        with patch("app.services.grading.call_grading", return_value=grading_resp):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        from app.models.grade import ConfidenceLevel
+        from app.models.grade import Grade as GradeModel
+
+        grade_objs = [o for o in added_objects if isinstance(o, GradeModel)]
+        assert len(grade_objs) == 1
+        assert grade_objs[0].overall_confidence == ConfidenceLevel.high
+
+    @pytest.mark.asyncio
+    async def test_overall_confidence_low_when_any_low(self) -> None:
+        """Any criterion low → Grade.overall_confidence is 'low'."""
+        teacher_id = _make_uuid()
+        essay = _make_essay()
+        essay_version = _make_essay_version(essay.id)
+        assignment = _make_assignment(assignment_id=essay.assignment_id)
+        criterion_id = assignment.rubric_snapshot["criteria"][0]["id"]
+
+        db = _make_db_mock(essay=essay, essay_version=essay_version, assignment=assignment)
+        grading_resp = _make_grading_response(criterion_id=criterion_id, confidence="low")
+
+        added_objects: list[object] = []
+        db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+        with patch("app.services.grading.call_grading", return_value=grading_resp):
+            await grade_essay(db, essay.id, teacher_id, "balanced")
+
+        from app.models.grade import ConfidenceLevel
+        from app.models.grade import Grade as GradeModel
+
+        grade_objs = [o for o in added_objects if isinstance(o, GradeModel)]
+        assert len(grade_objs) == 1
+        assert grade_objs[0].overall_confidence == ConfidenceLevel.low

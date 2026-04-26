@@ -39,6 +39,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "pdfplumber>=0.11.0",
     "python-docx>=1.1.0",
+    "lxml>=6.1.0",  # pin to fix CVE-2026-41066 (transitive via python-docx)
     "fpdf2>=2.7.0",
 
     # LLM
@@ -127,6 +128,7 @@ module = [
     "testcontainers.*",
     "rapidfuzz.*",
     "fpdf.*",
+    "pgvector.*",
 ]
 ignore_missing_imports = true
 

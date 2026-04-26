@@ -8,9 +8,12 @@ when starting the server::
 """
 
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -43,20 +46,102 @@ _HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
 }
 
 
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage resources that must be initialised once and cleaned up on shutdown."""
+    yield
+    # Graceful shutdown: close the Redis client used by RateLimitMiddleware.
+    redis_client = getattr(application.state, "rate_limit_redis", None)
+    if redis_client is not None:
+        await redis_client.aclose()
+
+
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
+    from app.config import settings
+    from app.logging_config import configure_logging
+
+    configure_logging(settings.log_level)
+
     application = FastAPI(
         title="Rubric Grading Engine",
         version="0.1.0",
         docs_url="/api/v1/docs",
         redoc_url="/api/v1/redoc",
         openapi_url="/api/v1/openapi.json",
+        lifespan=_lifespan,
     )
 
     _register_exception_handlers(application)
+    _register_middleware(application)
     _register_routers(application)
 
     return application
+
+
+# ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
+
+
+def _register_middleware(application: FastAPI) -> None:
+    from redis.asyncio import Redis
+
+    from app.config import settings
+    from app.middleware import (
+        CorrelationIdMiddleware,
+        RateLimitMiddleware,
+        SecurityHeadersMiddleware,
+    )
+
+    # Create a single Redis client for rate limiting.  Stored in app.state so
+    # the lifespan handler can call aclose() on graceful shutdown, preventing
+    # leaked connections in long-running processes and test teardown.
+    redis_client: Redis[str] = Redis.from_url(settings.redis_url, decode_responses=True)
+    application.state.rate_limit_redis = redis_client
+
+    # Middleware registration order for FastAPI/Starlette (LIFO execution):
+    # add_middleware() inserts at the *front* of the middleware stack, so the
+    # last call here is the *outermost* middleware (runs first on a request,
+    # last on a response).
+    #
+    # Desired request flow:  CorrelationId → SecurityHeaders → CORS → RateLimit → App
+    # Desired response flow: App → RateLimit → CORS → SecurityHeaders → CorrelationId
+    #
+    # This ensures:
+    #   - Correlation IDs are available to ALL downstream middleware and route
+    #     handlers so that every log line during a request carries the ID.
+    #   - Security headers appear on ALL responses, including CORS preflight
+    #     responses (OPTIONS).  CORSMiddleware can short-circuit and return a
+    #     preflight response without calling the inner app; if SecurityHeaders
+    #     were inside CORS it would be skipped on those responses.
+    #   - CORS preflight and credentialed-request handling runs before the
+    #     rate-limit layer so that OPTIONS never counts against the limit.
+    #   - Rate-limit 429s are returned before the route handler is invoked.
+
+    # 1. Rate limiting — innermost (added first).
+    application.add_middleware(RateLimitMiddleware, redis_client=redis_client)
+
+    # 2. CORS — sits between RateLimit and SecurityHeaders so it handles
+    #    preflight and adds Access-Control-* headers before SecurityHeaders
+    #    wraps the final response.
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Correlation-Id"],
+        expose_headers=["X-Correlation-Id"],
+    )
+
+    # 3. Security headers — wraps CORS so headers are applied to every
+    #    response, including CORS preflight 200s and rate-limit 429s.
+    application.add_middleware(SecurityHeadersMiddleware)
+
+    # 4. Correlation ID — outermost (added last); runs first on a request so
+    #    that correlation_id_var is set before any other middleware or handler
+    #    emits log lines.
+    application.add_middleware(CorrelationIdMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +287,18 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.exports import router as exports_router
     from app.routers.grades import essay_grade_router, grades_router
     from app.routers.health import router as health_router
+    from app.routers.integrity import (
+        assignment_integrity_router,
+        essay_integrity_router,
+        integrity_reports_router,
+    )
+    from app.routers.media_comments import grade_media_router, media_comments_router
     from app.routers.onboarding import router as onboarding_router
+    from app.routers.regrade_requests import (
+        assignments_regrade_router,
+        grades_regrade_router,
+        regrade_requests_router,
+    )
     from app.routers.rubric_templates import router as rubric_templates_router
     from app.routers.rubrics import router as rubrics_router
     from app.routers.students import router as students_router
@@ -219,10 +315,18 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(essays_router, prefix="/api/v1")
     application.include_router(essay_router, prefix="/api/v1")
     application.include_router(essay_grade_router, prefix="/api/v1")
+    application.include_router(essay_integrity_router, prefix="/api/v1")
+    application.include_router(assignment_integrity_router, prefix="/api/v1")
     application.include_router(assignments_router, prefix="/api/v1")
     application.include_router(grades_router, prefix="/api/v1")
+    application.include_router(grades_regrade_router, prefix="/api/v1")
+    application.include_router(assignments_regrade_router, prefix="/api/v1")
+    application.include_router(regrade_requests_router, prefix="/api/v1")
+    application.include_router(integrity_reports_router, prefix="/api/v1")
     application.include_router(comment_bank_router, prefix="/api/v1")
     application.include_router(exports_router, prefix="/api/v1")
+    application.include_router(grade_media_router, prefix="/api/v1")
+    application.include_router(media_comments_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

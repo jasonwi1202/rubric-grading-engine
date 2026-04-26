@@ -17,7 +17,6 @@
 import { test, expect } from "@playwright/test";
 import {
   testEmail,
-  clearMailpit,
   waitForEmail,
   extractLinkFromEmail,
 } from "./helpers";
@@ -94,15 +93,13 @@ test.describe("Sign-up form validation", () => {
 test.describe("Full sign-up → email verification flow", () => {
   // This test requires the full Docker Compose stack including Mailpit.
   // It is the primary regression test for M2.8.
-  // Skipped until POST /api/v1/auth/signup redirects to /signup/verify.
   const SKIP_SIGNUP_FLOW = process.env.SKIP_SIGNUP_FLOW !== "false";
 
   test("teacher can sign up, receive verification email, and verify account", async ({
     page,
   }) => {
-    test.skip(SKIP_SIGNUP_FLOW, "Requires POST /auth/signup to redirect to /signup/verify");
+    test.skip(SKIP_SIGNUP_FLOW, "Set SKIP_SIGNUP_FLOW=false to run full signup flow when email infra is available.");
     const email = testEmail("verify");
-    await clearMailpit();
 
     // --- Step 1: Fill and submit the sign-up form ---
     await page.goto("/signup");
@@ -121,7 +118,8 @@ test.describe("Full sign-up → email verification flow", () => {
     await expect(page.getByText(/check your email/i)).toBeVisible();
 
     // --- Step 3: Poll Mailpit for the verification email ---
-    const { body } = await waitForEmail(email, "verify", 15_000);
+    // Allow up to 60 s for the Celery worker to process the task in CI.
+    const { body } = await waitForEmail(email, "verify", 60_000);
     const verifyUrl = extractLinkFromEmail(body);
     expect(verifyUrl).toContain("/auth/verify");
 
@@ -143,7 +141,7 @@ test.describe("/auth/verify — error states", () => {
   test("expired or invalid token shows error with resend option", async ({
     page,
   }) => {
-    test.skip(SKIP_SIGNUP_FLOW, "Requires /auth/verify page to handle error tokens");
+    test.skip(SKIP_SIGNUP_FLOW, "Set SKIP_SIGNUP_FLOW=false to run token-error verification page checks.");
     await page.goto("/auth/verify?token=invalid-token-abc123");
     await expect(
       page.getByText(/invalid|expired|not valid/i).first(),
@@ -153,3 +151,4 @@ test.describe("/auth/verify — error states", () => {
     await expect(resend).toBeVisible();
   });
 });
+

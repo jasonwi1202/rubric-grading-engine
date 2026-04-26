@@ -1,7 +1,39 @@
 # Feature: Media Feedback
 
 **Phase:** 2 — Workflow
-**Status:** Planned
+**Status:** Partially Implemented (M4.10, M4.11, M4.12)
+
+**Shipped (M4.10 — audio comments):**
+- In-browser audio recording via MediaRecorder API with a 3-minute max and live countdown (`AudioRecorder` component in `EssayReviewPanel`)
+- Post-recording preview playback before saving — teacher can discard and re-record
+- `POST /grades/{id}/media-comments` — multipart upload → S3 → `media_comments` DB record
+- `GET /grades/{id}/media-comments` — list all audio comments for a grade
+- `DELETE /media-comments/{id}` — removes DB row and S3 object
+- `GET /media-comments/{id}/url` — returns access-controlled pre-signed URL for playback
+- S3 key format: `media/{teacher_id}/{grade_id}/{uuid}.webm` — no student PII in any key
+- Locked grades suppress the record button (read-only when `grade.is_locked`)
+- MIME type validation server-side; 50 MB size cap; graceful degradation on permission denial
+
+**Shipped (M4.11 — video comments):**
+- In-browser webcam + microphone recording via MediaRecorder API (`VideoRecorder` component in `EssayReviewPanel`)
+- Optional screen share mode: `getDisplayMedia` captures display video, combined with microphone audio from `getUserMedia`
+- Records as `video/webm`; same 3-minute limit, same S3 upload and API flow as M4.10
+- Live webcam preview while recording; post-recording video preview before saving
+- Graceful degradation: `NotAllowedError` on camera denied → audio-only fallback offered; both camera and mic denied → combined error; screen share denied → screen-share-specific error; hardware errors (`NotFoundError`, `NotReadableError`) shown separately
+- Video comments filter by `mime_type.startsWith("video/")` in the shared `media-comments` query
+
+**Shipped (M4.12 — media comment bank and export):**
+- `is_banked` boolean column on `media_comments` (migration `019_media_comment_add_is_banked`)
+- `POST /media-comments/{id}/save-to-bank` — marks a recorded comment as reusable; sets `is_banked=true`
+- `GET /media-comments/bank` — lists all banked (reusable) comments for the teacher, newest first
+- `POST /grades/{id}/media-comments` extended: accepts optional `source_id` form field; when provided, copies the banked comment's S3 object to a new key scoped to the target grade and creates a new `MediaComment` row (no re-recording needed)
+- `MediaBankPicker` component in `EssayReviewPanel` — toggle-to-open bank picker listing saved comments with duration, type label, and per-item Apply button; disabled on locked grades
+- "Save to bank" button on each `AudioRecorder` comment row — marks the comment as banked and invalidates the bank query cache
+- Pre-signed playback URLs remain scoped to the owning teacher; expire per `S3_PRESIGNED_URL_EXPIRE_SECONDS`
+- PDF export (M3.24) updated: each student PDF includes a "Media Comments" section listing the comment IDs with instructions to retrieve playback URLs via `GET /media-comments/{id}/url`
+
+**Pending:**
+- Auto-transcription for accessibility
 
 ---
 

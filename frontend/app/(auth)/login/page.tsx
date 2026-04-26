@@ -11,13 +11,13 @@ import { isSafeRedirectPath } from "@/lib/utils/redirect";
 
 /**
  * Return a safe redirect path from the `next` query parameter, falling back
- * to "/" if the value is absent or fails the open-redirect check.
+ * to "/dashboard" if the value is absent or fails the open-redirect check.
  */
 function getSafeRedirectPath(next: string | null): string {
   if (next && isSafeRedirectPath(next)) {
     return next;
   }
-  return "/";
+  return "/dashboard";
 }
 
 /**

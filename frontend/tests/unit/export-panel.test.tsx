@@ -155,14 +155,14 @@ describe("ExportPanel — disabled when no locked grades", () => {
   });
 
   it("PDF export menu item is disabled", () => {
-    const pdfItem = screen.getByRole("button", {
+    const pdfItem = screen.getByRole("menuitem", {
       name: /export feedback as pdf zip/i,
     });
     expect(pdfItem).toBeDisabled();
   });
 
   it("CSV export menu item is disabled", () => {
-    const csvItem = screen.getByRole("button", {
+    const csvItem = screen.getByRole("menuitem", {
       name: /export grades as csv/i,
     });
     expect(csvItem).toBeDisabled();
@@ -191,14 +191,14 @@ describe("ExportPanel — enabled when has locked grades", () => {
   });
 
   it("PDF export menu item is enabled", () => {
-    const pdfItem = screen.getByRole("button", {
+    const pdfItem = screen.getByRole("menuitem", {
       name: /export feedback as pdf zip/i,
     });
     expect(pdfItem).not.toBeDisabled();
   });
 
   it("CSV export menu item is enabled", () => {
-    const csvItem = screen.getByRole("button", {
+    const csvItem = screen.getByRole("menuitem", {
       name: /export grades as csv/i,
     });
     expect(csvItem).not.toBeDisabled();
@@ -227,7 +227,7 @@ describe("ExportPanel — PDF export", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
-    const pdfItem = screen.getByRole("button", {
+    const pdfItem = screen.getByRole("menuitem", {
       name: /export feedback as pdf zip/i,
     });
     await user.click(pdfItem);
@@ -255,7 +255,7 @@ describe("ExportPanel — PDF export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("button", { name: /export feedback as pdf zip/i }),
+      screen.getByRole("menuitem", { name: /export feedback as pdf zip/i }),
     );
 
     await waitFor(() =>
@@ -285,7 +285,7 @@ describe("ExportPanel — PDF export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("button", { name: /export feedback as pdf zip/i }),
+      screen.getByRole("menuitem", { name: /export feedback as pdf zip/i }),
     );
 
     await waitFor(() =>
@@ -312,7 +312,7 @@ describe("ExportPanel — PDF export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("button", { name: /export feedback as pdf zip/i }),
+      screen.getByRole("menuitem", { name: /export feedback as pdf zip/i }),
     );
 
     await waitFor(() =>
@@ -338,7 +338,7 @@ describe("ExportPanel — CSV export", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
-    const csvItem = screen.getByRole("button", {
+    const csvItem = screen.getByRole("menuitem", {
       name: /export grades as csv/i,
     });
     await user.click(csvItem);
@@ -361,7 +361,7 @@ describe("ExportPanel — CSV export", () => {
 
     await user.click(screen.getByRole("button", { name: /export options/i }));
     await user.click(
-      screen.getByRole("button", { name: /export grades as csv/i }),
+      screen.getByRole("menuitem", { name: /export grades as csv/i }),
     );
 
     await waitFor(() =>
@@ -392,6 +392,7 @@ function makeGrade(
     prompt_version: "v1",
     is_locked: true,
     locked_at: "2026-04-01T00:00:00Z",
+    overall_confidence: "high",
     created_at: "2026-04-01T00:00:00Z",
     criterion_scores: [],
     ...overrides,

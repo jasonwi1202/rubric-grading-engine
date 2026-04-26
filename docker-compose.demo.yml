@@ -183,7 +183,9 @@ services:
       sh -c "
         echo 'Running migrations...' &&
         PYTHONPATH=/app alembic upgrade head &&
-        echo 'Migrations complete.'
+        echo 'Running demo data seed...' &&
+        PYTHONPATH=/app python scripts/seed_demo_data.py &&
+        echo 'Demo data seed complete.'
       "
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/rubric_grading
@@ -281,7 +283,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: dev
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
     restart: unless-stopped
     ports:
       - "3000:3000"

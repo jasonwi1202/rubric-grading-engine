@@ -24,6 +24,7 @@ Security invariants (non-negotiable):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import logging
 import types
@@ -31,9 +32,10 @@ import types
 import openai
 
 from app.config import settings
-from app.exceptions import LLMError, LLMParseError
+from app.exceptions import LLMError, LLMParseError, ValidationError
 from app.llm.parsers import (
     CriterionInfo,
+    ParsedCriterionScore,
     ParsedFeedbackResponse,
     ParsedGradingResponse,
     ParsedInstructionResponse,
@@ -43,6 +45,14 @@ from app.llm.parsers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_fake_mode() -> bool:
+    """Return whether deterministic fake LLM outputs are enabled."""
+    # Use an explicit identity check to avoid truthy MagicMock values when
+    # tests patch `settings` partially.
+    return getattr(settings, "llm_fake_mode", False) is True
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -227,6 +237,30 @@ async def call_grading(
         LLMError: On timeout or unrecoverable API failure.
     """
 
+    if _is_fake_mode():
+        fake_scores = []
+        for info in criteria:
+            midpoint = int((info.min_score + info.max_score) / 2)
+            fake_scores.append(
+                ParsedCriterionScore(
+                    criterion_id=info.criterion_id,
+                    score=midpoint,
+                    justification=(
+                        "Deterministic test justification generated in fake LLM mode. "
+                        "Teacher should still review before locking."
+                    ),
+                    confidence="high",
+                    ai_feedback="Deterministic test feedback.",
+                    score_clamped=False,
+                    needs_review=False,
+                    raw_score=midpoint,
+                )
+            )
+        return ParsedGradingResponse(
+            criterion_scores=fake_scores,
+            summary_feedback="Deterministic test summary feedback.",
+        )
+
     version = prompt_version or settings.grading_prompt_version
     module = _load_prompt_module("grading", version)
     client = _get_openai_client()
@@ -340,6 +374,79 @@ async def call_instruction(
         return parse_instruction_response(retry_raw)
 
 
+async def call_embedding(text: str) -> list[float]:
+    """Generate a text embedding vector using the configured OpenAI model.
+
+    The embedding is computed via ``openai.AsyncOpenAI.embeddings.create``.
+    Transport-level errors (timeouts, API errors, connection errors, rate
+    limits) are retried with exponential back-off up to
+    ``settings.llm_max_retries`` times before raising
+    :exc:`~app.exceptions.LLMError`.  The retry logic mirrors
+    :func:`_chat_with_retry` — ``openai.APIError`` (the base class for all
+    OpenAI API exceptions including ``APIConnectionError`` and
+    ``RateLimitError``) is caught on every attempt.
+
+    Args:
+        text: The plain-text content to embed.  Must not be empty or
+            whitespace-only.
+
+    Returns:
+        A ``list[float]`` of ``settings.openai_embedding_model`` dimensions
+        (1 536 for ``text-embedding-3-small``).
+
+    Raises:
+        ValidationError: If ``text`` is empty or whitespace-only.
+        LLMError: On timeout or unrecoverable API failure after all retries.
+
+    Security note:
+        The text argument is never logged — callers must not pass log-visible
+        content and should use entity IDs in their own log calls instead.
+    """
+    if not text.strip():
+        raise ValidationError("text must not be empty or whitespace-only")
+
+    if _is_fake_mode():
+        # Generate a stable pseudo-embedding with the expected 1,536 dims.
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        base = [b / 255.0 for b in digest]
+        repeated = (base * ((1536 // len(base)) + 1))[:1536]
+        return repeated
+
+    client = _get_openai_client()
+    max_attempts = settings.llm_max_retries + 1
+    last_exc: LLMError | None = None
+
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            wait = 2**attempt
+            logger.info(
+                "Retrying embedding call after transport error",
+                extra={"attempt": attempt, "wait_seconds": wait},
+            )
+            await asyncio.sleep(wait)
+
+        try:
+            response = await client.embeddings.create(
+                model=settings.openai_embedding_model,
+                input=text,
+            )
+            return response.data[0].embedding
+        except openai.APITimeoutError as exc:
+            logger.warning(
+                "Embedding request timed out",
+                extra={"attempt": attempt, "error_type": type(exc).__name__},
+            )
+            last_exc = LLMError("Embedding request timed out")
+        except openai.APIError as exc:
+            logger.warning(
+                "Embedding API error",
+                extra={"attempt": attempt, "error_type": type(exc).__name__},
+            )
+            last_exc = LLMError("Embedding API error")
+
+    raise last_exc or LLMError("Embedding call failed after retries")
+
+
 # ---------------------------------------------------------------------------
 # Type alias exported for consumers
 # ---------------------------------------------------------------------------
@@ -348,6 +455,7 @@ __all__ = [
     "call_grading",
     "call_feedback",
     "call_instruction",
+    "call_embedding",
     "CriterionInfo",
     "ParsedGradingResponse",
     "ParsedFeedbackResponse",

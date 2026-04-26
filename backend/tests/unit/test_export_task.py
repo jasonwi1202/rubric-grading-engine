@@ -210,6 +210,7 @@ class TestRunExport:
             essays_result,
             grades_result,
             scores_result,
+            make_result([]),  # media comments — no comments for this grade
         ]
         execute_call_count = 0
 
@@ -387,6 +388,7 @@ class TestRunExport:
             make_result([(mock_essay, student_id)]),
             make_result([(mock_ev, mock_grade)]),
             make_result([mock_score]),
+            make_result([]),  # media comments — no comments for this grade
         ]
         execute_call_count = 0
 
@@ -484,6 +486,7 @@ class TestRunExport:
             make_result([(mock_essay, None)]),  # student_uuid_val = None → loop skips
             make_result([(mock_ev, mock_grade)]),  # grade loaded, but essay skipped before lookup
             make_result([mock_score]),  # scores loaded, but essay skipped before lookup
+            make_result([]),  # media comments — no comments
         ]
         execute_call_count = 0
 
