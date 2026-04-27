@@ -51,13 +51,13 @@ class StudentSkillProfile(Base):
     )
     teacher_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_student_skill_profiles_users"),
         nullable=False,
         index=True,
     )
     student_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("students.id", ondelete="CASCADE"),
+        ForeignKey("students.id", ondelete="CASCADE", name="fk_student_skill_profiles_students"),
         nullable=False,
         index=True,
     )
