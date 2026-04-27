@@ -98,6 +98,12 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `REGRADE_WINDOW_DAYS` | No | `7` | Number of days after a grade is created during which regrade requests are accepted. Requests submitted after this window return 409. |
 | `REGRADE_MAX_PER_GRADE` | No | `1` | Maximum number of regrade requests allowed per grade. Additional submissions after this limit return 409. |
 
+### Skill Normalization
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SKILL_NORMALIZATION_CONFIG_PATH` | No | — | Absolute path to a custom JSON skill-normalization mapping file. When not set, the bundled `app/skill_normalization_config.json` is used (English writing dimensions: `thesis`, `evidence`, `organization`, `analysis`, `mechanics`, `voice`). Override for non-English subjects or custom rubric vocabularies. See `docs/architecture/data-ingestion.md#4-skill-normalization`. |
+
 ### Email / SMTP
 
 | Variable | Required | Default | Description |
