@@ -7,7 +7,7 @@ Tests cover:
   ValidationError when full_name missing
 - remove_enrollment: success, not-found enrollment, forbidden class/student
 - get_student: success, not-found, cross-teacher
-- update_student: success full-name change, success clear_external_id, cross-teacher
+- update_student: success full-name change, success clear_external_id, success set_teacher_notes, success clear_teacher_notes, cross-teacher
 
 No real PostgreSQL. All DB calls are mocked. No student PII in fixtures.
 """
@@ -430,6 +430,42 @@ class TestUpdateStudent:
         result = await update_student(db, teacher_id, student_id, clear_external_id=True)
 
         assert result.external_id is None
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_sets_teacher_notes(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        student_orm = _make_student_orm(teacher_id, student_id)
+        student_orm.teacher_notes = None
+
+        db = _make_db()
+        student_res = _scalar_result(student_orm)
+        db.execute = AsyncMock(side_effect=[student_res])
+
+        result = await update_student(
+            db, teacher_id, student_id, teacher_notes="Watch evidence integration."
+        )
+
+        assert result.teacher_notes == "Watch evidence integration."
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clears_teacher_notes(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        student_orm = _make_student_orm(teacher_id, student_id)
+        student_orm.teacher_notes = "Some existing note."
+
+        db = _make_db()
+        student_res = _scalar_result(student_orm)
+        db.execute = AsyncMock(side_effect=[student_res])
+
+        result = await update_student(
+            db, teacher_id, student_id, clear_teacher_notes=True
+        )
+
+        assert result.teacher_notes is None
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio

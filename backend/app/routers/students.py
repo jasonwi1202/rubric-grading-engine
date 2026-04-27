@@ -6,7 +6,7 @@ Student PII (names) is never logged — only entity IDs appear in log output.
 Endpoints:
   GET   /students/{studentId}          — get student detail with embedded skill profile
   GET   /students/{studentId}/history  — get all locked graded assignments (newest-first)
-  PATCH /students/{studentId}          — update student name or external ID
+  PATCH /students/{studentId}          — update student name, external ID, or teacher notes
 """
 
 from __future__ import annotations
@@ -55,6 +55,7 @@ def _student_with_profile_response(
         teacher_id=student.teacher_id,
         full_name=student.full_name,
         external_id=student.external_id,
+        teacher_notes=student.teacher_notes,
         created_at=student.created_at,
         skill_profile=SkillProfileResponse.model_validate(profile) if profile is not None else None,
     )
@@ -131,7 +132,7 @@ async def get_student_history_endpoint(
 
 @router.patch(
     "/{student_id}",
-    summary="Update student name or external ID",
+    summary="Update student name, external ID, or teacher notes",
 )
 async def patch_student_endpoint(
     student_id: uuid.UUID,
@@ -143,6 +144,8 @@ async def patch_student_endpoint(
 
     Only fields explicitly included in the request body are updated.
     To explicitly clear ``external_id``, send ``"external_id": null``.
+    To set or update ``teacher_notes``, send the new text.
+    To explicitly clear ``teacher_notes``, send ``"teacher_notes": null``.
 
     Returns 403 if the student belongs to a different teacher.
     Returns 404 if the student does not exist.
@@ -157,6 +160,10 @@ async def patch_student_endpoint(
         if "external_id" in fields_set and payload.external_id is not None
         else None,
         clear_external_id="external_id" in fields_set and payload.external_id is None,
+        teacher_notes=payload.teacher_notes
+        if "teacher_notes" in fields_set and payload.teacher_notes is not None
+        else None,
+        clear_teacher_notes="teacher_notes" in fields_set and payload.teacher_notes is None,
     )
     return JSONResponse(
         status_code=200,

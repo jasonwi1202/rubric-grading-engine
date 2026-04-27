@@ -301,11 +301,17 @@ async def update_student(
     full_name: str | None = None,
     external_id: str | None = None,
     clear_external_id: bool = False,
+    teacher_notes: str | None = None,
+    clear_teacher_notes: bool = False,
 ) -> Student:
-    """Partially update a student's name and/or external ID.
+    """Partially update a student's name, external ID, and/or teacher notes.
 
     Only fields that are explicitly provided are updated.  Pass
     ``clear_external_id=True`` to explicitly set ``external_id`` to ``None``.
+    Pass ``clear_teacher_notes=True`` to explicitly set ``teacher_notes`` to ``None``.
+
+    When both ``teacher_notes`` and ``clear_teacher_notes`` are provided,
+    ``clear_teacher_notes`` takes precedence and the field is set to ``None``.
 
     Raises:
         NotFoundError: If the student does not exist.
@@ -319,6 +325,10 @@ async def update_student(
         student.external_id = None
     elif external_id is not None:
         student.external_id = external_id
+    if clear_teacher_notes:
+        student.teacher_notes = None
+    elif teacher_notes is not None:
+        student.teacher_notes = teacher_notes
 
     await db.commit()
     await db.refresh(student)

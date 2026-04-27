@@ -77,6 +77,7 @@ A persistent student record, independent of any class. Identity survives class t
 | teacher_id | UUID | FK → User (owning teacher) |
 | full_name | VARCHAR(255) | |
 | external_id | VARCHAR(255) | Nullable — LMS student ID for sync |
+| teacher_notes | TEXT | Nullable — private instructional notes; visible only to the owning teacher |
 | created_at | TIMESTAMPTZ | |
 
 **Note:** Students are owned by a teacher at creation. Cross-teacher sharing is deferred (see Open Questions in class-roster-student-management.md).
