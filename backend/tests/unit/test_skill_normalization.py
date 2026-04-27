@@ -18,7 +18,10 @@ Tests cover:
 - _best_variant_score: returns 0.0 for empty variant list
 
 No student PII in any fixture.
-No network, database, or file I/O (except load_skill_mapping path tests).
+No network or database I/O.
+File I/O occurs in load_skill_mapping tests (both bundled default-config and
+custom-path cases) and implicitly when normalize_criterion_name loads the
+bundled default via importlib.resources.
 """
 
 from __future__ import annotations
@@ -407,6 +410,36 @@ class TestNormalizeCriterionNameThresholdBoundary:
             "Grammer", mapping=minimal_mapping, threshold=1.0
         )
         assert result == OTHER_DIMENSION
+
+    def test_threshold_below_zero_raises_value_error(
+        self, minimal_mapping: dict[str, list[str]]
+    ) -> None:
+        with pytest.raises(ValueError, match="threshold must be between"):
+            normalize_criterion_name("Grammar", mapping=minimal_mapping, threshold=-0.1)
+
+    def test_threshold_above_one_raises_value_error(
+        self, minimal_mapping: dict[str, list[str]]
+    ) -> None:
+        with pytest.raises(ValueError, match="threshold must be between"):
+            normalize_criterion_name("Grammar", mapping=minimal_mapping, threshold=1.1)
+
+    def test_threshold_exactly_zero_is_accepted(
+        self, minimal_mapping: dict[str, list[str]]
+    ) -> None:
+        """Boundary: threshold=0.0 is a valid inclusive lower bound."""
+        result = normalize_criterion_name(
+            "Grammar", mapping=minimal_mapping, threshold=0.0
+        )
+        assert isinstance(result, str)
+
+    def test_threshold_exactly_one_is_accepted(
+        self, minimal_mapping: dict[str, list[str]]
+    ) -> None:
+        """Boundary: threshold=1.0 is a valid inclusive upper bound."""
+        result = normalize_criterion_name(
+            "Grammar", mapping=minimal_mapping, threshold=1.0
+        )
+        assert isinstance(result, str)
 
 
 # ---------------------------------------------------------------------------

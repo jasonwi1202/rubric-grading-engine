@@ -19,14 +19,17 @@ Design notes
 ------------
 - This module is **purely functional** — no database access, no HTTP concerns.
 - ``rapidfuzz`` is used for fuzzy matching (already a project dependency).
-- Criterion names are teacher-created rubric fields, not student PII; however,
-  raw criterion content is never emitted in log messages as a precaution.
+- Criterion names are teacher-entered free-form rubric fields and should be
+  treated as potentially containing student PII; raw criterion content is
+  never emitted in log messages.
 - The normalizer is reusable by both the skill-profile update task and the
   class-insights aggregation service.
 """
 
 from __future__ import annotations
 
+import functools
+import importlib.resources
 import json
 import logging
 from pathlib import Path
@@ -53,47 +56,47 @@ OTHER_DIMENSION: Final[str] = "other"
 #: Matches the threshold documented in ``docs/architecture/data-ingestion.md``.
 NORMALIZATION_MATCH_THRESHOLD: Final[float] = 0.80
 
-#: Path to the bundled default mapping config, relative to this file.
-_DEFAULT_CONFIG_PATH: Final[Path] = (
-    Path(__file__).parent.parent / "skill_normalization_config.json"
-)
-
 
 # ---------------------------------------------------------------------------
-# Config loading
+# Config loading (with memoization to avoid repeated disk reads)
 # ---------------------------------------------------------------------------
 
 
-def load_skill_mapping(config_path: Path | str | None = None) -> dict[str, list[str]]:
-    """Load and return the skill mapping from a JSON config file.
+@functools.lru_cache(maxsize=8)
+def _load_mapping_cached(path_key: str | None) -> dict[str, list[str]]:
+    """Load and parse the skill mapping from disk; result is cached by *path_key*.
 
     Args:
-        config_path: Path to a JSON config file whose keys are canonical
-            dimension names and whose values are lists of known
-            criterion-name variants.  When ``None``, the bundled
-            ``skill_normalization_config.json`` is used.
-
-    Returns:
-        Mapping of ``{canonical_dimension: [variant, ...]}``.
-
-    Raises:
-        FileNotFoundError: If the specified config file does not exist.
-        ValueError: If the file contains invalid JSON or an unexpected
-            top-level structure.
+        path_key: Resolved absolute path string, or ``None`` to load the
+            bundled default config via :mod:`importlib.resources`.
     """
-    path = Path(config_path) if config_path is not None else _DEFAULT_CONFIG_PATH
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            f"Skill normalization config not found: {path}"
-        ) from None
+    if path_key is None:
+        # Use importlib.resources so the bundled config is accessible even
+        # when the package is installed as a wheel or zipapp.
+        ref = importlib.resources.files("app").joinpath(
+            "skill_normalization_config.json"
+        )
+        try:
+            raw = ref.read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError) as exc:
+            raise FileNotFoundError(
+                "Bundled skill normalization config could not be read: "
+                "skill_normalization_config.json"
+            ) from exc
+    else:
+        config_path = Path(path_key)
+        try:
+            raw = config_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Skill normalization config not found: {config_path}"
+            ) from None
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError(
-            f"Invalid JSON in skill normalization config {path}: {exc}"
+            f"Invalid JSON in skill normalization config: {exc}"
         ) from exc
 
     if not isinstance(data, dict):
@@ -111,6 +114,33 @@ def load_skill_mapping(config_path: Path | str | None = None) -> dict[str, list[
             )
         result[str(k)] = [str(v) for v in vs]
     return result
+
+
+def load_skill_mapping(config_path: Path | str | None = None) -> dict[str, list[str]]:
+    """Load and return the skill mapping from a JSON config file.
+
+    Results are memoized by resolved path so repeated calls with the same
+    path do not re-read the file from disk (important for per-criterion
+    normalization in high-volume grading tasks).
+
+    Args:
+        config_path: Path to a JSON config file whose keys are canonical
+            dimension names and whose values are lists of known
+            criterion-name variants.  When ``None``, the bundled
+            ``skill_normalization_config.json`` is used.
+
+    Returns:
+        Mapping of ``{canonical_dimension: [variant, ...]}``.
+
+    Raises:
+        FileNotFoundError: If the specified config file does not exist.
+        ValueError: If the file contains invalid JSON or an unexpected
+            top-level structure.
+    """
+    path_key: str | None = (
+        str(Path(config_path).resolve()) if config_path is not None else None
+    )
+    return _load_mapping_cached(path_key)
 
 
 # ---------------------------------------------------------------------------
@@ -164,18 +194,36 @@ def normalize_criterion_name(
     Args:
         criterion_name: The raw rubric criterion name to normalise.
         mapping: Custom ``{dimension: [variant, ...]}`` dict.  When ``None``
-            the bundled ``skill_normalization_config.json`` is loaded.  Pass
-            a custom dict in tests or when supporting subjects beyond English
-            writing.
-        threshold: Minimum score to consider a match.  Defaults to
+            the config is loaded from
+            ``settings.skill_normalization_config_path`` (if set) or the
+            bundled ``skill_normalization_config.json``.  Pass a custom dict
+            in tests or when supporting subjects beyond English writing.
+        threshold: Minimum score (0.0–1.0) to consider a match.  Defaults to
             :data:`NORMALIZATION_MATCH_THRESHOLD` (0.80).
 
     Returns:
-        A canonical dimension name — one of the values in
-        :data:`CANONICAL_DIMENSIONS`.
+        When using the default or bundled mapping, always a member of
+        :data:`CANONICAL_DIMENSIONS`.  When a custom *mapping* is supplied,
+        the returned value is a key from that mapping and may not be a member
+        of :data:`CANONICAL_DIMENSIONS` (e.g. ``"science_claim"`` for a
+        science-subject mapping).
+
+    Raises:
+        ValueError: If *threshold* is not in the range ``[0.0, 1.0]``.
     """
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError(
+            f"threshold must be between 0.0 and 1.0 inclusive; got {threshold!r}"
+        )
+
     if mapping is None:
-        mapping = load_skill_mapping()
+        # Lazy import: app.config imports app.services modules indirectly via
+        # Celery task registration, so a top-level import here would create a
+        # circular dependency.  Importing inside the function body defers
+        # resolution until after all modules are fully initialised.
+        from app.config import settings
+
+        mapping = load_skill_mapping(settings.skill_normalization_config_path)
 
     criterion_lower = criterion_name.strip().lower()
 
