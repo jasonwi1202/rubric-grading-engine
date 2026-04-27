@@ -12,6 +12,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listStudents, removeStudent } from "@/lib/api/classes";
 import { AddStudentDialog } from "@/components/classes/AddStudentDialog";
@@ -169,7 +170,12 @@ export function RosterList({ classId }: RosterListProps) {
               {enrolledStudents.map((enrolled) => (
                 <tr key={enrolled.enrollment_id}>
                   <td className="px-4 py-3 font-medium text-gray-900">
-                    {enrolled.student.full_name}
+                    <Link
+                      href={`/dashboard/students/${enrolled.student.id}`}
+                      className="text-blue-700 underline hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                    >
+                      {enrolled.student.full_name}
+                    </Link>
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {enrolled.student.external_id ?? "—"}

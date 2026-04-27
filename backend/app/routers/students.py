@@ -55,6 +55,7 @@ def _student_with_profile_response(
         teacher_id=student.teacher_id,
         full_name=student.full_name,
         external_id=student.external_id,
+        teacher_notes=student.teacher_notes,
         created_at=student.created_at,
         skill_profile=SkillProfileResponse.model_validate(profile) if profile is not None else None,
     )
@@ -157,6 +158,8 @@ async def patch_student_endpoint(
         if "external_id" in fields_set and payload.external_id is not None
         else None,
         clear_external_id="external_id" in fields_set and payload.external_id is None,
+        teacher_notes=payload.teacher_notes if "teacher_notes" in fields_set else None,
+        clear_teacher_notes="teacher_notes" in fields_set and payload.teacher_notes is None,
     )
     return JSONResponse(
         status_code=200,

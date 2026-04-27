@@ -23,6 +23,7 @@ class StudentResponse(BaseModel):
     teacher_id: uuid.UUID
     full_name: str
     external_id: str | None
+    teacher_notes: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -57,6 +58,7 @@ class StudentWithProfileResponse(BaseModel):
     teacher_id: uuid.UUID
     full_name: str
     external_id: str | None
+    teacher_notes: str | None
     created_at: datetime
     skill_profile: SkillProfileResponse | None
 
@@ -130,3 +132,4 @@ class PatchStudentRequest(BaseModel):
 
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     external_id: str | None = Field(default=None, max_length=255)
+    teacher_notes: str | None = Field(default=None)
