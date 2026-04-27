@@ -28,6 +28,7 @@ Design notes
 
 from __future__ import annotations
 
+import copy
 import functools
 import importlib.resources
 import json
@@ -140,7 +141,8 @@ def load_skill_mapping(config_path: Path | str | None = None) -> dict[str, list[
     path_key: str | None = (
         str(Path(config_path).resolve()) if config_path is not None else None
     )
-    return _load_mapping_cached(path_key)
+    # Return a deep copy so callers cannot mutate the cached mapping.
+    return copy.deepcopy(_load_mapping_cached(path_key))
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +234,10 @@ def normalize_criterion_name(
         return criterion_lower
 
     best_dimension = OTHER_DIMENSION
-    best_score = 0.0
+    # Initialise to -1.0 so that any score (including 0.0) can win when
+    # threshold=0.0, preserving the documented "ties broken by insertion order"
+    # guarantee at the inclusive lower bound.
+    best_score = -1.0
 
     for dimension, variants in mapping.items():
         if dimension == OTHER_DIMENSION:

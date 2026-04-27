@@ -145,8 +145,39 @@ class TestLoadSkillMappingCustomPath:
 
 
 # ---------------------------------------------------------------------------
-# _best_variant_score
+# load_skill_mapping — mutation safety
 # ---------------------------------------------------------------------------
+
+
+class TestLoadSkillMappingMutationSafety:
+    def test_mutating_returned_mapping_does_not_affect_cache(
+        self, tmp_path: Path
+    ) -> None:
+        """Callers that mutate the returned dict must not corrupt the cache."""
+        config = {"thesis": ["Thesis Statement", "Central Claim"]}
+        config_file = tmp_path / "mapping.json"
+        config_file.write_text(json.dumps(config), encoding="utf-8")
+
+        first = load_skill_mapping(config_file)
+        # Mutate the returned mapping.
+        first["thesis"].append("Injected Variant")
+        first["new_dimension"] = ["Something"]
+
+        # A second call must still return the original clean mapping.
+        second = load_skill_mapping(config_file)
+        assert "new_dimension" not in second
+        assert "Injected Variant" not in second.get("thesis", [])
+
+    def test_each_call_returns_independent_copy(self, tmp_path: Path) -> None:
+        """Two successive calls must return distinct objects."""
+        config = {"evidence": ["Evidence Use"]}
+        config_file = tmp_path / "mapping.json"
+        config_file.write_text(json.dumps(config), encoding="utf-8")
+
+        first = load_skill_mapping(config_file)
+        second = load_skill_mapping(config_file)
+        assert first is not second
+        assert first["evidence"] is not second["evidence"]
 
 
 class TestBestVariantScore:
@@ -392,6 +423,21 @@ class TestNormalizeCriterionNameThresholdBoundary:
         )
         # With threshold=0, the first dimension wins (any score ≥ 0).
         assert result != OTHER_DIMENSION
+
+    def test_threshold_zero_still_maps_when_all_scores_are_zero(
+        self, minimal_mapping: dict[str, list[str]]
+    ) -> None:
+        """When threshold=0.0 and every candidate scores exactly 0.0, the first
+        dimension in the mapping must win (not fall through to 'other')."""
+        with patch(
+            "app.services.skill_normalization._best_variant_score",
+            return_value=0.0,
+        ):
+            result = normalize_criterion_name(
+                "completely unrelated", mapping=minimal_mapping, threshold=0.0
+            )
+        first_dimension = next(iter(minimal_mapping))
+        assert result == first_dimension
 
     def test_custom_threshold_one_maps_only_exact_matches(
         self, minimal_mapping: dict[str, list[str]]
