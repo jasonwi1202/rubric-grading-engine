@@ -22,6 +22,7 @@ and so application code can import individual models cleanly::
     from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
     from app.models.media_comment import MediaComment
     from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
+    from app.models.student_skill_profile import StudentSkillProfile
 """
 
 from app.models import assignment as assignment  # noqa: F401 ΓÇö registers mapped class
@@ -38,6 +39,7 @@ from app.models import media_comment as media_comment  # noqa: F401 — register
 from app.models import regrade_request as regrade_request  # noqa: F401 — registers mapped class
 from app.models import rubric as rubric  # noqa: F401 ΓÇö registers mapped class
 from app.models import student as student  # noqa: F401 ΓÇö registers mapped class
+from app.models import student_skill_profile as student_skill_profile  # noqa: F401 — registers mapped class
 from app.models import user as user  # noqa: F401 ΓÇö registers mapped class
 
 __all__ = [
@@ -55,5 +57,6 @@ __all__ = [
     "regrade_request",
     "rubric",
     "student",
+    "student_skill_profile",
     "user",
 ]
