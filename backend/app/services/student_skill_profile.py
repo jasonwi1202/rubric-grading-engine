@@ -253,7 +253,9 @@ def _aggregate_skill_scores(
     1. For each assignment, look up criterion name from the rubric snapshot,
        normalise the name to a canonical skill dimension (via
        :func:`~app.services.skill_normalization.normalize_criterion_name`),
-       and compute a per-criterion normalised score ``final_score / max_score``.
+       and compute a per-criterion normalised score
+       ``(final_score - min_score) / (max_score - min_score)``, clamped to
+       ``[0.0, 1.0]``.
     2. Average the normalised scores for all criteria that map to the same
        skill within a single assignment → one float per (assignment, skill).
     3. Across assignments, compute a recency-weighted average where the weight
@@ -286,7 +288,8 @@ def _aggregate_skill_scores(
         for criterion_id, final_score in row["criterion_scores"]:
             crit = criterion_map.get(str(criterion_id))
             if crit is None:
-                # Defensive: criterion was removed from snapshot after grading.
+                # Defensive: CriterionScore references an ID not present in
+                # the stored snapshot (data drift / bug); skip silently.
                 continue
             max_score = int(crit.get("max_score", 1))
             min_score = int(crit.get("min_score", 0))

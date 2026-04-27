@@ -72,6 +72,7 @@ async def _get_student_id_for_grade(
     async with AsyncSessionLocal() as db:
         row = await db.execute(
             select(Essay.student_id)
+            .select_from(Grade)
             .join(EssayVersion, Grade.essay_version_id == EssayVersion.id)
             .join(Essay, EssayVersion.essay_id == Essay.id)
             .join(Assignment, Essay.assignment_id == Assignment.id)
