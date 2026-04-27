@@ -1,7 +1,7 @@
 # Feature: Class Insights
 
 **Phase:** 3 — Insights
-**Status:** Planned
+**Status:** Implemented (M5-07 heatmap + M5-08 common issues / distribution UI)
 
 ---
 
