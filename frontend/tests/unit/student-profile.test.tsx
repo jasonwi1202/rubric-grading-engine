@@ -514,4 +514,36 @@ describe("StudentProfilePage — teacher notes", () => {
       ).toBeDisabled();
     });
   });
+
+  it("sends null to backend when clearing all notes text", async () => {
+    mockGetStudentWithProfile.mockResolvedValue(
+      makeStudent({ teacher_notes: "Existing notes." }),
+    );
+    mockGetStudentHistory.mockResolvedValue([]);
+    mockPatchStudent.mockResolvedValue(makeStudent({ teacher_notes: null }));
+
+    render(<StudentProfilePage />, { wrapper });
+
+    await waitFor(() => {
+      const textarea = screen.getByRole("textbox", {
+        name: /private teacher notes/i,
+      }) as HTMLTextAreaElement;
+      expect(textarea.value).toBe("Existing notes.");
+    });
+
+    // Clear the textarea — should send null to clear the field
+    const textarea = screen.getByRole("textbox", {
+      name: /private teacher notes/i,
+    });
+    await userEvent.clear(textarea);
+
+    const saveBtn = screen.getByRole("button", { name: /save notes/i });
+    await userEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(mockPatchStudent).toHaveBeenCalledWith("stu-001", {
+        teacher_notes: null,
+      });
+    });
+  });
 });
