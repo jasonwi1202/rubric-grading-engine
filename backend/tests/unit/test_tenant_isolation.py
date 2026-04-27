@@ -135,7 +135,7 @@ class TestStudentTenantIsolation:
 
         with (
             patch(
-                "app.routers.students.get_student",
+                "app.routers.students.get_student_with_profile",
                 new_callable=AsyncMock,
                 side_effect=ForbiddenError("student not accessible"),
             ),

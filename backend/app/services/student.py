@@ -17,15 +17,20 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
+from app.models.essay import Essay, EssayVersion
+from app.models.grade import Grade
 from app.models.student import Student
+from app.models.student_skill_profile import StudentSkillProfile
 
 logger = logging.getLogger(__name__)
 
@@ -304,3 +309,68 @@ async def update_student(
         extra={"student_id": str(student_id), "teacher_id": str(teacher_id)},
     )
     return student
+
+
+async def get_student_with_profile(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> tuple[Student, StudentSkillProfile | None]:
+    """Fetch a student together with their optional skill profile (tenant-scoped).
+
+    Raises:
+        NotFoundError: If the student does not exist.
+        ForbiddenError: If the student belongs to a different teacher.
+    """
+    student = await _get_student_owned_by(db, student_id, teacher_id)
+
+    profile_result = await db.execute(
+        select(StudentSkillProfile).where(
+            StudentSkillProfile.teacher_id == teacher_id,
+            StudentSkillProfile.student_id == student_id,
+        )
+    )
+    profile = profile_result.scalar_one_or_none()
+    return student, profile
+
+
+async def get_student_history(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> list[Any]:
+    """Return all locked graded assignments for a student, newest-first.
+
+    Each row exposes: assignment_id, assignment_title, class_id, grade_id,
+    essay_id, total_score, max_possible_score, locked_at.
+
+    Raises:
+        NotFoundError: If the student does not exist.
+        ForbiddenError: If the student belongs to a different teacher.
+    """
+    await _assert_student_owned_by(db, student_id, teacher_id)
+
+    result = await db.execute(
+        select(
+            Assignment.id.label("assignment_id"),
+            Assignment.title.label("assignment_title"),
+            Assignment.class_id.label("class_id"),
+            Grade.id.label("grade_id"),
+            Essay.id.label("essay_id"),
+            Grade.total_score,
+            Grade.max_possible_score,
+            Grade.locked_at,
+        )
+        .join(EssayVersion, Grade.essay_version_id == EssayVersion.id)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            Essay.student_id == student_id,
+            Class.teacher_id == teacher_id,
+            Grade.is_locked.is_(True),
+            Grade.locked_at.is_not(None),
+        )
+        .order_by(Grade.locked_at.desc())
+    )
+    return list(result.all())

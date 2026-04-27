@@ -4,8 +4,9 @@ All endpoints require a valid JWT (``get_current_teacher`` dependency).
 Student PII (names) is never logged — only entity IDs appear in log output.
 
 Endpoints:
-  GET   /students/{studentId}  — get student detail
-  PATCH /students/{studentId}  — update student name or external ID
+  GET   /students/{studentId}          — get student detail with embedded skill profile
+  GET   /students/{studentId}/history  — get all graded assignments chronologically
+  PATCH /students/{studentId}          — update student name or external ID
 """
 
 from __future__ import annotations
@@ -17,9 +18,21 @@ from fastapi.responses import JSONResponse
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
+from app.models.student import Student
+from app.models.student_skill_profile import StudentSkillProfile
 from app.models.user import User
-from app.schemas.student import PatchStudentRequest, StudentResponse
-from app.services.student import get_student, update_student
+from app.schemas.student import (
+    AssignmentHistoryItemResponse,
+    PatchStudentRequest,
+    SkillProfileResponse,
+    StudentResponse,
+    StudentWithProfileResponse,
+)
+from app.services.student import (
+    get_student_history,
+    get_student_with_profile,
+    update_student,
+)
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -33,6 +46,20 @@ def _student_response(student: object) -> StudentResponse:
     return StudentResponse.model_validate(student)
 
 
+def _student_with_profile_response(
+    student: Student,
+    profile: StudentSkillProfile | None,
+) -> StudentWithProfileResponse:
+    return StudentWithProfileResponse(
+        id=student.id,
+        teacher_id=student.teacher_id,
+        full_name=student.full_name,
+        external_id=student.external_id,
+        created_at=student.created_at,
+        skill_profile=SkillProfileResponse.model_validate(profile) if profile is not None else None,
+    )
+
+
 # ---------------------------------------------------------------------------
 # GET /students/{studentId}
 # ---------------------------------------------------------------------------
@@ -40,23 +67,61 @@ def _student_response(student: object) -> StudentResponse:
 
 @router.get(
     "/{student_id}",
-    summary="Get student detail",
+    summary="Get student detail with embedded skill profile",
 )
 async def get_student_endpoint(
     student_id: uuid.UUID,
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
-    """Return a single student owned by the authenticated teacher.
+    """Return a student with an optionally embedded skill profile.
+
+    ``skill_profile`` is ``null`` when the student has no locked grades yet.
 
     Returns 404 if the student does not exist.
     Returns 403 if the student belongs to a different teacher.
     """
-    student = await get_student(db, teacher.id, student_id)
+    student, profile = await get_student_with_profile(db, teacher.id, student_id)
     return JSONResponse(
         status_code=200,
-        content={"data": _student_response(student).model_dump(mode="json")},
+        content={"data": _student_with_profile_response(student, profile).model_dump(mode="json")},
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /students/{studentId}/history
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{student_id}/history",
+    summary="Get student assignment history",
+)
+async def get_student_history_endpoint(
+    student_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return all locked graded assignments for a student, newest-first.
+
+    Returns 404 if the student does not exist.
+    Returns 403 if the student belongs to a different teacher.
+    """
+    rows = await get_student_history(db, teacher.id, student_id)
+    items = [
+        AssignmentHistoryItemResponse(
+            assignment_id=row.assignment_id,
+            assignment_title=row.assignment_title,
+            class_id=row.class_id,
+            grade_id=row.grade_id,
+            essay_id=row.essay_id,
+            total_score=row.total_score,
+            max_possible_score=row.max_possible_score,
+            locked_at=row.locked_at,
+        ).model_dump(mode="json")
+        for row in rows
+    ]
+    return JSONResponse(status_code=200, content={"data": items})
 
 
 # ---------------------------------------------------------------------------
