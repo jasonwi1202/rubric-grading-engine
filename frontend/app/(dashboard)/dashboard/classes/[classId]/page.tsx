@@ -1,16 +1,17 @@
 "use client";
 
 /**
- * /dashboard/classes/[classId] — class detail, assignment list, and roster management.
+ * /dashboard/classes/[classId] — class detail with tabbed view.
  *
- * Displays class metadata, assignments list, and the full student roster.
- * Teachers can create assignments, add students manually, import via CSV,
- * or soft-remove a student from the roster.
+ * Tabs:
+ *   Overview   — assignment list and student roster management
+ *   Skill Heatmap — per-student skill score grid (M5.7)
  *
  * All server state via React Query. No useEffect+fetch.
  * Security: no student PII in logs or query keys beyond entity IDs.
  */
 
+import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +19,7 @@ import { getClass } from "@/lib/api/classes";
 import { listAssignments, STATUS_LABELS } from "@/lib/api/assignments";
 import type { AssignmentStatus } from "@/lib/api/assignments";
 import { RosterList } from "@/components/classes/RosterList";
+import { SkillHeatmap } from "@/components/classes/SkillHeatmap";
 
 const STATUS_COLORS: Record<AssignmentStatus, string> = {
   draft: "bg-gray-100 text-gray-600",
@@ -28,8 +30,35 @@ const STATUS_COLORS: Record<AssignmentStatus, string> = {
   returned: "bg-purple-100 text-purple-700",
 };
 
+type Tab = "overview" | "heatmap";
+
 export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+
+  // Arrow-key navigation between tabs (ARIA tab pattern with roving tabIndex).
+  const handleTabKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    currentTab: Tab,
+  ) => {
+    const tabs: Tab[] = ["overview", "heatmap"];
+    const currentIndex = tabs.indexOf(currentTab);
+    let nextIndex = currentIndex;
+
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextIndex = (currentIndex + 1) % tabs.length;
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    } else {
+      return;
+    }
+
+    const nextTab = tabs[nextIndex];
+    setActiveTab(nextTab);
+    document.getElementById(`tab-${nextTab}`)?.focus();
+  };
 
   const {
     data: cls,
@@ -94,92 +123,160 @@ export default function ClassDetailPage() {
         </div>
       )}
 
-      {/* Assignments section */}
-      <section aria-labelledby="assignments-heading" className="mb-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2
-            id="assignments-heading"
-            className="text-base font-semibold text-gray-900"
-          >
-            Assignments
-          </h2>
-          {classId && (
-            <Link
-              href={`/dashboard/classes/${classId}/assignments/new`}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      {/* Tab navigation */}
+      <div
+        role="tablist"
+        aria-label="Class views"
+        className="mb-6 flex gap-1 border-b border-gray-200"
+      >
+        <button
+          role="tab"
+          type="button"
+          aria-selected={activeTab === "overview"}
+          aria-controls="tab-panel-overview"
+          id="tab-overview"
+          tabIndex={activeTab === "overview" ? 0 : -1}
+          onClick={() => setActiveTab("overview")}
+          onKeyDown={(e) => handleTabKeyDown(e, "overview")}
+          className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
+            activeTab === "overview"
+              ? "border-b-2 border-blue-600 text-blue-700"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Overview
+        </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={activeTab === "heatmap"}
+          aria-controls="tab-panel-heatmap"
+          id="tab-heatmap"
+          tabIndex={activeTab === "heatmap" ? 0 : -1}
+          onClick={() => setActiveTab("heatmap")}
+          onKeyDown={(e) => handleTabKeyDown(e, "heatmap")}
+          className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
+            activeTab === "heatmap"
+              ? "border-b-2 border-blue-600 text-blue-700"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Skill Heatmap
+        </button>
+      </div>
+
+      {/* Overview tab: assignments + roster */}
+      <div
+        role="tabpanel"
+        id="tab-panel-overview"
+        aria-labelledby="tab-overview"
+        hidden={activeTab !== "overview"}
+      >
+        {/* Assignments section */}
+        <section aria-labelledby="assignments-heading" className="mb-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2
+              id="assignments-heading"
+              className="text-base font-semibold text-gray-900"
             >
-              New assignment
-            </Link>
-          )}
-        </div>
-
-        {assignmentsLoading && (
-          <div aria-live="polite" aria-busy="true" className="space-y-2">
-            {[1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-14 animate-pulse rounded-lg bg-gray-200"
-              />
-            ))}
-          </div>
-        )}
-
-        {assignmentsError && (
-          <p
-            role="alert"
-            className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
-          >
-            Failed to load assignments. Please refresh the page.
-          </p>
-        )}
-
-        {!assignmentsLoading && !assignmentsError && assignments?.length === 0 && (
-          <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
-            <p className="text-sm text-gray-500">
-              No assignments yet.{" "}
+              Assignments
+            </h2>
+            {classId && (
               <Link
                 href={`/dashboard/classes/${classId}/assignments/new`}
-                className="font-medium text-blue-600 underline hover:text-blue-800"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
-                Create the first one
+                New assignment
               </Link>
-            </p>
+            )}
           </div>
-        )}
 
-        {!assignmentsLoading &&
-          !assignmentsError &&
-          assignments &&
-          assignments.length > 0 && (
-            <ul className="space-y-2" role="list">
-              {assignments.map((a) => (
-                <li key={a.id}>
-                  <Link
-                    href={`/dashboard/assignments/${a.id}`}
-                    className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
-                  >
-                    <div>
-                      <p className="font-semibold text-gray-900">{a.title}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        {a.due_date
-                          ? `Due ${new Date(a.due_date).toLocaleDateString(undefined, { timeZone: "UTC" })}`
-                          : ""}
-                      </p>
-                    </div>
-                    <span
-                      className={`ml-4 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[a.status]}`}
-                    >
-                      {STATUS_LABELS[a.status]}
-                    </span>
-                  </Link>
-                </li>
+          {assignmentsLoading && (
+            <div aria-live="polite" aria-busy="true" className="space-y-2">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-14 animate-pulse rounded-lg bg-gray-200"
+                />
               ))}
-            </ul>
+            </div>
           )}
-      </section>
 
-      {/* Roster */}
-      {classId && <RosterList classId={classId} />}
+          {assignmentsError && (
+            <p
+              role="alert"
+              className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+            >
+              Failed to load assignments. Please refresh the page.
+            </p>
+          )}
+
+          {!assignmentsLoading && !assignmentsError && assignments?.length === 0 && (
+            <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
+              <p className="text-sm text-gray-500">
+                No assignments yet.{" "}
+                <Link
+                  href={`/dashboard/classes/${classId}/assignments/new`}
+                  className="font-medium text-blue-600 underline hover:text-blue-800"
+                >
+                  Create the first one
+                </Link>
+              </p>
+            </div>
+          )}
+
+          {!assignmentsLoading &&
+            !assignmentsError &&
+            assignments &&
+            assignments.length > 0 && (
+              <ul className="space-y-2" role="list">
+                {assignments.map((a) => (
+                  <li key={a.id}>
+                    <Link
+                      href={`/dashboard/assignments/${a.id}`}
+                      className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                    >
+                      <div>
+                        <p className="font-semibold text-gray-900">{a.title}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {a.due_date
+                            ? `Due ${new Date(a.due_date).toLocaleDateString(undefined, { timeZone: "UTC" })}`
+                            : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`ml-4 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[a.status]}`}
+                      >
+                        {STATUS_LABELS[a.status]}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </section>
+
+        {/* Roster */}
+        {classId && <RosterList classId={classId} />}
+      </div>
+
+      {/* Skill Heatmap tab */}
+      <div
+        role="tabpanel"
+        id="tab-panel-heatmap"
+        aria-labelledby="tab-heatmap"
+        hidden={activeTab !== "heatmap"}
+      >
+        <section aria-labelledby="heatmap-heading" className="mb-8">
+          <h2
+            id="heatmap-heading"
+            className="mb-4 text-base font-semibold text-gray-900"
+          >
+            Skill Heatmap
+          </h2>
+          {classId && <SkillHeatmap classId={classId} />}
+        </section>
+      </div>
     </div>
   );
 }
