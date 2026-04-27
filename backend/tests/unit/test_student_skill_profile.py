@@ -23,14 +23,13 @@ import importlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.exceptions import ForbiddenError, NotFoundError
 from app.models.base import Base
 from app.models.student_skill_profile import StudentSkillProfile
-
 
 # ---------------------------------------------------------------------------
 # Helpers

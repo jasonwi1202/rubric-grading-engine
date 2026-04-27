@@ -62,7 +62,7 @@ class StudentSkillProfile(Base):
         index=True,
     )
     # JSONB shape: {skill_name: {avg_score, trend, data_points, last_updated}}
-    skill_scores: Mapped[dict] = mapped_column(
+    skill_scores: Mapped[dict[str, object]] = mapped_column(
         JSONB,
         nullable=False,
         server_default="'{}'::jsonb",

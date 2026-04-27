@@ -39,7 +39,9 @@ from app.models import media_comment as media_comment  # noqa: F401 — register
 from app.models import regrade_request as regrade_request  # noqa: F401 — registers mapped class
 from app.models import rubric as rubric  # noqa: F401 ΓÇö registers mapped class
 from app.models import student as student  # noqa: F401 ΓÇö registers mapped class
-from app.models import student_skill_profile as student_skill_profile  # noqa: F401 — registers mapped class
+from app.models import (
+    student_skill_profile as student_skill_profile,  # noqa: F401 — registers mapped class
+)
 from app.models import user as user  # noqa: F401 ΓÇö registers mapped class
 
 __all__ = [
