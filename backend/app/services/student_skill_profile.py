@@ -406,6 +406,7 @@ async def compute_and_upsert_skill_profile(
             Essay.student_id == student_id,
             Class.teacher_id == teacher_id,
             Grade.is_locked.is_(True),
+            Grade.locked_at.is_not(None),
         )
         .order_by(Grade.locked_at.asc())
     )
@@ -427,7 +428,9 @@ async def compute_and_upsert_skill_profile(
         assignment_map[gid]["criterion_scores"].append((row.rubric_criterion_id, row.final_score))
 
     # Sort by locked_at ascending (oldest → newest) for consistent weighting.
-    assignment_rows = sorted(assignment_map.values(), key=lambda a: cast(datetime, a["locked_at"]))  # cast: mypy sees dict[str, Any]
+    assignment_rows = sorted(
+        assignment_map.values(), key=lambda a: cast(datetime, a["locked_at"])
+    )  # cast: mypy sees dict[str, Any]
 
     # ------------------------------------------------------------------
     # Aggregate and upsert.

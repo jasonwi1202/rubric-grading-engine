@@ -19,7 +19,9 @@ Behaviour:
 Security invariants:
 - Task accepts only UUID strings — no full entity objects.  Data is loaded
   fresh from the database on every run so retries always use current state.
-- All queries are scoped to ``teacher_id`` for tenant isolation.
+- Data access is tenant-scoped through ``teacher_id``.  A separate unscoped
+  existence check is used only to distinguish 404 from 403 — it never returns
+  tenant data.
 - No student PII (names, essay content, scores) is logged — only entity IDs.
 """
 
@@ -81,9 +83,9 @@ async def _get_student_id_for_grade(
         )
         result = row.one_or_none()
 
-    if result is None:
-        # Distinguish 404 from 403 without leaking another teacher's data.
-        async with AsyncSessionLocal() as db:
+        if result is None:
+            # Distinguish 404 from 403 without leaking another teacher's data.
+            # Reuse the same session to avoid a second connection.
             exists_row = await db.execute(select(Grade.id).where(Grade.id == grade_id))
             if exists_row.scalar_one_or_none() is None:
                 raise NotFoundError("Grade not found.")
@@ -169,11 +171,11 @@ def update_skill_profile(
     """
     try:
         asyncio.run(_run_update_skill_profile(grade_id, teacher_id))
-    except (NotFoundError, ForbiddenError):
+    except (NotFoundError, ForbiddenError) as exc:
         # Grade deleted or belongs to a different teacher — nothing to update.
         logger.warning(
             "Skill profile task skipped — grade not found or access denied",
-            extra={"grade_id": grade_id},
+            extra={"grade_id": grade_id, "error_type": type(exc).__name__},
         )
         # Do not re-raise: there is no correct state to converge to, and
         # retrying would produce the same outcome.
