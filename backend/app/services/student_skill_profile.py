@@ -73,8 +73,10 @@ async def get_skill_profile(
 ) -> StudentSkillProfile:
     """Fetch the skill profile for a student (tenant-scoped).
 
-    Both the student ownership and the profile row are filtered by
-    ``teacher_id`` so a teacher can never retrieve another teacher's profile.
+    Student ownership is first validated against ``teacher_id`` by
+    ``_assert_student_owned_by()``, and the profile row itself is queried with
+    a ``teacher_id`` filter so a teacher can never retrieve another teacher's
+    profile.
 
     Raises:
         NotFoundError: If the student or their profile does not exist.
@@ -160,9 +162,13 @@ async def upsert_skill_profile(
     returned_id: uuid.UUID = result.scalar_one()
     await db.commit()
 
-    # Reload the full row so the caller gets an up-to-date ORM object.
+    # Reload the full row with explicit tenant scoping for defense in depth.
     profile_result = await db.execute(
-        select(StudentSkillProfile).where(StudentSkillProfile.id == returned_id)
+        select(StudentSkillProfile).where(
+            StudentSkillProfile.id == returned_id,
+            StudentSkillProfile.teacher_id == teacher_id,
+            StudentSkillProfile.student_id == student_id,
+        )
     )
     profile = profile_result.scalar_one()
 
