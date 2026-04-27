@@ -173,8 +173,43 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | GET | `/classes/{classId}` | Get class detail + enrollment summary |
 | PATCH | `/classes/{classId}` | Update class name, subject, grade level |
 | POST | `/classes/{classId}/archive` | Archive the class (soft) |
+| GET | `/classes/{classId}/insights` | Class-level skill averages, score distributions, and common issues |
 
 **GET /classes query params:** `?academic_year=2025-26&is_archived=false`
+
+**GET /classes/{classId}/insights response (200):**
+```json
+{
+  "data": {
+    "class_id": "uuid",
+    "assignment_count": 3,
+    "student_count": 28,
+    "graded_essay_count": 25,
+    "skill_averages": {
+      "evidence": { "avg_score": 0.55, "student_count": 25, "data_points": 75 },
+      "thesis":   { "avg_score": 0.78, "student_count": 25, "data_points": 75 }
+    },
+    "score_distributions": {
+      "evidence": [
+        { "label": "0-20%",   "count": 3 },
+        { "label": "20-40%",  "count": 7 },
+        { "label": "40-60%",  "count": 9 },
+        { "label": "60-80%",  "count": 5 },
+        { "label": "80-100%", "count": 1 }
+      ]
+    },
+    "common_issues": [
+      { "skill_dimension": "evidence", "avg_score": 0.55, "affected_student_count": 14 }
+    ]
+  }
+}
+```
+- `skill_averages` — keyed by canonical skill dimension (`thesis`, `evidence`, `organization`, `analysis`, `mechanics`, `voice`, `other`); `avg_score` is normalised to [0.0, 1.0].
+- `score_distributions` — five 20-percentage-point buckets per skill, present for every dimension in `skill_averages`.
+- `common_issues` — skill dimensions where the class average normalised score is below 0.60, sorted ascending by `avg_score` (worst first).
+- Only **locked** grades contribute; unlocked grades are excluded.
+
+Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
 
 ---
 
@@ -462,9 +497,42 @@ Criterion columns are ordered by `display_order` from the immutable rubric snaps
 
 Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
 
----
+**GET /assignments/{assignmentId}/analytics response (200):**
+```json
+{
+  "data": {
+    "assignment_id": "uuid",
+    "class_id": "uuid",
+    "total_essay_count": 28,
+    "locked_essay_count": 25,
+    "overall_avg_normalized_score": 0.72,
+    "criterion_analytics": [
+      {
+        "criterion_id": "uuid",
+        "criterion_name": "Thesis Statement",
+        "skill_dimension": "thesis",
+        "min_score_possible": 0,
+        "max_score_possible": 5,
+        "avg_score": 3.6,
+        "avg_normalized_score": 0.72,
+        "score_distribution": [
+          { "score": 3, "count": 10 },
+          { "score": 4, "count": 8 },
+          { "score": 5, "count": 7 }
+        ]
+      }
+    ]
+  }
+}
+```
+- `overall_avg_normalized_score` — mean normalised score across all criteria and all locked essays; `null` when no grades are locked.
+- `criterion_analytics` — one entry per rubric criterion, ordered by `display_order` from the immutable rubric snapshot.
+- `score_distribution` — count of essays per raw score value, ordered by ascending score.
+- Only **locked** grades contribute.
 
-### Essays
+Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
+
+---
 
 | Method | Path | Description |
 |---|---|---|

@@ -141,7 +141,7 @@ def _build_distribution(normalised_scores: list[float]) -> list[ScoreBucket]:
         counts[_bucket_index(score)] += 1
     return [
         ScoreBucket(label=label, count=count)
-        for label, count in zip(_BUCKET_LABELS, counts)
+        for label, count in zip(_BUCKET_LABELS, counts, strict=True)
     ]
 
 

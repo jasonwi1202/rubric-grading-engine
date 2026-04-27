@@ -36,7 +36,6 @@ from app.schemas.assignment import (
     CreateAssignmentRequest,
 )
 from app.schemas.class_ import ClassResponse, CreateClassRequest, PatchClassRequest
-from app.schemas.class_insights import ClassInsightsResponse
 from app.schemas.roster_import import (
     DiffRowResponse,
     ImportConfirmRequest,
