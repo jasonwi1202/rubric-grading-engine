@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -29,9 +30,9 @@ class SkillDimensionResponse(BaseModel):
     """Per-skill-dimension metadata within a student skill profile."""
 
     avg_score: float
-    trend: str  # "improving" | "stable" | "declining"
+    trend: Literal["improving", "stable", "declining"]
     data_points: int
-    last_updated: str  # ISO-8601 UTC datetime string
+    last_updated: datetime  # stored as ISO-8601 in JSONB; Pydantic coerces on read
 
 
 class SkillProfileResponse(BaseModel):

@@ -17,7 +17,8 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from decimal import Decimal
+from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -33,6 +34,24 @@ from app.models.student import Student
 from app.models.student_skill_profile import StudentSkillProfile
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Named-tuple for student history rows
+# ---------------------------------------------------------------------------
+
+
+class StudentHistoryRow(NamedTuple):
+    """Typed row returned by :func:`get_student_history`."""
+
+    assignment_id: uuid.UUID
+    assignment_title: str
+    class_id: uuid.UUID
+    grade_id: uuid.UUID
+    essay_id: uuid.UUID
+    total_score: Decimal
+    max_possible_score: Decimal
+    locked_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +357,7 @@ async def get_student_history(
     db: AsyncSession,
     teacher_id: uuid.UUID,
     student_id: uuid.UUID,
-) -> list[Any]:
+) -> list[StudentHistoryRow]:
     """Return all locked graded assignments for a student, newest-first.
 
     Each row exposes: assignment_id, assignment_title, class_id, grade_id,
@@ -373,4 +392,16 @@ async def get_student_history(
         )
         .order_by(Grade.locked_at.desc())
     )
-    return list(result.all())
+    return [
+        StudentHistoryRow(
+            assignment_id=row.assignment_id,
+            assignment_title=row.assignment_title,
+            class_id=row.class_id,
+            grade_id=row.grade_id,
+            essay_id=row.essay_id,
+            total_score=row.total_score,
+            max_possible_score=row.max_possible_score,
+            locked_at=row.locked_at,
+        )
+        for row in result.all()
+    ]
