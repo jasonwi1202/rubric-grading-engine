@@ -5,7 +5,7 @@ Student PII (names) is never logged — only entity IDs appear in log output.
 
 Endpoints:
   GET   /students/{studentId}          — get student detail with embedded skill profile
-  GET   /students/{studentId}/history  — get all graded assignments chronologically
+  GET   /students/{studentId}/history  — get all locked graded assignments (newest-first)
   PATCH /students/{studentId}          — update student name or external ID
 """
 

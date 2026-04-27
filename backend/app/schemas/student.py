@@ -1,7 +1,9 @@
 """Pydantic schemas for the student and enrollment endpoints.
 
-No essay content or grade values appear here — those live on separate schemas.
 Student PII (name) is present in responses; it is never logged.
+Grade aggregate values (total_score, max_possible_score) appear in
+AssignmentHistoryItemResponse to support the student history endpoint.
+Essay content does not appear in any schema here.
 """
 
 from __future__ import annotations
@@ -60,7 +62,7 @@ class StudentWithProfileResponse(BaseModel):
 
 
 class AssignmentHistoryItemResponse(BaseModel):
-    """A single graded assignment in a student's chronological history."""
+    """A single locked graded assignment in a student's history (newest-first)."""
 
     assignment_id: uuid.UUID
     assignment_title: str
