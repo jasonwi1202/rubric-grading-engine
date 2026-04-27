@@ -10,6 +10,7 @@ Endpoints:
   GET    /assignments/{assignmentId}/grading-status — read per-essay progress from Redis
   POST   /assignments/{assignmentId}/export         — enqueue PDF batch export (returns 202)
   GET    /assignments/{assignmentId}/grades.csv     — synchronous CSV gradebook export
+  GET    /assignments/{assignmentId}/analytics      — per-criterion score breakdowns for the assignment
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from app.schemas.batch_grading import (
 from app.schemas.export import TriggerExportResponse
 from app.services.assignment import get_assignment, update_assignment
 from app.services.batch_grading import get_grading_status, trigger_batch_grading
+from app.services.class_insights import get_assignment_analytics
 from app.services.csv_export import export_grades_csv
 from app.services.export import trigger_export
 
@@ -321,4 +323,37 @@ async def patch_assignment_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": _assignment_response(assignment).model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /assignments/{assignmentId}/analytics
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{assignment_id}/analytics",
+    summary="Get per-criterion analytics for an assignment",
+)
+async def get_assignment_analytics_endpoint(
+    assignment_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return per-criterion score breakdowns for all locked grades in an assignment.
+
+    Includes criterion-level average scores, normalised averages, raw-score
+    distributions, and an overall class average across all criteria.
+
+    Only **locked** grades contribute to the analytics.  If no grades are
+    locked the response contains empty criterion breakdowns and a null
+    overall average.
+
+    Returns 403 if the assignment belongs to a different teacher.
+    Returns 404 if the assignment does not exist.
+    """
+    analytics = await get_assignment_analytics(db, teacher.id, assignment_id)
+    return JSONResponse(
+        status_code=200,
+        content={"data": analytics.model_dump(mode="json")},
     )
