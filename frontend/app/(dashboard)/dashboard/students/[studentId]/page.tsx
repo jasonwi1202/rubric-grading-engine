@@ -19,7 +19,7 @@
  * - No student data written to localStorage or sessionStorage.
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -199,21 +199,16 @@ export default function StudentProfilePage() {
     queryKey: ["student", studentId],
     queryFn: () => getStudentWithProfile(studentId),
     enabled: !!studentId,
-    // Initialize local notes state from server data on first load
-    select: (data) => {
-      if (notesValue === null) {
-        // Will be set once in the effect below — do not block render
-      }
-      return data;
-    },
   });
 
-  // Sync notes from server into local state once loaded (only first time)
+  // Initialize local notes state from server data on first load.
   const notesInitialized = useRef(false);
-  if (student && !notesInitialized.current) {
-    notesInitialized.current = true;
-    setNotesValue(student.teacher_notes ?? "");
-  }
+  useEffect(() => {
+    if (student && !notesInitialized.current) {
+      notesInitialized.current = true;
+      setNotesValue(student.teacher_notes ?? "");
+    }
+  }, [student]);
 
   // ---- Assignment history query ----
   const {

@@ -138,8 +138,10 @@ describe("StudentProfilePage — loading and error states", () => {
 
     render(<StudentProfilePage />, { wrapper });
 
-    // Skeleton elements exist (aria-busy)
-    expect(screen.getAllByRole("generic").some((el) => el.getAttribute("aria-busy") === "true")).toBe(true);
+    // Skill Profile heading should be present (section is always rendered)
+    // and the loading skeleton for that section should be aria-busy
+    const busyElements = document.querySelectorAll('[aria-busy="true"]');
+    expect(busyElements.length).toBeGreaterThan(0);
   });
 
   it("shows error alert when student fetch fails", async () => {

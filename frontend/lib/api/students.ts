@@ -82,9 +82,7 @@ export interface AssignmentHistoryItem {
   class_id: string;
   grade_id: string;
   essay_id: string;
-  /** Decimal as string from backend; parse with parseFloat for display. */
   total_score: number;
-  /** Decimal as string from backend; parse with parseFloat for display. */
   max_possible_score: number;
   /** ISO-8601 datetime string. */
   locked_at: string;

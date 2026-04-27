@@ -158,7 +158,9 @@ async def patch_student_endpoint(
         if "external_id" in fields_set and payload.external_id is not None
         else None,
         clear_external_id="external_id" in fields_set and payload.external_id is None,
-        teacher_notes=payload.teacher_notes if "teacher_notes" in fields_set else None,
+        teacher_notes=payload.teacher_notes
+        if "teacher_notes" in fields_set and payload.teacher_notes is not None
+        else None,
         clear_teacher_notes="teacher_notes" in fields_set and payload.teacher_notes is None,
     )
     return JSONResponse(
