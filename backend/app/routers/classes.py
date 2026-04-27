@@ -16,6 +16,7 @@ Endpoints:
   POST   /classes/{classId}/students/import             — parse CSV and return import diff
   POST   /classes/{classId}/students/import/confirm     — commit a previously reviewed import
   DELETE /classes/{classId}/students/{studentId}        — soft-remove a student from the class
+  GET    /classes/{classId}/insights                    — class-level skill averages, distributions, and common issues
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from app.services.class_ import (
     list_classes,
     update_class,
 )
+from app.services.class_insights import get_class_insights
 from app.services.roster_import import (
     CsvParseResult,
     ParsedRow,
@@ -533,3 +535,33 @@ async def remove_enrollment_endpoint(
     """
     await remove_enrollment(db, teacher.id, class_id, student_id)
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# GET /classes/{classId}/insights
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{class_id}/insights",
+    summary="Get class-level skill insights",
+)
+async def get_class_insights_endpoint(
+    class_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return aggregated skill averages, score distributions, and common issues
+    for all locked grades across all assignments in the class.
+
+    The response reflects only **locked** grades.  Unlocked (pending review)
+    grades are excluded so the teacher sees a stable view of confirmed results.
+
+    Returns 403 if the class belongs to a different teacher.
+    Returns 404 if the class does not exist.
+    """
+    insights = await get_class_insights(db, teacher.id, class_id)
+    return JSONResponse(
+        status_code=200,
+        content={"data": insights.model_dump(mode="json")},
+    )
