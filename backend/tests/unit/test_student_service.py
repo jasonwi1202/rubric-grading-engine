@@ -16,12 +16,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-
-from decimal import Decimal
 
 from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.services.student import (

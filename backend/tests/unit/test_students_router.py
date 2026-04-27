@@ -80,7 +80,7 @@ def _make_skill_profile_orm(
             "avg_score": 0.75,
             "trend": "improving",
             "data_points": 3,
-            "last_updated": "2026-01-01T00:00:00+00:00",
+            "last_updated": datetime.now(UTC).isoformat(),
         }
     }
     profile.assignment_count = 2
