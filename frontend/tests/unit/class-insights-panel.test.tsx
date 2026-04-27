@@ -388,6 +388,43 @@ describe("TrendChart", () => {
     });
   });
 
+  it("shows error alert when analytics queries fail", async () => {
+    mockGetAssignmentAnalytics.mockRejectedValue(
+      new ApiError(500, { code: "INTERNAL_ERROR", message: "Server error" }),
+    );
+    const assignments = [
+      makeAssignment("a-001", "Assignment 1"),
+      makeAssignment("a-002", "Assignment 2"),
+    ];
+    render(<TrendChart assignments={assignments} />, { wrapper });
+    await waitFor(() => {
+      expect(
+        screen.getByText(/failed to load assignment analytics/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("renders accessible data table alongside the SVG chart", async () => {
+    mockGetAssignmentAnalytics
+      .mockResolvedValueOnce(makeAnalytics("a-001", 0.65))
+      .mockResolvedValueOnce(makeAnalytics("a-002", 0.78));
+
+    const assignments = [
+      makeAssignment("a-001", "Assignment One"),
+      makeAssignment("a-002", "Assignment Two"),
+    ];
+    render(<TrendChart assignments={assignments} />, { wrapper });
+
+    await waitFor(() => {
+      const table = screen.getByRole("table", {
+        name: /cross-assignment trend data/i,
+      });
+      expect(table).toBeInTheDocument();
+      expect(table.textContent).toContain("Assignment One");
+      expect(table.textContent).toContain("Assignment Two");
+    });
+  });
+
   it("shows placeholder when all assignment scores are null", async () => {
     mockGetAssignmentAnalytics
       .mockResolvedValueOnce(makeAnalytics("a-001", null))

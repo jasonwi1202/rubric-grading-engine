@@ -93,6 +93,7 @@ export function TrendChart({ assignments }: TrendChartProps) {
 
   // Show skeleton while any query is still loading.
   const isLoading = analyticsQueries.some((q) => q.isLoading);
+  const isError = analyticsQueries.some((q) => q.isError);
 
   if (completedAssignments.length < 2) {
     return (
@@ -107,6 +108,17 @@ export function TrendChart({ assignments }: TrendChartProps) {
 
   if (isLoading) {
     return <TrendSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <p
+        role="alert"
+        className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+      >
+        Failed to load assignment analytics. Please refresh the page.
+      </p>
+    );
   }
 
   // Build (title, normalised score) data points — skip assignments with null scores.
@@ -211,7 +223,6 @@ export function TrendChart({ assignments }: TrendChartProps) {
                 cy={pt.y}
                 r={5}
                 fill="#3b82f6"
-                aria-label={`${d.title}: ${pct}%`}
               >
                 <title>{`${d.title}: ${pct}%`}</title>
               </circle>
@@ -243,9 +254,28 @@ export function TrendChart({ assignments }: TrendChartProps) {
         })}
       </svg>
 
+      {/* Accessible data table — screen readers and keyboard users see this. */}
+      <table className="sr-only" aria-label="Cross-assignment trend data">
+        <caption>Overall normalized class average per completed assignment</caption>
+        <thead>
+          <tr>
+            <th scope="col">Assignment</th>
+            <th scope="col">Class average</th>
+          </tr>
+        </thead>
+        <tbody>
+          {dataPoints.map((d) => (
+            <tr key={d.title}>
+              <td>{d.title}</td>
+              <td>{Math.round(d.score * 100)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <p className="mt-1 text-xs text-gray-400">
         Overall normalized class average per completed assignment. Higher is
-        better. Hover over points for details.
+        better.
       </p>
     </div>
   );

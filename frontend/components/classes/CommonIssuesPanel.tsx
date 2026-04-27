@@ -77,6 +77,17 @@ export function CommonIssuesPanel({
                 </span>
               </div>
 
+              {/* Severity badge — color + text label (WCAG 2.1 AA: color is not the only indicator) */}
+              <span
+                className={`mb-2 inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold ${
+                  pct < 40
+                    ? "bg-red-100 text-red-700"
+                    : "bg-yellow-100 text-yellow-700"
+                }`}
+              >
+                {pct < 40 ? "Critical" : "Moderate"}
+              </span>
+
               {/* Progress bar */}
               <div
                 className="relative h-3 w-full overflow-hidden rounded-full bg-gray-100"
