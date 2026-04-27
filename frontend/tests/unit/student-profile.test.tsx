@@ -444,6 +444,12 @@ describe("StudentProfilePage — teacher notes", () => {
       screen.getByRole("textbox", { name: /private teacher notes/i }),
     );
 
+    // Type something to make the form dirty and enable the Save button
+    const textarea = screen.getByRole("textbox", {
+      name: /private teacher notes/i,
+    });
+    await userEvent.type(textarea, "Saved content.");
+
     const saveBtn = screen.getByRole("button", { name: /save notes/i });
     await userEvent.click(saveBtn);
 
@@ -464,6 +470,12 @@ describe("StudentProfilePage — teacher notes", () => {
     await waitFor(() =>
       screen.getByRole("textbox", { name: /private teacher notes/i }),
     );
+
+    // Type something to make the form dirty and enable the Save button
+    const textarea = screen.getByRole("textbox", {
+      name: /private teacher notes/i,
+    });
+    await userEvent.type(textarea, "Some note text.");
 
     const saveBtn = screen.getByRole("button", { name: /save notes/i });
     await userEvent.click(saveBtn);
@@ -486,6 +498,12 @@ describe("StudentProfilePage — teacher notes", () => {
     await waitFor(() =>
       screen.getByRole("textbox", { name: /private teacher notes/i }),
     );
+
+    // Type something to enable the Save button first
+    const textarea = screen.getByRole("textbox", {
+      name: /private teacher notes/i,
+    });
+    await userEvent.type(textarea, "Some note.");
 
     const saveBtn = screen.getByRole("button", { name: /save notes/i });
     await userEvent.click(saveBtn);

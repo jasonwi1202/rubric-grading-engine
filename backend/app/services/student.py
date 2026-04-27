@@ -310,6 +310,9 @@ async def update_student(
     ``clear_external_id=True`` to explicitly set ``external_id`` to ``None``.
     Pass ``clear_teacher_notes=True`` to explicitly set ``teacher_notes`` to ``None``.
 
+    When both ``teacher_notes`` and ``clear_teacher_notes`` are provided,
+    ``clear_teacher_notes`` takes precedence and the field is set to ``None``.
+
     Raises:
         NotFoundError: If the student does not exist.
         ForbiddenError: If the student belongs to a different teacher.

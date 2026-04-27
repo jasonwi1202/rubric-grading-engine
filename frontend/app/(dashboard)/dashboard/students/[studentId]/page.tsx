@@ -12,6 +12,7 @@
  * - Private teacher notes field (persisted via PATCH /students/{studentId})
  *
  * All server state via React Query. No useEffect+fetch.
+ * Notes form managed by react-hook-form + Zod.
  *
  * Security:
  * - No student PII in query keys — uses entity IDs only.
@@ -19,10 +20,13 @@
  * - No student data written to localStorage or sessionStorage.
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   getStudentWithProfile,
   getStudentHistory,
@@ -33,6 +37,20 @@ import type {
   SkillTrend,
   AssignmentHistoryItem,
 } from "@/lib/api/students";
+
+// ---------------------------------------------------------------------------
+// Notes form schema — max_length matches backend PatchStudentRequest
+// ---------------------------------------------------------------------------
+
+const NOTES_MAX_LENGTH = 10_000;
+
+const notesSchema = z.object({
+  notes: z.string().max(NOTES_MAX_LENGTH, {
+    message: `Notes must be ${NOTES_MAX_LENGTH.toLocaleString()} characters or fewer.`,
+  }),
+});
+
+type NotesFormValues = z.infer<typeof notesSchema>;
 
 // ---------------------------------------------------------------------------
 // Helpers — skill display
@@ -185,10 +203,16 @@ export default function StudentProfilePage() {
   const { studentId } = useParams<{ studentId: string }>();
   const queryClient = useQueryClient();
 
-  // ---- Notes local state ----
-  const [notesValue, setNotesValue] = useState<string | null>(null);
-  const [notesSaved, setNotesSaved] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ---- Notes form (react-hook-form + Zod) ----
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors: formErrors, isDirty },
+  } = useForm<NotesFormValues>({
+    resolver: zodResolver(notesSchema),
+    defaultValues: { notes: "" },
+  });
 
   // ---- Student + profile query ----
   const {
@@ -201,14 +225,12 @@ export default function StudentProfilePage() {
     enabled: !!studentId,
   });
 
-  // Initialize local notes state from server data on first load.
-  const notesInitialized = useRef(false);
+  // Sync notes from server into form once the student data loads.
   useEffect(() => {
-    if (student && !notesInitialized.current) {
-      notesInitialized.current = true;
-      setNotesValue(student.teacher_notes ?? "");
+    if (student) {
+      reset({ notes: student.teacher_notes ?? "" });
     }
-  }, [student]);
+  }, [student, reset]);
 
   // ---- Assignment history query ----
   const {
@@ -223,23 +245,23 @@ export default function StudentProfilePage() {
 
   // ---- Notes save mutation ----
   const notesMutation = useMutation({
-    mutationFn: (notes: string | null) =>
-      patchStudent(studentId, { teacher_notes: notes || null }),
+    mutationFn: (values: NotesFormValues) =>
+      patchStudent(studentId, {
+        teacher_notes: values.notes === "" ? null : values.notes,
+      }),
     onSuccess: (updated) => {
       void queryClient.invalidateQueries({ queryKey: ["student", studentId] });
-      setNotesValue(updated.teacher_notes ?? "");
-      setNotesSaved(true);
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => setNotesSaved(false), 3000);
+      // Reset form to the saved value so isDirty returns to false
+      reset({ notes: updated.teacher_notes ?? "" });
     },
     onError: () => {
-      // Keep the textarea value — teacher can retry
+      // Keep the form value — teacher can retry
     },
   });
 
-  const handleSaveNotes = () => {
-    notesMutation.mutate(notesValue || null);
-  };
+  const onSubmitNotes = handleSubmit((values) => {
+    notesMutation.mutate(values);
+  });
 
   // ---- Derived values ----
   const skillScores = student?.skill_profile?.skill_scores ?? {};
@@ -484,32 +506,34 @@ export default function StudentProfilePage() {
         {studentLoading ? (
           <div className="h-24 animate-pulse rounded-lg bg-gray-200" />
         ) : (
-          <div className="space-y-2">
-            <textarea
-              id="teacher-notes"
-              aria-label="Private teacher notes"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              rows={5}
-              placeholder="Add private notes about this student's progress, instructional priorities, or observations…"
-              value={notesValue ?? ""}
-              onChange={(e) => {
-                setNotesValue(e.target.value);
-                setNotesSaved(false);
-              }}
-              disabled={notesMutation.isPending}
-            />
+          <form onSubmit={onSubmitNotes} noValidate className="space-y-2">
+            <div>
+              <textarea
+                id="teacher-notes"
+                aria-label="Private teacher notes"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={5}
+                placeholder="Add private notes about this student's progress, instructional priorities, or observations…"
+                disabled={notesMutation.isPending}
+                {...register("notes")}
+              />
+              {formErrors.notes && (
+                <p role="alert" className="mt-1 text-xs text-red-600">
+                  {formErrors.notes.message}
+                </p>
+              )}
+            </div>
 
             <div className="flex items-center gap-3">
               <button
-                type="button"
-                onClick={handleSaveNotes}
-                disabled={notesMutation.isPending || studentLoading}
+                type="submit"
+                disabled={notesMutation.isPending || !isDirty}
                 className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {notesMutation.isPending ? "Saving…" : "Save notes"}
               </button>
 
-              {notesSaved && (
+              {notesMutation.isSuccess && !isDirty && (
                 <p role="status" className="text-sm text-green-600">
                   Notes saved.
                 </p>
@@ -521,7 +545,7 @@ export default function StudentProfilePage() {
                 </p>
               )}
             </div>
-          </div>
+          </form>
         )}
       </section>
     </div>
