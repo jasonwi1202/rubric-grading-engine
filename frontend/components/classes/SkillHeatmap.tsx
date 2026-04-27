@@ -156,13 +156,16 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
   const hasGradedData = (insights?.graded_essay_count ?? 0) > 0;
 
   // ---- Per-student profiles (parallel) → cell values ----
+  // Only instantiate queries once we know there is graded data to display,
+  // avoiding creating N disabled queries for classes with no locked grades.
   const profileQueries = useQueries({
-    queries: (students ?? []).map((enrolled) => ({
-      queryKey: ["student", enrolled.student.id],
-      queryFn: () => getStudentWithProfile(enrolled.student.id),
-      // Only fetch profiles once we know there is graded data to display.
-      enabled: !!students && hasGradedData,
-    })),
+    queries: hasGradedData
+      ? (students ?? []).map((enrolled) => ({
+          queryKey: ["student", enrolled.student.id],
+          queryFn: () => getStudentWithProfile(enrolled.student.id),
+          enabled: !!students,
+        }))
+      : [],
   });
 
   // ---- Derived state ----
@@ -198,9 +201,14 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
       if (sortKey === "student") {
         cmp = a.studentName.localeCompare(b.studentName);
       } else {
-        const aScore = a.skills?.[sortKey]?.avg_score ?? -1;
-        const bScore = b.skills?.[sortKey]?.avg_score ?? -1;
-        cmp = aScore - bScore;
+        // Students with no data for the skill always sort to the end,
+        // regardless of sort direction. This is more intuitive than
+        // placing them before low-scoring students.
+        const aScore = a.skills?.[sortKey]?.avg_score;
+        const bScore = b.skills?.[sortKey]?.avg_score;
+        const aVal = aScore ?? Infinity;
+        const bVal = bScore ?? Infinity;
+        cmp = aVal - bVal;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });

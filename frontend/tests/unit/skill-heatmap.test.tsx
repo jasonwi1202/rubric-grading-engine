@@ -398,7 +398,7 @@ describe("SkillHeatmap — rendering", () => {
         screen.getByLabelText(/heatmap colour legend/i),
       ).toBeInTheDocument();
       expect(screen.getByText(/≥70%/i)).toBeInTheDocument();
-      expect(screen.getByText(/40.69%/i)).toBeInTheDocument();
+      expect(screen.getByText(/40–69%/i)).toBeInTheDocument();
       expect(screen.getByText(/needs support/i)).toBeInTheDocument();
     });
   });
