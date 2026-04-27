@@ -453,6 +453,23 @@ async def lock_grade(
             extra={"grade_id": str(grade_id), "teacher_id": str(teacher_id)},
         )
 
+        # Enqueue skill profile update asynchronously.  Non-fatal: a broker
+        # outage must not prevent the grade lock response from returning.
+        try:
+            from app.tasks.skill_profile import (  # noqa: PLC0415
+                update_skill_profile,
+            )
+
+            update_skill_profile.delay(str(grade_id), str(teacher_id))
+        except Exception as task_exc:
+            logger.warning(
+                "Failed to enqueue skill profile update task after grade lock",
+                extra={
+                    "grade_id": str(grade_id),
+                    "error_type": type(task_exc).__name__,
+                },
+            )
+
     criterion_scores = await _load_criterion_scores(db, grade.id)
     return _build_grade_response(grade, criterion_scores)
 
