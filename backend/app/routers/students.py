@@ -6,7 +6,7 @@ Student PII (names) is never logged — only entity IDs appear in log output.
 Endpoints:
   GET   /students/{studentId}          — get student detail with embedded skill profile
   GET   /students/{studentId}/history  — get all locked graded assignments (newest-first)
-  PATCH /students/{studentId}          — update student name or external ID
+  PATCH /students/{studentId}          — update student name, external ID, or teacher notes
 """
 
 from __future__ import annotations
@@ -132,7 +132,7 @@ async def get_student_history_endpoint(
 
 @router.patch(
     "/{student_id}",
-    summary="Update student name or external ID",
+    summary="Update student name, external ID, or teacher notes",
 )
 async def patch_student_endpoint(
     student_id: uuid.UUID,
