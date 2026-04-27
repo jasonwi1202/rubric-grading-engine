@@ -20,6 +20,7 @@ import { listAssignments, STATUS_LABELS } from "@/lib/api/assignments";
 import type { AssignmentStatus } from "@/lib/api/assignments";
 import { RosterList } from "@/components/classes/RosterList";
 import { SkillHeatmap } from "@/components/classes/SkillHeatmap";
+import { ClassInsightsPanel } from "@/components/classes/ClassInsightsPanel";
 
 const STATUS_COLORS: Record<AssignmentStatus, string> = {
   draft: "bg-gray-100 text-gray-600",
@@ -30,7 +31,7 @@ const STATUS_COLORS: Record<AssignmentStatus, string> = {
   returned: "bg-purple-100 text-purple-700",
 };
 
-type Tab = "overview" | "heatmap";
+type Tab = "overview" | "heatmap" | "insights";
 
 export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
@@ -41,7 +42,7 @@ export default function ClassDetailPage() {
     e: React.KeyboardEvent<HTMLButtonElement>,
     currentTab: Tab,
   ) => {
-    const tabs: Tab[] = ["overview", "heatmap"];
+    const tabs: Tab[] = ["overview", "heatmap", "insights"];
     const currentIndex = tabs.indexOf(currentTab);
     let nextIndex = currentIndex;
 
@@ -163,6 +164,23 @@ export default function ClassDetailPage() {
         >
           Skill Heatmap
         </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={activeTab === "insights"}
+          aria-controls="tab-panel-insights"
+          id="tab-insights"
+          tabIndex={activeTab === "insights" ? 0 : -1}
+          onClick={() => setActiveTab("insights")}
+          onKeyDown={(e) => handleTabKeyDown(e, "insights")}
+          className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
+            activeTab === "insights"
+              ? "border-b-2 border-blue-600 text-blue-700"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Insights
+        </button>
       </div>
 
       {/* Overview tab: assignments + roster */}
@@ -276,6 +294,29 @@ export default function ClassDetailPage() {
           </h2>
           {classId && activeTab === "heatmap" && (
             <SkillHeatmap classId={classId} />
+          )}
+        </section>
+      </div>
+
+      {/* Insights tab */}
+      <div
+        role="tabpanel"
+        id="tab-panel-insights"
+        aria-labelledby="tab-insights"
+        hidden={activeTab !== "insights"}
+      >
+        <section aria-labelledby="insights-heading" className="mb-8">
+          <h2
+            id="insights-heading"
+            className="mb-4 text-base font-semibold text-gray-900"
+          >
+            Class Insights
+          </h2>
+          {classId && activeTab === "insights" && (
+            <ClassInsightsPanel
+              classId={classId}
+              assignments={assignments ?? []}
+            />
           )}
         </section>
       </div>

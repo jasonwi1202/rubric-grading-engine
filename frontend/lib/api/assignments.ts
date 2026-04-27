@@ -181,3 +181,73 @@ export async function updateAssignment(
     data,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Assignment analytics types (M5.8)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single (raw score value, count) pair in a per-criterion distribution.
+ * Matches backend ScoreCount exactly.
+ */
+export interface ScoreCount {
+  score: number;
+  count: number;
+}
+
+/**
+ * Per-criterion analytics for one assignment.
+ * Matches backend CriterionAnalytics exactly.
+ */
+export interface CriterionAnalytics {
+  criterion_id: string;
+  criterion_name: string;
+  /** Canonical skill dimension this criterion maps to. */
+  skill_dimension: string;
+  min_score_possible: number;
+  max_score_possible: number;
+  /** Mean raw final_score across all locked essays. */
+  avg_score: number;
+  /** Mean normalised score (0.0–1.0) across all locked essays. */
+  avg_normalized_score: number;
+  /** Count of essays per raw score value, ordered by ascending score. */
+  score_distribution: ScoreCount[];
+}
+
+/**
+ * Response from GET /assignments/{assignmentId}/analytics.
+ * Matches backend AssignmentAnalyticsResponse exactly.
+ */
+export interface AssignmentAnalyticsResponse {
+  assignment_id: string;
+  class_id: string;
+  total_essay_count: number;
+  /** Essays with a locked grade (included in analytics). */
+  locked_essay_count: number;
+  /**
+   * Mean normalised score across all criteria and all locked essays.
+   * Null when there are no locked grades.
+   */
+  overall_avg_normalized_score: number | null;
+  /** Per-criterion analytics in rubric display_order. */
+  criterion_analytics: CriterionAnalytics[];
+}
+
+// ---------------------------------------------------------------------------
+// Assignment analytics API function
+// ---------------------------------------------------------------------------
+
+/**
+ * Get per-criterion analytics for an assignment.
+ * Calls GET /api/v1/assignments/{assignmentId}/analytics.
+ *
+ * Only locked grades contribute. Returns criterion-level score distributions,
+ * averages, and overall class performance for the assignment.
+ */
+export async function getAssignmentAnalytics(
+  assignmentId: string,
+): Promise<AssignmentAnalyticsResponse> {
+  return apiGet<AssignmentAnalyticsResponse>(
+    `/assignments/${assignmentId}/analytics`,
+  );
+}
