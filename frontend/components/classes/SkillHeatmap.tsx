@@ -167,9 +167,12 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
       : [],
   });
 
+  const profilesLoading = profileQueries.some((q) => q.isLoading);
+  const profilesError = profileQueries.some((q) => q.isError);
+
   // ---- Derived state ----
-  const isLoading = insightsLoading || studentsLoading;
-  const isError = insightsError || studentsError;
+  const isLoading = insightsLoading || studentsLoading || profilesLoading;
+  const isError = insightsError || studentsError || profilesError;
 
   /** Sorted canonical skill names used as column headers. */
   const skillColumns = useMemo<string[]>(() => {
@@ -196,18 +199,22 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
   const sortedRows = useMemo(() => {
     if (!rows.length) return rows;
     return [...rows].sort((a, b) => {
-      let cmp = 0;
       if (sortKey === "student") {
-        cmp = a.studentName.localeCompare(b.studentName);
-      } else {
-        // Use Infinity as the sentinel for "no data" so that students with
-        // missing skill scores always sort to the end, regardless of sort
-        // direction. This is more intuitive than placing them before
-        // legitimately low-scoring students.
-        const aVal = a.skills?.[sortKey]?.avg_score ?? Infinity;
-        const bVal = b.skills?.[sortKey]?.avg_score ?? Infinity;
-        cmp = aVal - bVal;
+        const cmp = a.studentName.localeCompare(b.studentName);
+        return sortDir === "asc" ? cmp : -cmp;
       }
+
+      const aVal = a.skills?.[sortKey]?.avg_score;
+      const bVal = b.skills?.[sortKey]?.avg_score;
+      const aMissing = aVal == null;
+      const bMissing = bVal == null;
+
+      // Students with no data always sort to the end, regardless of direction.
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+
+      const cmp = aVal - bVal;
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [rows, sortKey, sortDir]);
@@ -274,7 +281,6 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table
           className="min-w-full text-sm"
-          role="grid"
           aria-label="Class skill heatmap"
         >
           <thead className="bg-gray-50">
@@ -324,14 +330,17 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
             {sortedRows.map((row) => (
               <tr key={row.studentId} className="hover:bg-gray-50">
                 {/* Student name → link to profile */}
-                <td className="sticky left-0 bg-inherit px-4 py-2 font-medium text-gray-900">
+                <th
+                  scope="row"
+                  className="sticky left-0 bg-inherit px-4 py-2 text-left font-medium text-gray-900"
+                >
                   <Link
                     href={`/dashboard/students/${row.studentId}`}
                     className="rounded text-blue-700 underline hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {row.studentName}
                   </Link>
-                </td>
+                </th>
 
                 {/* Per-skill score cells */}
                 {skillColumns.map((skill) => {

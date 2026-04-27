@@ -36,6 +36,30 @@ export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
+  // Arrow-key navigation between tabs (ARIA tab pattern with roving tabIndex).
+  const handleTabKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    currentTab: Tab,
+  ) => {
+    const tabs: Tab[] = ["overview", "heatmap"];
+    const currentIndex = tabs.indexOf(currentTab);
+    let nextIndex = currentIndex;
+
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextIndex = (currentIndex + 1) % tabs.length;
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    } else {
+      return;
+    }
+
+    const nextTab = tabs[nextIndex];
+    setActiveTab(nextTab);
+    document.getElementById(`tab-${nextTab}`)?.focus();
+  };
+
   const {
     data: cls,
     isLoading,
@@ -111,7 +135,9 @@ export default function ClassDetailPage() {
           aria-selected={activeTab === "overview"}
           aria-controls="tab-panel-overview"
           id="tab-overview"
+          tabIndex={activeTab === "overview" ? 0 : -1}
           onClick={() => setActiveTab("overview")}
+          onKeyDown={(e) => handleTabKeyDown(e, "overview")}
           className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
             activeTab === "overview"
               ? "border-b-2 border-blue-600 text-blue-700"
@@ -126,7 +152,9 @@ export default function ClassDetailPage() {
           aria-selected={activeTab === "heatmap"}
           aria-controls="tab-panel-heatmap"
           id="tab-heatmap"
+          tabIndex={activeTab === "heatmap" ? 0 : -1}
           onClick={() => setActiveTab("heatmap")}
+          onKeyDown={(e) => handleTabKeyDown(e, "heatmap")}
           className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
             activeTab === "heatmap"
               ? "border-b-2 border-blue-600 text-blue-700"

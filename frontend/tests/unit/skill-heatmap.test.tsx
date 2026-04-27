@@ -223,6 +223,24 @@ describe("SkillHeatmap — error states", () => {
       ).toBeInTheDocument();
     });
   });
+
+  it("shows error alert when a profile fetch fails", async () => {
+    mockGetClassInsights.mockResolvedValue(makeInsights());
+    mockListStudents.mockResolvedValue([
+      makeEnrolledStudent("stu-001", "Student A"),
+    ]);
+    mockGetStudentWithProfile.mockRejectedValue(
+      new ApiError(500, { code: "INTERNAL_ERROR", message: "Server error" }),
+    );
+
+    render(<SkillHeatmap classId={CLASS_ID} />, { wrapper });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Failed to load skill heatmap/i),
+      ).toBeInTheDocument();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -440,7 +458,7 @@ describe("SkillHeatmap — sorting", () => {
 
     // Wait for the table to render
     await waitFor(() => {
-      expect(screen.getByRole("grid")).toBeInTheDocument();
+      expect(screen.getByRole("table")).toBeInTheDocument();
     });
     // Wait for student names to appear
     await waitFor(() => {
@@ -524,6 +542,53 @@ describe("SkillHeatmap — sorting", () => {
     await waitFor(() => {
       const evidenceBtn = screen.getByRole("button", { name: /sort by evidence score/i });
       expect(evidenceBtn.textContent).toContain("↕");
+    });
+  });
+
+  it("students with no data for a skill always sort to the end, even descending", async () => {
+    const user = userEvent.setup();
+    // stu-001 has evidence data; stu-002 does not → stu-002 must stay last in both
+    // asc and desc evidence sort.
+    mockGetClassInsights.mockResolvedValue(makeInsights());
+    mockListStudents.mockResolvedValue([
+      makeEnrolledStudent("stu-001", "Alpha Student"),
+      makeEnrolledStudent("stu-002", "Zebra Student"),
+    ]);
+    mockGetStudentWithProfile.mockImplementation((id: string) => {
+      if (id === "stu-001") {
+        return Promise.resolve(
+          makeStudentWithProfile("stu-001", "Alpha Student", { thesis: 0.5, evidence: 0.6 }),
+        );
+      }
+      if (id === "stu-002") {
+        // No evidence data
+        return Promise.resolve(
+          makeStudentWithProfile("stu-002", "Zebra Student", { thesis: 0.9 }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected student ID: ${id}`));
+    });
+
+    render(<SkillHeatmap classId={CLASS_ID} />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("Alpha Student")).toBeInTheDocument();
+    });
+
+    // First click: sort evidence ascending → Alpha first, Zebra (no data) last
+    await user.click(screen.getByRole("button", { name: /sort by evidence score/i }));
+    await waitFor(() => {
+      const rows = screen.getAllByRole("row");
+      expect(within(rows[1]).getByText("Alpha Student")).toBeInTheDocument();
+      expect(within(rows[2]).getByText("Zebra Student")).toBeInTheDocument();
+    });
+
+    // Second click: sort evidence descending → Alpha still first, Zebra (no data) still last
+    await user.click(screen.getByRole("button", { name: /sort by evidence score/i }));
+    await waitFor(() => {
+      const rows = screen.getAllByRole("row");
+      expect(within(rows[1]).getByText("Alpha Student")).toBeInTheDocument();
+      expect(within(rows[2]).getByText("Zebra Student")).toBeInTheDocument();
     });
   });
 });

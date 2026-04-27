@@ -1,6 +1,6 @@
 /**
 
- * Classes & roster API helpers ÎÃÃ¶ M3 implementation.
+ * Classes & roster API helpers — M3 implementation.
 
  *
 
@@ -114,13 +114,15 @@ export interface StudentResponse {
 
   external_id: string | null;
 
+  teacher_notes: string | null;
+
   created_at: string;
 
 }
 
 
 
-/** Matches backend EnrolledStudentResponse ÎÃÃ¶ enrollment wrapper + nested student. */
+/** Matches backend EnrolledStudentResponse — enrollment wrapper + nested student. */
 
 export interface EnrolledStudentResponse {
 
@@ -266,7 +268,7 @@ export interface CsvImportPreviewResponse {
 
 
 
-/** Rows sent back to the confirm endpoint ÎÃÃ¶ only the fields the backend expects. */
+/** Rows sent back to the confirm endpoint — only the fields the backend expects. */
 
 export interface ImportRowInput {
 
