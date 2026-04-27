@@ -196,6 +196,13 @@ This endpoint is consumed by the dashboard trial-expiry banner.
         { "label": "40-60%",  "count": 9 },
         { "label": "60-80%",  "count": 5 },
         { "label": "80-100%", "count": 1 }
+      ],
+      "thesis": [
+        { "label": "0-20%",   "count": 0 },
+        { "label": "20-40%",  "count": 2 },
+        { "label": "40-60%",  "count": 5 },
+        { "label": "60-80%",  "count": 12 },
+        { "label": "80-100%", "count": 6 }
       ]
     },
     "common_issues": [

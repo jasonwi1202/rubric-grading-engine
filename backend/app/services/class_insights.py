@@ -366,7 +366,7 @@ async def get_assignment_analytics(
     total_essay_count: int = total_count_result.scalar_one()
 
     locked_count_result = await db.execute(
-        select(func.count(Grade.id))
+        select(func.count(func.distinct(Essay.id)))
         .join(EssayVersion, Grade.essay_version_id == EssayVersion.id)
         .join(Essay, EssayVersion.essay_id == Essay.id)
         .where(
