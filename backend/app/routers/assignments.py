@@ -346,8 +346,9 @@ async def get_assignment_analytics_endpoint(
     distributions, and an overall class average across all criteria.
 
     Only **locked** grades contribute to the analytics.  If no grades are
-    locked the response contains empty criterion breakdowns and a null
-    overall average.
+    locked, the response still includes one ``criterion_analytics`` entry per
+    rubric criterion, with empty distributions and zeroed averages, and a
+    null overall average.
 
     Returns 403 if the assignment belongs to a different teacher.
     Returns 404 if the assignment does not exist.

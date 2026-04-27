@@ -92,23 +92,27 @@ async def _assert_assignment_owned_by(
     Raises :exc:`NotFoundError` if the assignment does not exist.
     Raises :exc:`ForbiddenError` if the assignment belongs to a different teacher.
     """
-    result = await db.execute(
-        select(Assignment.id, Assignment.class_id, Class.teacher_id)
-        .join(Class, Assignment.class_id == Class.id)
-        .where(Assignment.id == assignment_id)
+    # First: check existence without tenant filter so we can distinguish
+    # "not found" from "forbidden".
+    exists_result = await db.execute(
+        select(Assignment.id).where(Assignment.id == assignment_id)
     )
-    row = result.one_or_none()
-    if row is None:
+    if exists_result.one_or_none() is None:
         raise NotFoundError("Assignment not found.")
-    if row.teacher_id != teacher_id:
-        raise ForbiddenError("You do not have access to this assignment.")
 
+    # Second: load the full row enforcing teacher_id at the query level.
     assignment_result = await db.execute(
-        select(Assignment).where(
+        select(Assignment)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
             Assignment.id == assignment_id,
+            Class.teacher_id == teacher_id,
         )
     )
-    return assignment_result.scalar_one()
+    assignment = assignment_result.scalar_one_or_none()
+    if assignment is None:
+        raise ForbiddenError("You do not have access to this assignment.")
+    return assignment
 
 
 def _normalise_score(final_score: int, min_score: int, max_score: int) -> float:
@@ -208,6 +212,7 @@ async def get_class_insights(
     # ------------------------------------------------------------------
     rows_result = await db.execute(
         select(
+            Essay.id.label("essay_id"),
             Essay.student_id.label("student_id"),
             Grade.id.label("grade_id"),
             CriterionScore.rubric_criterion_id,
@@ -228,17 +233,21 @@ async def get_class_insights(
     raw_rows = rows_result.all()
 
     # ------------------------------------------------------------------
-    # Aggregate per skill dimension.
+    # Aggregate per skill dimension (single pass).
     # ------------------------------------------------------------------
     # skill → list of normalised scores (one per criterion score row)
     skill_normalised_scores: dict[str, list[float]] = defaultdict(list)
-    # skill → set of student UUIDs that contributed at least one score
-    skill_student_sets: dict[str, set[uuid.UUID | None]] = defaultdict(set)
-    # Track distinct grade IDs for graded_essay_count.
-    graded_grade_ids: set[uuid.UUID] = set()
+    # skill → set of student UUIDs (None excluded) that contributed ≥1 score
+    skill_student_sets: dict[str, set[uuid.UUID]] = defaultdict(set)
+    # student_id → skill → [normalised_score, ...]  (None student_id excluded)
+    student_skill_scores: dict[uuid.UUID, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    # Track distinct essay IDs (not grade IDs) for graded_essay_count.
+    graded_essay_ids: set[uuid.UUID] = set()
 
     for row in raw_rows:
-        graded_grade_ids.add(row.grade_id)
+        graded_essay_ids.add(row.essay_id)
         snapshot: dict[str, Any] = row.rubric_snapshot
         criteria_list: list[dict[str, Any]] = snapshot.get("criteria", [])
         criterion_map: dict[str, dict[str, Any]] = {c["id"]: c for c in criteria_list}
@@ -253,7 +262,11 @@ async def get_class_insights(
         skill = normalize_criterion_name(crit["name"])
 
         skill_normalised_scores[skill].append(normalised)
-        skill_student_sets[skill].add(row.student_id)
+
+        # Only include rows with an assigned student in student-based aggregates.
+        if row.student_id is not None:
+            skill_student_sets[skill].add(row.student_id)
+            student_skill_scores[row.student_id][skill].append(normalised)
 
     # ------------------------------------------------------------------
     # Build response components.
@@ -272,24 +285,6 @@ async def get_class_insights(
             data_points=len(scores),
         )
         score_distributions[skill] = _build_distribution(scores)
-
-    # Re-aggregate per-student per-skill to compute affected_student_count.
-    # student_id → skill → [normalised_score, ...]
-    student_skill_scores: dict[uuid.UUID | None, dict[str, list[float]]] = defaultdict(
-        lambda: defaultdict(list)
-    )
-    for row in raw_rows:
-        snapshot = row.rubric_snapshot
-        criteria_list = snapshot.get("criteria", [])
-        criterion_map = {c["id"]: c for c in criteria_list}
-        crit = criterion_map.get(str(row.rubric_criterion_id))
-        if crit is None:
-            continue
-        max_score = int(crit.get("max_score", 1))
-        min_score = int(crit.get("min_score", 0))
-        normalised = _normalise_score(row.final_score, min_score, max_score)
-        skill = normalize_criterion_name(crit["name"])
-        student_skill_scores[row.student_id][skill].append(normalised)
 
     for skill, avg_obj in skill_averages.items():
         if avg_obj.avg_score < _CONCERN_THRESHOLD:
@@ -315,7 +310,7 @@ async def get_class_insights(
         extra={
             "class_id": str(class_id),
             "teacher_id": str(teacher_id),
-            "graded_essay_count": len(graded_grade_ids),
+            "graded_essay_count": len(graded_essay_ids),
         },
     )
 
@@ -323,7 +318,7 @@ async def get_class_insights(
         class_id=class_id,
         assignment_count=assignment_count,
         student_count=student_count,
-        graded_essay_count=len(graded_grade_ids),
+        graded_essay_count=len(graded_essay_ids),
         skill_averages=skill_averages,
         score_distributions=score_distributions,
         common_issues=common_issues,

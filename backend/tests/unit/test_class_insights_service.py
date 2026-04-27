@@ -230,16 +230,17 @@ class TestAssertAssignmentOwnedBy:
     async def test_raises_forbidden_for_wrong_teacher(self) -> None:
         from app.services.class_insights import _assert_assignment_owned_by
 
-        teacher_a = uuid.uuid4()
         teacher_b = uuid.uuid4()
         assignment_id = uuid.uuid4()
-        class_id = uuid.uuid4()
 
         db = AsyncMock()
-        row = _make_row(id=assignment_id, class_id=class_id, teacher_id=teacher_a)
-        result = MagicMock()
-        result.one_or_none.return_value = row
-        db.execute = AsyncMock(return_value=result)
+        # First execute: assignment exists (existence check).
+        exists_result = MagicMock()
+        exists_result.one_or_none.return_value = _make_row(id=assignment_id)
+        # Second execute: teacher_id mismatch — join returns nothing.
+        assignment_result = MagicMock()
+        assignment_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(side_effect=[exists_result, assignment_result])
 
         with pytest.raises(ForbiddenError):
             await _assert_assignment_owned_by(db, assignment_id, teacher_b)
@@ -307,7 +308,9 @@ class TestGetClassInsights:
         ])
 
         # Two criterion score rows with final_score 2 and 4 → normalised 0.5 and 1.0
+        essay_id = uuid.uuid4()
         row1 = _make_row(
+            essay_id=essay_id,
             student_id=student_id,
             grade_id=grade_id,
             rubric_criterion_id=crit_id,
@@ -315,6 +318,7 @@ class TestGetClassInsights:
             rubric_snapshot=snapshot,
         )
         row2 = _make_row(
+            essay_id=essay_id,
             student_id=student_id,
             grade_id=uuid.uuid4(),
             rubric_criterion_id=crit_id,
@@ -360,6 +364,7 @@ class TestGetClassInsights:
             _make_criterion(str(crit_id), "Evidence Use", min_score=0, max_score=4),
         ])
         row = _make_row(
+            essay_id=uuid.uuid4(),
             student_id=student_id,
             grade_id=grade_id,
             rubric_criterion_id=crit_id,
@@ -405,6 +410,7 @@ class TestGetClassInsights:
             _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
         ])
         row = _make_row(
+            essay_id=uuid.uuid4(),
             student_id=student_id,
             grade_id=grade_id,
             rubric_criterion_id=crit_id,
@@ -472,6 +478,7 @@ class TestGetClassInsights:
         # Snapshot contains no criteria (empty list)
         snapshot = _snapshot_with_criteria([])
         row = _make_row(
+            essay_id=uuid.uuid4(),
             student_id=student_id,
             grade_id=grade_id,
             rubric_criterion_id=unknown_crit_id,
@@ -532,15 +539,14 @@ class TestGetAssignmentAnalytics:
 
         db = AsyncMock()
 
-        # 1. Ownership check
-        ownership_row = _make_row(id=assignment_id, class_id=class_id, teacher_id=teacher_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        # 1. Existence check
+        exists_result = MagicMock()
+        exists_result.one_or_none.return_value = _make_row(id=assignment_id)
 
-        # 2. Full assignment fetch
+        # 2. Full assignment fetch (with teacher_id join)
         assignment_obj = self._make_assignment_orm(assignment_id, class_id, snapshot)
         assignment_result = MagicMock()
-        assignment_result.scalar_one.return_value = assignment_obj
+        assignment_result.scalar_one_or_none.return_value = assignment_obj
 
         # 3. Total essay count
         total_count_result = MagicMock()
@@ -558,7 +564,7 @@ class TestGetAssignmentAnalytics:
 
         db.execute = AsyncMock(
             side_effect=[
-                ownership_result,
+                exists_result,
                 assignment_result,
                 total_count_result,
                 locked_count_result,
@@ -595,12 +601,11 @@ class TestGetAssignmentAnalytics:
         ])
 
         db = AsyncMock()
-        ownership_row = _make_row(id=assignment_id, class_id=class_id, teacher_id=teacher_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        exists_result = MagicMock()
+        exists_result.one_or_none.return_value = _make_row(id=assignment_id)
         assignment_obj = self._make_assignment_orm(assignment_id, class_id, snapshot)
         assignment_result = MagicMock()
-        assignment_result.scalar_one.return_value = assignment_obj
+        assignment_result.scalar_one_or_none.return_value = assignment_obj
         total_count_result = MagicMock()
         total_count_result.scalar_one.return_value = 5
         locked_count_result = MagicMock()
@@ -610,7 +615,7 @@ class TestGetAssignmentAnalytics:
 
         db.execute = AsyncMock(
             side_effect=[
-                ownership_result,
+                exists_result,
                 assignment_result,
                 total_count_result,
                 locked_count_result,
@@ -639,16 +644,17 @@ class TestGetAssignmentAnalytics:
     async def test_raises_forbidden_for_wrong_teacher(self) -> None:
         from app.services.class_insights import get_assignment_analytics
 
-        teacher_a = uuid.uuid4()
         teacher_b = uuid.uuid4()
         assignment_id = uuid.uuid4()
-        class_id = uuid.uuid4()
 
         db = AsyncMock()
-        row = _make_row(id=assignment_id, class_id=class_id, teacher_id=teacher_a)
-        result = MagicMock()
-        result.one_or_none.return_value = row
-        db.execute = AsyncMock(return_value=result)
+        # First execute: assignment exists.
+        exists_result = MagicMock()
+        exists_result.one_or_none.return_value = _make_row(id=assignment_id)
+        # Second execute: teacher mismatch — join returns nothing.
+        assignment_result = MagicMock()
+        assignment_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(side_effect=[exists_result, assignment_result])
 
         with pytest.raises(ForbiddenError):
             await get_assignment_analytics(db, teacher_b, assignment_id)
@@ -668,12 +674,11 @@ class TestGetAssignmentAnalytics:
         ])
 
         db = AsyncMock()
-        ownership_row = _make_row(id=assignment_id, class_id=class_id, teacher_id=teacher_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        exists_result = MagicMock()
+        exists_result.one_or_none.return_value = _make_row(id=assignment_id)
         assignment_obj = self._make_assignment_orm(assignment_id, class_id, snapshot)
         assignment_result = MagicMock()
-        assignment_result.scalar_one.return_value = assignment_obj
+        assignment_result.scalar_one_or_none.return_value = assignment_obj
         total_count_result = MagicMock()
         total_count_result.scalar_one.return_value = 3
         locked_count_result = MagicMock()
@@ -690,7 +695,7 @@ class TestGetAssignmentAnalytics:
 
         db.execute = AsyncMock(
             side_effect=[
-                ownership_result,
+                exists_result,
                 assignment_result,
                 total_count_result,
                 locked_count_result,
@@ -721,12 +726,11 @@ class TestGetAssignmentAnalytics:
         ])
 
         db = AsyncMock()
-        ownership_row = _make_row(id=assignment_id, class_id=class_id, teacher_id=teacher_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        exists_result = MagicMock()
+        exists_result.one_or_none.return_value = _make_row(id=assignment_id)
         assignment_obj = self._make_assignment_orm(assignment_id, class_id, snapshot)
         assignment_result = MagicMock()
-        assignment_result.scalar_one.return_value = assignment_obj
+        assignment_result.scalar_one_or_none.return_value = assignment_obj
         total_count_result = MagicMock()
         total_count_result.scalar_one.return_value = 1
         locked_count_result = MagicMock()
@@ -736,7 +740,7 @@ class TestGetAssignmentAnalytics:
 
         db.execute = AsyncMock(
             side_effect=[
-                ownership_result,
+                exists_result,
                 assignment_result,
                 total_count_result,
                 locked_count_result,

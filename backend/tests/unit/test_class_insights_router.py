@@ -331,24 +331,42 @@ class TestGetAssignmentAnalytics:
         assert call_kwargs.args[2] == assignment_id
 
     def test_null_overall_avg_when_no_locked_grades(self) -> None:
-        """When no grades are locked, overall_avg_normalized_score is null."""
+        """When no grades are locked, overall_avg_normalized_score is null.
+
+        criterion_analytics still contains one entry per rubric criterion
+        (with zeroed averages and empty score distributions) — the list is
+        never empty just because no grades have been locked yet.
+        """
         teacher = _make_teacher()
         assignment_id = uuid.uuid4()
         class_id = uuid.uuid4()
-        empty_analytics = AssignmentAnalyticsResponse(
+        criterion_id = uuid.uuid4()
+        # Reflect the real service contract: one entry per criterion with zeros.
+        no_locked_analytics = AssignmentAnalyticsResponse(
             assignment_id=assignment_id,
             class_id=class_id,
             total_essay_count=10,
             locked_essay_count=0,
             overall_avg_normalized_score=None,
-            criterion_analytics=[],
+            criterion_analytics=[
+                CriterionAnalytics(
+                    criterion_id=criterion_id,
+                    criterion_name="Thesis Statement",
+                    skill_dimension="thesis",
+                    min_score_possible=0,
+                    max_score_possible=5,
+                    avg_score=0.0,
+                    avg_normalized_score=0.0,
+                    score_distribution=[],
+                )
+            ],
         )
         app = _app_with_teacher(teacher)
         with (
             patch(
                 "app.routers.assignments.get_assignment_analytics",
                 new_callable=AsyncMock,
-                return_value=empty_analytics,
+                return_value=no_locked_analytics,
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
@@ -357,7 +375,10 @@ class TestGetAssignmentAnalytics:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["overall_avg_normalized_score"] is None
-        assert data["criterion_analytics"] == []
+        # At least one criterion entry is present even with no locked grades.
+        assert len(data["criterion_analytics"]) == 1
+        assert data["criterion_analytics"][0]["avg_score"] == 0.0
+        assert data["criterion_analytics"][0]["score_distribution"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -368,9 +389,8 @@ class TestGetAssignmentAnalytics:
 class TestClassInsightsTenantIsolation:
     def test_insights_passes_teacher_id_preventing_cross_tenant_access(self) -> None:
         """A teacher can only access insights for their own class."""
-        teacher_a = _make_teacher()
         teacher_b = _make_teacher()
-        class_id = uuid.uuid4()  # belongs to teacher_a
+        class_id = uuid.uuid4()  # belongs to a different teacher
         app = _app_with_teacher(teacher_b)
         with (
             patch(
@@ -387,9 +407,8 @@ class TestClassInsightsTenantIsolation:
 
     def test_analytics_passes_teacher_id_preventing_cross_tenant_access(self) -> None:
         """A teacher can only access analytics for their own assignment."""
-        teacher_a = _make_teacher()
         teacher_b = _make_teacher()
-        assignment_id = uuid.uuid4()  # belongs to teacher_a
+        assignment_id = uuid.uuid4()  # belongs to a different teacher
         app = _app_with_teacher(teacher_b)
         with (
             patch(
