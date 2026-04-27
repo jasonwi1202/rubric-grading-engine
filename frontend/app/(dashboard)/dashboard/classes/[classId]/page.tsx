@@ -274,7 +274,9 @@ export default function ClassDetailPage() {
           >
             Skill Heatmap
           </h2>
-          {classId && <SkillHeatmap classId={classId} />}
+          {classId && activeTab === "heatmap" && (
+            <SkillHeatmap classId={classId} />
+          )}
         </section>
       </div>
     </div>

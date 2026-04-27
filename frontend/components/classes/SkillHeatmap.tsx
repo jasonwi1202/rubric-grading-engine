@@ -42,18 +42,29 @@ type SortKey = "student" | string;
 type SortDir = "asc" | "desc";
 
 /**
+ * Returns the score as an integer percentage (0–100), rounded.
+ * Used for both the displayed label and the colour-band decision so that
+ * the two are always consistent (e.g. 0.699 → 70 → green, not yellow).
+ */
+function toRoundedPercent(score: number): number {
+  return Math.round(score * 100);
+}
+
+/**
  * Returns Tailwind classes for the cell chip based on normalised score.
  * Accepts null for "no data" cells.
+ * Band thresholds are applied on the same rounded integer used for display.
  */
 function scoreBandClasses(score: number | null): string {
   if (score === null) return "bg-gray-100 text-gray-400";
-  if (score >= BAND_HIGH) return "bg-green-100 text-green-800";
-  if (score >= BAND_MID) return "bg-yellow-100 text-yellow-700";
+  const percent = toRoundedPercent(score);
+  if (percent >= BAND_HIGH * 100) return "bg-green-100 text-green-800";
+  if (percent >= BAND_MID * 100) return "bg-yellow-100 text-yellow-700";
   return "bg-red-100 text-red-700";
 }
 
 function formatPct(score: number): string {
-  return `${Math.round(score * 100)}%`;
+  return `${toRoundedPercent(score)}%`;
 }
 
 // ---------------------------------------------------------------------------
