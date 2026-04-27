@@ -28,7 +28,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -427,9 +427,9 @@ async def compute_and_upsert_skill_profile(
         assignment_map[gid]["criterion_scores"].append((row.rubric_criterion_id, row.final_score))
 
     # Sort by locked_at ascending (oldest → newest) for consistent weighting.
-    # type: ignore because mypy infers the dict values as dict[str, Any], so
-    # the key lambda's return type is Any — not a valid sort key in strict mode.
-    assignment_rows = sorted(assignment_map.values(), key=lambda a: a["locked_at"])  # type: ignore[return-value]
+    # cast() is needed because mypy sees dict[str, Any] and cannot infer that
+    # a["locked_at"] is a comparable datetime.
+    assignment_rows = sorted(assignment_map.values(), key=lambda a: cast(datetime, a["locked_at"]))
 
     # ------------------------------------------------------------------
     # Aggregate and upsert.
