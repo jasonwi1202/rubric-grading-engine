@@ -82,8 +82,8 @@ export interface AssignmentHistoryItem {
   class_id: string;
   grade_id: string;
   essay_id: string;
-  total_score: number;
-  max_possible_score: number;
+  total_score: string;
+  max_possible_score: string;
   /** ISO-8601 datetime string. */
   locked_at: string;
 }

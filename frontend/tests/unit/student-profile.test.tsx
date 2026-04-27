@@ -115,8 +115,8 @@ function makeHistoryItem(overrides: Record<string, unknown> = {}) {
     class_id: "cls-001",
     grade_id: "grd-001",
     essay_id: "ess-001",
-    total_score: 80,
-    max_possible_score: 100,
+    total_score: "80",
+    max_possible_score: "100",
     locked_at: "2026-02-15T10:00:00Z",
     ...overrides,
   };
@@ -330,15 +330,15 @@ describe("StudentProfilePage — assignment history", () => {
     mockGetStudentHistory.mockResolvedValue([
       makeHistoryItem({
         assignment_title: "Essay Assignment One",
-        total_score: 80,
-        max_possible_score: 100,
+        total_score: "80",
+        max_possible_score: "100",
       }),
       makeHistoryItem({
         grade_id: "grd-002",
         assignment_id: "asgn-002",
         assignment_title: "Essay Assignment Two",
-        total_score: 45,
-        max_possible_score: 60,
+        total_score: "45",
+        max_possible_score: "60",
       }),
     ]);
 

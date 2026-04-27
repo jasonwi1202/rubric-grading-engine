@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -621,7 +621,7 @@ class TestPatchStudent:
                 "app.routers.students.update_student",
                 new_callable=AsyncMock,
                 return_value=student,
-            ),
+            ) as mock_update,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.patch(
@@ -631,6 +631,16 @@ class TestPatchStudent:
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["teacher_notes"] == "Watch evidence integration."
+        mock_update.assert_called_once_with(
+            ANY,
+            teacher.id,
+            student.id,
+            full_name=None,
+            external_id=None,
+            clear_external_id=False,
+            teacher_notes="Watch evidence integration.",
+            clear_teacher_notes=False,
+        )
 
     def test_clears_teacher_notes_with_null(self) -> None:
         teacher = _make_teacher()
@@ -641,7 +651,7 @@ class TestPatchStudent:
                 "app.routers.students.update_student",
                 new_callable=AsyncMock,
                 return_value=student,
-            ),
+            ) as mock_update,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.patch(
@@ -651,6 +661,16 @@ class TestPatchStudent:
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["teacher_notes"] is None
+        mock_update.assert_called_once_with(
+            ANY,
+            teacher.id,
+            student.id,
+            full_name=None,
+            external_id=None,
+            clear_external_id=False,
+            teacher_notes=None,
+            clear_teacher_notes=True,
+        )
 
     def test_returns_404_when_not_found(self) -> None:
         teacher = _make_teacher()

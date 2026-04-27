@@ -144,6 +144,8 @@ async def patch_student_endpoint(
 
     Only fields explicitly included in the request body are updated.
     To explicitly clear ``external_id``, send ``"external_id": null``.
+    To set or update ``teacher_notes``, send the new text.
+    To explicitly clear ``teacher_notes``, send ``"teacher_notes": null``.
 
     Returns 403 if the student belongs to a different teacher.
     Returns 404 if the student does not exist.

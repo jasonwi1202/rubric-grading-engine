@@ -62,6 +62,12 @@ const TREND_LABELS: Record<SkillTrend, string> = {
   declining: "Declining ↓",
 };
 
+const TREND_ICONS: Record<SkillTrend, string> = {
+  improving: "↑",
+  stable: "→",
+  declining: "↓",
+};
+
 const TREND_COLORS: Record<SkillTrend, string> = {
   improving: "text-green-700",
   stable: "text-gray-500",
@@ -164,9 +170,13 @@ function SkillChartSkeleton() {
  * History timeline row.
  */
 function HistoryRow({ item }: { item: AssignmentHistoryItem }) {
+  const totalScore = Number(item.total_score);
+  const maxPossibleScore = Number(item.max_possible_score);
   const pct =
-    item.max_possible_score > 0
-      ? Math.round((item.total_score / item.max_possible_score) * 100)
+    Number.isFinite(totalScore) &&
+    Number.isFinite(maxPossibleScore) &&
+    maxPossibleScore > 0
+      ? Math.round((totalScore / maxPossibleScore) * 100)
       : 0;
   const date = new Date(item.locked_at).toLocaleDateString(undefined, {
     year: "numeric",
@@ -226,11 +236,13 @@ export default function StudentProfilePage() {
   });
 
   // Sync notes from server into form once the student data loads.
+  // Skip the reset when the form is dirty to avoid overwriting in-progress edits
+  // during background refetches (e.g., React Query refetchOnWindowFocus).
   useEffect(() => {
-    if (student) {
+    if (student && !isDirty) {
       reset({ notes: student.teacher_notes ?? "" });
     }
-  }, [student, reset]);
+  }, [student, isDirty, reset]);
 
   // ---- Assignment history query ----
   const {
@@ -380,7 +392,7 @@ export default function StudentProfilePage() {
                             aria-hidden="true"
                             className={`text-xs ${TREND_COLORS[d.trend]}`}
                           >
-                            {d.trend === "improving" ? "↑" : "→"}
+                            {TREND_ICONS[d.trend]}
                           </span>
                           <span className="capitalize">
                             {name.replace(/_/g, " ")}
@@ -412,7 +424,7 @@ export default function StudentProfilePage() {
                             aria-hidden="true"
                             className={`text-xs ${TREND_COLORS[d.trend]}`}
                           >
-                            {d.trend === "declining" ? "↓" : "→"}
+                            {TREND_ICONS[d.trend]}
                           </span>
                           <span className="capitalize">
                             {name.replace(/_/g, " ")}
