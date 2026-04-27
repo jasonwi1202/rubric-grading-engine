@@ -1,13 +1,17 @@
 """Pydantic schemas for the student and enrollment endpoints.
 
-No essay content or grade values appear here — those live on separate schemas.
 Student PII (name) is present in responses; it is never logged.
+Grade aggregate values (total_score, max_possible_score) appear in
+AssignmentHistoryItemResponse to support the student history endpoint.
+Essay content does not appear in any schema here.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -22,6 +26,52 @@ class StudentResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SkillDimensionResponse(BaseModel):
+    """Per-skill-dimension metadata within a student skill profile."""
+
+    avg_score: float
+    trend: Literal["improving", "stable", "declining"]
+    data_points: int
+    last_updated: datetime  # stored as ISO-8601 in JSONB; Pydantic coerces on read
+
+
+class SkillProfileResponse(BaseModel):
+    """Aggregated skill profile embedded in the student detail response."""
+
+    skill_scores: dict[str, SkillDimensionResponse]
+    assignment_count: int
+    last_updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class StudentWithProfileResponse(BaseModel):
+    """Student detail with an optional embedded skill profile.
+
+    ``skill_profile`` is ``null`` when the student has no locked grades yet.
+    """
+
+    id: uuid.UUID
+    teacher_id: uuid.UUID
+    full_name: str
+    external_id: str | None
+    created_at: datetime
+    skill_profile: SkillProfileResponse | None
+
+
+class AssignmentHistoryItemResponse(BaseModel):
+    """A single locked graded assignment in a student's history (newest-first)."""
+
+    assignment_id: uuid.UUID
+    assignment_title: str
+    class_id: uuid.UUID
+    grade_id: uuid.UUID
+    essay_id: uuid.UUID
+    total_score: Decimal
+    max_possible_score: Decimal
+    locked_at: datetime
 
 
 class EnrolledStudentResponse(BaseModel):
