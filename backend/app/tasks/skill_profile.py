@@ -88,7 +88,7 @@ async def _get_student_id_for_grade(
                 raise NotFoundError("Grade not found.")
             raise ForbiddenError("You do not have access to this grade.")
 
-    return result.student_id  # type: ignore[return-value]
+    return result.student_id  # type: ignore[return-value]  # SQLAlchemy Row column access returns Any; the column is nullable UUID
 
 
 async def _run_update_skill_profile(

@@ -427,6 +427,8 @@ async def compute_and_upsert_skill_profile(
         assignment_map[gid]["criterion_scores"].append((row.rubric_criterion_id, row.final_score))
 
     # Sort by locked_at ascending (oldest → newest) for consistent weighting.
+    # type: ignore because mypy infers the dict values as dict[str, Any], so
+    # the key lambda's return type is Any — not a valid sort key in strict mode.
     assignment_rows = sorted(assignment_map.values(), key=lambda a: a["locked_at"])  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
