@@ -6,7 +6,7 @@ Tests cover:
 - DELETE /api/v1/classes/{id}/students/{id}  — soft-remove, 404, 403, auth
 - GET  /api/v1/students/{id}                 — get with skill profile, 404, 403, auth
 - GET  /api/v1/students/{id}/history         — history, 404, 403, auth
-- PATCH /api/v1/students/{id}                — update, 404, 403, auth
+- PATCH /api/v1/students/{id}                — update name, update teacher_notes, clear teacher_notes, 404, 403, auth
 - Cross-teacher access returns 403 (tenant isolation)
 
 No real PostgreSQL.  All DB / service calls are mocked.  No student PII.
@@ -42,12 +42,14 @@ def _make_student_orm(
     student_id: uuid.UUID | None = None,
     full_name: str = "Student One",
     external_id: str | None = None,
+    teacher_notes: str | None = None,
 ) -> MagicMock:
     student = MagicMock()
     student.id = student_id or uuid.uuid4()
     student.teacher_id = teacher_id or uuid.uuid4()
     student.full_name = full_name
     student.external_id = external_id
+    student.teacher_notes = teacher_notes
     student.created_at = datetime.now(UTC)
     return student
 
@@ -607,6 +609,48 @@ class TestPatchStudent:
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["full_name"] == "Updated Name"
+
+    def test_updates_teacher_notes(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(
+            teacher_id=teacher.id, teacher_notes="Watch evidence integration."
+        )
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.update_student",
+                new_callable=AsyncMock,
+                return_value=student,
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/students/{student.id}",
+                json={"teacher_notes": "Watch evidence integration."},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["teacher_notes"] == "Watch evidence integration."
+
+    def test_clears_teacher_notes_with_null(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(teacher_id=teacher.id, teacher_notes=None)
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.update_student",
+                new_callable=AsyncMock,
+                return_value=student,
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/students/{student.id}",
+                json={"teacher_notes": None},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["teacher_notes"] is None
 
     def test_returns_404_when_not_found(self) -> None:
         teacher = _make_teacher()

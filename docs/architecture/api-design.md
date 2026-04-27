@@ -189,7 +189,7 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | DELETE | `/classes/{classId}/students/{studentId}` | Remove student from class (soft) |
 | GET | `/students/{studentId}` | Get student detail + skill profile |
 | GET | `/students/{studentId}/history` | Get all graded assignments for a student |
-| PATCH | `/students/{studentId}` | Update student name or external ID |
+| PATCH | `/students/{studentId}` | Update student name, external ID, or private teacher notes |
 
 #### CSV Roster Import Flow
 
