@@ -163,7 +163,6 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
       ? (students ?? []).map((enrolled) => ({
           queryKey: ["student", enrolled.student.id],
           queryFn: () => getStudentWithProfile(enrolled.student.id),
-          enabled: !!students,
         }))
       : [],
   });
@@ -201,13 +200,12 @@ export function SkillHeatmap({ classId }: SkillHeatmapProps) {
       if (sortKey === "student") {
         cmp = a.studentName.localeCompare(b.studentName);
       } else {
-        // Students with no data for the skill always sort to the end,
-        // regardless of sort direction. This is more intuitive than
-        // placing them before low-scoring students.
-        const aScore = a.skills?.[sortKey]?.avg_score;
-        const bScore = b.skills?.[sortKey]?.avg_score;
-        const aVal = aScore ?? Infinity;
-        const bVal = bScore ?? Infinity;
+        // Use Infinity as the sentinel for "no data" so that students with
+        // missing skill scores always sort to the end, regardless of sort
+        // direction. This is more intuitive than placing them before
+        // legitimately low-scoring students.
+        const aVal = a.skills?.[sortKey]?.avg_score ?? Infinity;
+        const bVal = b.skills?.[sortKey]?.avg_score ?? Infinity;
         cmp = aVal - bVal;
       }
       return sortDir === "asc" ? cmp : -cmp;

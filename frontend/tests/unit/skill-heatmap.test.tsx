@@ -425,12 +425,15 @@ describe("SkillHeatmap — sorting", () => {
             }),
           );
         }
-        return Promise.resolve(
-          makeStudentWithProfile("stu-002", "Alpha Student", {
-            thesis: 0.4,
-            evidence: 0.8,
-          }),
-        );
+        if (id === "stu-002") {
+          return Promise.resolve(
+            makeStudentWithProfile("stu-002", "Alpha Student", {
+              thesis: 0.4,
+              evidence: 0.8,
+            }),
+          );
+        }
+        return Promise.reject(new Error(`Unexpected student ID: ${id}`));
       });
 
     render(<SkillHeatmap classId={CLASS_ID} />, { wrapper });
