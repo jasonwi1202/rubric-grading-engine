@@ -628,11 +628,6 @@ describe("BrowserWritingInterface — paste sanitization", () => {
     vi.clearAllMocks();
     mockGetSnapshots.mockResolvedValue(emptySnapshot());
     mockSaveSnapshot.mockResolvedValue(snapshotSaveResult());
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("strips dangerous elements from pasted HTML", async () => {

@@ -114,6 +114,7 @@ export function BrowserWritingInterface({
   onSubmit,
   onCancel,
 }: BrowserWritingInterfaceProps) {
+  void _essayVersionId;
   const editorRef = useRef<HTMLDivElement>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [hasUnsaved, setHasUnsaved] = useState(false);

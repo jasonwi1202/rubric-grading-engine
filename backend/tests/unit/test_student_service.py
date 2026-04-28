@@ -461,9 +461,7 @@ class TestUpdateStudent:
         student_res = _scalar_result(student_orm)
         db.execute = AsyncMock(side_effect=[student_res])
 
-        result = await update_student(
-            db, teacher_id, student_id, clear_teacher_notes=True
-        )
+        result = await update_student(db, teacher_id, student_id, clear_teacher_notes=True)
 
         assert result.teacher_notes is None
         db.commit.assert_called_once()
@@ -525,9 +523,7 @@ class TestGetStudentWithProfile:
         student_orm = _make_student_orm(teacher_id, student_id)
 
         db = _make_db()
-        db.execute = AsyncMock(
-            side_effect=[_scalar_result(student_orm), _scalar_result(None)]
-        )
+        db.execute = AsyncMock(side_effect=[_scalar_result(student_orm), _scalar_result(None)])
 
         result_student, result_profile = await get_student_with_profile(db, teacher_id, student_id)
 

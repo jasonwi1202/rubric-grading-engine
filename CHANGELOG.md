@@ -12,6 +12,35 @@ Changes on active feature branches not yet merged to a release branch.
 
 ---
 
+## [v0.6.0] — M5 Student Intelligence — Unreleased (pending merge to main)
+
+### Added
+- **Skill normalization layer** — configurable JSON mapping from teacher-entered rubric criterion names to seven canonical skill dimensions (`thesis`, `evidence`, `organization`, `analysis`, `mechanics`, `voice`, `other`); fuzzy matching via `rapidfuzz` token-set ratio (default threshold: 80); unmapped criteria stored under `other`; overridable via `SKILL_NORMALIZATION_CONFIG_PATH` env var without code changes
+- **`StudentSkillProfile` model and migration** — new `student_skill_profiles` table; `skill_scores JSONB` stores per-dimension `final_score`, `trend`, and `data_point_count`; unique on `(student_id, teacher_id)`; upserted on every grade lock
+- **Skill profile update Celery task** — triggered automatically when a grade is locked; normalizes all locked criterion scores to skill dimensions; computes recency-weighted average; detects trend direction (improving/declining/stable); upserts `StudentSkillProfile`
+- **Student profile API** — `GET /students/{id}` now embeds `skill_profile` and `teacher_notes`; `GET /students/{id}/history` returns all graded assignments chronologically with per-criterion scores; `PATCH /students/{id}` accepts `teacher_notes`
+- **Student profile UI** — skill bar chart per dimension; assignment history timeline; strengths and gaps callout cards; growth indicators (improving/declining/stable); private teacher notes field with save confirmation
+- **Class insights API** — `GET /classes/{id}/insights` returns class average per skill dimension, score distributions, and common feedback issues ranked by frequency; `GET /assignments/{id}/analytics` returns per-assignment breakdown
+- **Skill heatmap UI** — class grid (students × skill dimensions), color-coded by normalized score, sortable by any skill column, links to individual student profiles
+- **Common issues and distribution UI** — ranked feedback-phrase list with student counts; score distribution histogram per criterion; cross-assignment trend chart for class averages
+- **In-browser essay writing interface** — rich-text writing area with debounced autosave (10 s); paste sanitization (strips `<script>`, event handlers, tracking pixels); word count display; cancel/submit flow; snapshots stored as JSONB in `essay_versions`
+- **Composition timeline and process signals** — snapshot history parsed into sessions; detects large paste events and rapid-completion events; computes session count, duration, inter-session gaps, and active writing time
+- **Writing process visibility UI** — visual session timeline in essay review interface; paste-event flags; snapshot viewer (read essay at any saved point); process insight callout (e.g., "Written in a single 20-minute session")
+- **E2E Journey 5** — Playwright: teacher locks grades across two assignments → student profile renders skill scores → skill history chart shows trend → strengths/gaps callouts match data (Closes MX.3e)
+
+### Security
+- `StudentSkillProfile` queries always include `teacher_id` in WHERE clause — no cross-teacher profile access possible
+- Essay snapshot content never emitted in log lines; only `essay_id` and operation type logged
+- Browser writing interface sanitizes pasted HTML before snapshot is saved or submitted
+- `teacher_notes` never surfaced on any student-facing code path (no student-facing UI exists)
+
+### Tests added
+- Backend: `test_skill_normalization` (mapping, fuzzy match, custom config), `test_student_skill_profile` (weighted average, trend, clamping, upsert), `test_skill_profile_task` (Celery task, lock trigger, multi-assignment), `test_class_insights_service`, `test_composition_timeline` (session detection, paste detection, active-writing-time), `test_student_service` (profile embed, history, notes PATCH), `test_browser_compose` (snapshot save/fetch, word count)
+- Frontend: `student-profile`, `skill-heatmap`, `class-insights-panel`, `writing-process-panel`, `browser-writing-interface` Vitest suites
+- E2E: Journey 5 Playwright spec (`student-profile.spec.ts`)
+
+---
+
 ## [v0.5.0] — M4 Workflow — Unreleased (pending merge to main)
 
 ### Added

@@ -16,6 +16,7 @@ export async function waitForEmail(
   subjectContains: string,
   timeoutMs = 10_000,
 ): Promise<{ subject: string; body: string; id: string }> {
+  const normalizedSubjectNeedle = subjectContains.toLowerCase();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const res = await fetch(`${MAILPIT_API}/api/v1/messages`);
@@ -30,7 +31,7 @@ export async function waitForEmail(
     const match = data.messages.find(
       (m) =>
         m.To.some((t) => t.Address === toAddress) &&
-        m.Subject.includes(subjectContains),
+        m.Subject.toLowerCase().includes(normalizedSubjectNeedle),
     );
     if (match) {
       const detail = await fetch(`${MAILPIT_API}/api/v1/message/${match.ID}`);

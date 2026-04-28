@@ -106,9 +106,7 @@ class EssayVersion(Base):
     # interface (M5-09).  Stores an ordered list of snapshot dicts:
     # [{"seq": int, "ts": str, "word_count": int, "html_content": str}, ...]
     # NULL for file-upload essays (no writing-process data captured).
-    writing_snapshots: Mapped[list[Any] | None] = mapped_column(
-        JSONB, nullable=True, default=None
-    )
+    writing_snapshots: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True, default=None)
     # Nullable — populated lazily by GET /essays/{id}/process-signals (M5-10).
     # Stores the derived composition timeline signals as a single JSONB object
     # so subsequent requests can return the cached result without re-computing.

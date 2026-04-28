@@ -23,7 +23,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **M2** | Public Website & Onboarding | Marketing site, legal pages, pricing, AI transparency page, sign-up, and trial onboarding wizard. Can be built in parallel with M3 once M1.2 and M1.3 are done. | 10 | ✅ Complete |
 | **M3** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 | ✅ Complete |
 | **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | ✅ Complete |
-| **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | 🔲 Planned |
+| **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | ✅ Complete |
 | **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | 🔲 Planned |
 | **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | 🔲 Planned |
 | **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | 🔄 Ongoing |
@@ -184,7 +184,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M5 — Student Intelligence
+## M5 — Student Intelligence ✅ Complete
 
 > Persistent skill profiles, longitudinal tracking, class insights, and writing process visibility.
 
@@ -192,27 +192,27 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 | # | Issue Title | Description |
 |---|---|---|
-| M5.1 | **[BLOCKER]** Skill normalization layer | Configurable mapping from rubric criterion names to canonical skill dimensions (`thesis`, `evidence`, `organization`, `analysis`, `mechanics`, `voice`). Fuzzy match at grade-write time. Unmapped criteria stored under `other`. Mapping stored as config, not hardcoded. |
-| M5.2 | `StudentSkillProfile` migration and model | Alembic migration. JSONB `skill_scores` column. Upsert logic. |
-| M5.3 | Skill profile update Celery task | Triggered on grade lock. Load all locked criterion scores for student. Normalize to skill dimensions. Compute weighted average, trend direction, and data point count per skill. Upsert `StudentSkillProfile`. |
-| M5.4 | Student profile API | `GET /students/{id}` with skill profile embedded. `GET /students/{id}/history` — all graded assignments chronologically. |
-| M5.5 | Student profile UI | Skill radar or bar chart per dimension. Historical timeline of assignments with scores. Strengths and gaps callouts. Growth indicators (improved / regressed). Private teacher notes field. |
+| ~~M5.1~~ | ~~**[BLOCKER]** Skill normalization layer~~ | ✅ Done — PR #168. Configurable mapping from rubric criterion names to canonical skill dimensions (`thesis`, `evidence`, `organization`, `analysis`, `mechanics`, `voice`). Fuzzy match at grade-write time. Unmapped criteria stored under `other`. Mapping stored as config, not hardcoded. |
+| ~~M5.2~~ | ~~`StudentSkillProfile` migration and model~~ | ✅ Done — PR #169. Alembic migration. JSONB `skill_scores` column. Upsert logic. |
+| ~~M5.3~~ | ~~Skill profile update Celery task~~ | ✅ Done — PR #170. Triggered on grade lock. Load all locked criterion scores for student. Normalize to skill dimensions. Compute weighted average, trend direction, and data point count per skill. Upsert `StudentSkillProfile`. |
+| ~~M5.4~~ | ~~Student profile API~~ | ✅ Done — PR #171. `GET /students/{id}` with skill profile embedded. `GET /students/{id}/history` — all graded assignments chronologically. |
+| ~~M5.5~~ | ~~Student profile UI~~ | ✅ Done — PR #172. Skill radar or bar chart per dimension. Historical timeline of assignments with scores. Strengths and gaps callouts. Growth indicators (improved / regressed). Private teacher notes field. |
 
 ### Class Insights
 
 | # | Issue Title | Description |
 |---|---|---|
-| M5.6 | Class insights API | `GET /classes/{id}/insights` — class average per skill dimension, score distributions, common issues aggregated from feedback. `GET /assignments/{id}/analytics` — per-assignment breakdown. |
-| M5.7 | Skill heatmap UI | Grid: students as rows, skills as columns. Color-coded by score. Sortable by skill. Links to individual student profile. |
-| M5.8 | Common issues and distribution UI | Ranked list of most-flagged issues across class with student counts. Histogram of score distribution per criterion. Outlier highlighting. Cross-assignment trend chart. |
+| ~~M5.6~~ | ~~Class insights API~~ | ✅ Done — PR #173. `GET /classes/{id}/insights` — class average per skill dimension, score distributions, common issues aggregated from feedback. `GET /assignments/{id}/analytics` — per-assignment breakdown. |
+| ~~M5.7~~ | ~~Skill heatmap UI~~ | ✅ Done — PR #174. Grid: students as rows, skills as columns. Color-coded by score. Sortable by skill. Links to individual student profile. |
+| ~~M5.8~~ | ~~Common issues and distribution UI~~ | ✅ Done — PR #175. Ranked list of most-flagged issues across class with student counts. Histogram of score distribution per criterion. Outlier highlighting. Cross-assignment trend chart. |
 
 ### Writing Process Visibility
 
 | # | Issue Title | Description |
 |---|---|---|
-| M5.9 | In-browser essay writing interface | Basic rich-text writing area within the assignment submission flow. Captures incremental changes (debounced saves every 10–15 seconds). Stores snapshots as JSONB in `essay_versions`. |
-| M5.10 | Composition timeline and process signals | Parse snapshot history into session timeline. Detect: large paste events, rapid-completion events. Compute: session count, duration, inter-session gaps, active writing time. |
-| M5.11 | Writing process visibility UI | Visual timeline in essay review interface. Session markers, paste event flags. Version snapshot viewer (view essay at any point in history). Process insight callout (e.g., "Written in a single 20-minute session"). |
+| ~~M5.9~~ | ~~In-browser essay writing interface~~ | ✅ Done — PR #176. Basic rich-text writing area within the assignment submission flow. Captures incremental changes (debounced saves every 10–15 seconds). Stores snapshots as JSONB in `essay_versions`. |
+| ~~M5.10~~ | ~~Composition timeline and process signals~~ | ✅ Done — PR #177. Parse snapshot history into session timeline. Detect: large paste events, rapid-completion events. Compute: session count, duration, inter-session gaps, active writing time. |
+| ~~M5.11~~ | ~~Writing process visibility UI~~ | ✅ Done — PR #178. Visual timeline in essay review interface. Session markers, paste event flags. Version snapshot viewer (view essay at any point in history). Process insight callout (e.g., "Written in a single 20-minute session"). |
 
 ---
 
@@ -281,6 +281,6 @@ These issues can be worked in parallel with any milestone they support.
 | ~~MX.3b~~ | ~~E2E Journey 2 — Upload, auto-assign, batch grade~~ | ✅ Done — PR #147. |
 | ~~MX.3c~~ | ~~E2E Journey 3 — Review, override, lock~~ | ✅ Done — PR #148. |
 | ~~MX.3d~~ | ~~E2E Journey 4 — Export PDF ZIP and CSV~~ | ✅ Done — PR #149. |
-| MX.3e | E2E Journey 5 — Student profile across two assignments | 🔲 Blocked — requires M5.2 and M5.5 (StudentSkillProfile). Branch off `release/m5`. |
+| ~~MX.3e~~ | ~~E2E Journey 5 — Student profile across two assignments~~ | ✅ Done — PR #179. |
 | ~~MX.4~~ | ~~Accessibility audit~~ | ✅ Done — PR #150. axe-core Playwright scan in CI, ARIA labels, focus management, WCAG 2.1 AA contrast. |
 | ~~MX.5~~ | ~~`prompt_version` field on Grade~~ | ✅ Done — PR #151. |
