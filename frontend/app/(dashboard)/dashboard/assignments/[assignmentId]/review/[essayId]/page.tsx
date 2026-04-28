@@ -113,7 +113,9 @@ export default function EssayReviewPage() {
     staleTime: 60_000,
   });
 
-  // Load writing process signals — 403/404 mean unavailable; null means no data.
+  // Load writing process signals — 403/404 are mapped to null (unavailable).
+  // A successful non-null response can still indicate no process data
+  // via `has_process_data: false`.
   const {
     data: processSignals,
     isLoading: processLoading,
@@ -135,8 +137,11 @@ export default function EssayReviewPage() {
 
   // Load snapshot metadata for the snapshot viewer — only relevant when
   // process data is available (has_process_data === true).
+  // `select` discards current_content (essay HTML) so it isn't held in
+  // the React Query cache beyond what the snapshot viewer needs.
   const {
-    data: snapshotState,
+    data: snapshotItems,
+    isError: snapshotError,
   } = useQuery({
     queryKey: ["snapshots", essayId],
     queryFn: async () => {
@@ -154,6 +159,7 @@ export default function EssayReviewPage() {
         throw err;
       }
     },
+    select: (data) => (data === null ? null : { snapshots: data.snapshots }),
     enabled: !!essayId && processSignals?.has_process_data === true,
     staleTime: 60_000,
   });
@@ -334,7 +340,8 @@ export default function EssayReviewPage() {
             ) : processSignals && processSignals.has_process_data ? (
               <WritingProcessPanel
                 signals={processSignals}
-                snapshots={snapshotState?.snapshots ?? []}
+                snapshots={snapshotError ? [] : (snapshotItems?.snapshots ?? [])}
+                snapshotLoadFailed={snapshotError}
               />
             ) : processSignals ? (
               <WritingProcessPanelEmpty />

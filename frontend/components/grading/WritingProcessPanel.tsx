@@ -28,6 +28,7 @@ import type {
   PasteEvent,
   RapidCompletionEvent,
 } from "@/lib/api/process-signals";
+import type { SnapshotItem } from "@/lib/api/essays";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -254,12 +255,6 @@ function GapBlock({ gapSeconds }: { gapSeconds: number }) {
 // Snapshot viewer
 // ---------------------------------------------------------------------------
 
-export interface SnapshotItem {
-  seq: number;
-  ts: string;
-  word_count: number;
-}
-
 function SnapshotViewer({ snapshots }: { snapshots: SnapshotItem[] }) {
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -375,6 +370,12 @@ export interface WritingProcessPanelProps {
    * Pass an empty array or omit if not yet loaded.
    */
   snapshots?: SnapshotItem[];
+  /**
+   * True when the snapshot query threw an unexpected error (not 403/404/422).
+   * When set, the snapshot viewer shows an error message instead of an empty
+   * list so that a load failure is not silently misread as "no snapshots".
+   */
+  snapshotLoadFailed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +385,7 @@ export interface WritingProcessPanelProps {
 export function WritingProcessPanel({
   signals,
   snapshots = [],
+  snapshotLoadFailed = false,
 }: WritingProcessPanelProps) {
   const [showSnapshots, setShowSnapshots] = useState(false);
 
@@ -514,7 +516,13 @@ export function WritingProcessPanel({
               className="mt-2"
               data-testid="snapshot-viewer"
             >
-              <SnapshotViewer snapshots={snapshots} />
+              {snapshotLoadFailed ? (
+                <p className="text-xs text-red-500" data-testid="snapshot-load-error">
+                  Snapshot history could not be loaded. Please refresh to try again.
+                </p>
+              ) : (
+                <SnapshotViewer snapshots={snapshots} />
+              )}
             </div>
           )}
         </div>
