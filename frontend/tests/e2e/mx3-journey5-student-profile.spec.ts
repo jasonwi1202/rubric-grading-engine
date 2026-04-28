@@ -139,19 +139,11 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
       page.getByRole("heading", { name: /skill profile/i }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // The skill profile update Celery task runs asynchronously after each grade
-    // lock.  Poll until the "Based on 2 assignments" text appears, confirming
-    // that both locked grades have been aggregated into the profile.
-    await expect
-      .poll(
-        async () => {
-          // Reload to pick up the latest profile data from React Query's refetch.
-          await page.reload();
-          return page.getByText(/based on 2 assignments/i).isVisible();
-        },
-        { timeout: 60_000, intervals: [3_000, 5_000, 5_000] },
-      )
-      .toBe(true);
+    // seedStudentProfileFixture waits for assignment_count >= 2 before this
+    // test starts, so this should be stable without long polling loops.
+    await expect(page.getByText(/based on 2 assignments/i)).toBeVisible({
+      timeout: 15_000,
+    });
 
     // At least one SkillBar progressbar should be visible in the chart.
     await expect(page.getByRole("progressbar").first()).toBeVisible({
