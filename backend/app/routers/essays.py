@@ -4,12 +4,15 @@ All endpoints require a valid JWT (``get_current_teacher`` dependency).
 No student PII is logged — only entity IDs appear in log output.
 
 Endpoints (``assignments_router``, prefix ``/assignments``):
-  POST  /assignments/{assignmentId}/essays — upload one or more essay files
-  GET   /assignments/{assignmentId}/essays — list essays with student info
+  POST  /assignments/{assignmentId}/essays         — upload one or more essay files
+  GET   /assignments/{assignmentId}/essays         — list essays with student info
+  POST  /assignments/{assignmentId}/essays/compose — create essay for in-browser composition (M5-09)
 
 Endpoints (``essay_router``, prefix ``/essays``):
   PATCH /essays/{essayId}                  — manually assign a student to an essay
   POST  /essays/{essayId}/grade/retry      — re-enqueue grading for a failed essay
+  POST  /essays/{essayId}/snapshots        — save a writing-process snapshot (M5-09)
+  GET   /essays/{essayId}/snapshots        — retrieve snapshots for editor recovery (M5-09)
 """
 
 from __future__ import annotations
@@ -29,9 +32,25 @@ from app.exceptions import FileTooLargeError
 from app.exceptions import ValidationError as DomainValidationError
 from app.models.user import User
 from app.schemas.batch_grading import RetryGradingRequest
-from app.schemas.essay import AssignEssayRequest, EssayListItemResponse, EssayUploadItemResponse
+from app.schemas.essay import (
+    AssignEssayRequest,
+    ComposeEssayRequest,
+    ComposeEssayResponse,
+    EssayListItemResponse,
+    EssayUploadItemResponse,
+    GetSnapshotsResponse,
+    WriteSnapshotRequest,
+    WriteSnapshotResponse,
+)
 from app.services.batch_grading import retry_essay_grading
-from app.services.essay import assign_essay_to_student, ingest_essay, list_essays_for_assignment
+from app.services.essay import (
+    assign_essay_to_student,
+    create_composed_essay,
+    get_writing_snapshots,
+    ingest_essay,
+    list_essays_for_assignment,
+    save_writing_snapshot,
+)
 from app.tasks.embedding import compute_essay_embedding as _compute_embedding_task
 
 logger = logging.getLogger(__name__)
@@ -285,4 +304,145 @@ async def retry_essay_grading_endpoint(
     return JSONResponse(
         status_code=202,
         content={"data": {"essay_id": str(essay_id), "status": "queued"}},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /assignments/{assignmentId}/essays/compose  (M5-09)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{assignment_id}/essays/compose",
+    status_code=201,
+    summary="Create a blank essay for in-browser composition",
+    response_model=ComposeEssayResponse,
+)
+async def compose_essay_endpoint(
+    assignment_id: uuid.UUID,
+    body: ComposeEssayRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Create an empty essay version ready for in-browser rich-text composition.
+
+    Unlike the file-upload endpoint, no file is provided.  The server creates
+    an :class:`~app.models.essay.Essay` record with status ``unassigned`` (or
+    ``queued`` when ``student_id`` is supplied) and an empty
+    :class:`~app.models.essay.EssayVersion` with ``writing_snapshots = []``.
+
+    The client then uses ``POST /essays/{essayId}/snapshots`` to persist
+    autosaved content and ``GET /essays/{essayId}/snapshots`` to recover the
+    editor state after a refresh.
+
+    Response body: ``{"data": ComposeEssayResponse}``
+
+    Returns 403 if the assignment belongs to a different teacher, or if the
+    supplied ``student_id`` is not enrolled in the assignment's class.
+    Returns 404 if the assignment (or supplied student) does not exist.
+    """
+    result = await create_composed_essay(
+        db=db,
+        teacher_id=teacher.id,
+        assignment_id=assignment_id,
+        student_id=body.student_id,
+    )
+    return JSONResponse(
+        status_code=201,
+        content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /essays/{essayId}/snapshots  (M5-09)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.post(
+    "/{essay_id}/snapshots",
+    status_code=200,
+    summary="Save a writing-process snapshot (autosave)",
+    response_model=WriteSnapshotResponse,
+)
+async def save_snapshot_endpoint(
+    essay_id: uuid.UUID,
+    body: WriteSnapshotRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Append a writing-process snapshot to the essay version.
+
+    Called by the browser writing interface on each debounced autosave tick
+    (every 10–15 seconds of activity).  The ``html_content`` is the raw
+    innerHTML of the rich-text editor; ``word_count`` is pre-computed by the
+    client (HTML tags stripped, split on whitespace).
+
+    The server:
+    1. Verifies the essay belongs to the authenticated teacher.
+    2. Strips HTML tags to derive a grading-compatible plain-text ``content``.
+    3. Appends a snapshot record to ``writing_snapshots`` JSONB.
+    4. Updates ``EssayVersion.content`` and ``word_count``.
+
+    Response body: ``{"data": WriteSnapshotResponse}``
+
+    Returns 403 if the essay belongs to a different teacher.
+    Returns 404 if the essay or its version does not exist.
+
+    Security: no essay content or student PII appears in log output; only
+    entity IDs (``essay_id``, ``essay_version_id``) are logged.
+    """
+    result = await save_writing_snapshot(
+        db=db,
+        teacher_id=teacher.id,
+        essay_id=essay_id,
+        html_content=body.html_content,
+        word_count=body.word_count,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/snapshots  (M5-09)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.get(
+    "/{essay_id}/snapshots",
+    summary="Retrieve writing snapshots for editor state recovery",
+    response_model=GetSnapshotsResponse,
+)
+async def get_snapshots_endpoint(
+    essay_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return the current HTML content and snapshot metadata for a browser-composed essay.
+
+    The browser writing interface calls this endpoint on mount to restore
+    the editor state after a page refresh or navigation event.
+
+    The response includes:
+    - ``current_content``: the latest snapshot's ``html_content`` (ready to
+      inject into the editor's ``innerHTML``).
+    - ``word_count``: current word count.
+    - ``snapshots``: lightweight metadata (seq, ts, word_count) for the full
+      snapshot history.  Individual ``html_content`` values of earlier
+      snapshots are not returned in this response.
+
+    Response body: ``{"data": GetSnapshotsResponse}``
+
+    Returns 403 if the essay belongs to a different teacher.
+    Returns 404 if the essay or its version does not exist.
+    """
+    result = await get_writing_snapshots(
+        db=db,
+        teacher_id=teacher.id,
+        essay_id=essay_id,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": result.model_dump(mode="json")},
     )

@@ -7,9 +7,10 @@
  *
  * Flow:
  *   1. Teacher clicks "Upload essays" → EssayUploadDialog opens.
- *   2. After upload, uploaded results feed the AutoAssignmentReview.
- *   3. Teacher resolves any unassigned/ambiguous essays.
- *   4. Teacher clicks "Proceed to grading" → navigates to the grading page.
+ *   2. Teacher clicks "Write in browser" → BrowserWritingInterface opens.
+ *   3. After upload/composition, results feed the AutoAssignmentReview.
+ *   4. Teacher resolves any unassigned/ambiguous essays.
+ *   5. Teacher clicks "Proceed to grading" → navigates to the grading page.
  *
  * All server state via React Query. No useEffect+fetch.
  * Security: no student PII in logs or error messages; entity IDs only.
@@ -17,20 +18,25 @@
 
 import { useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { listEssays } from "@/lib/api/essays";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { listEssays, createComposedEssay } from "@/lib/api/essays";
 import { listStudents } from "@/lib/api/classes";
 import { EssayUploadDialog } from "@/components/essays/EssayUploadDialog";
 import { AutoAssignmentReview } from "@/components/essays/AutoAssignmentReview";
+import { BrowserWritingInterface } from "@/components/essays/BrowserWritingInterface";
 
 export default function AssignmentEssaysPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
   const [uploadOpen, setUploadOpen] = useState(false);
-  // After an upload, we merge server results into the review list via a refetch
   const [hasUploaded, setHasUploaded] = useState(false);
+
+  // Active browser-composition session; null when the interface is not open.
+  const [composingEssayId, setComposingEssayId] = useState<string | null>(null);
+  const [composingVersionId, setComposingVersionId] = useState<string | null>(null);
 
   // Fetch existing essays for this assignment
   const {
@@ -61,9 +67,32 @@ export default function AssignmentEssaysPage() {
     enabled: !!classId,
   });
 
+  // Mutation to start an in-browser composition session
+  const { mutate: startCompose, isPending: isStartingCompose, error: composeError } = useMutation({
+    mutationFn: () => createComposedEssay(assignmentId),
+    onSuccess: (result) => {
+      setComposingEssayId(result.essay_id);
+      setComposingVersionId(result.essay_version_id);
+    },
+  });
+
   const handleUploaded = async () => {
     setHasUploaded(true);
     await refetchEssays();
+  };
+
+  const handleCompositionComplete = async () => {
+    setComposingEssayId(null);
+    setComposingVersionId(null);
+    setHasUploaded(true);
+    // Invalidate essay list so the newly composed essay appears in the review table.
+    await queryClient.invalidateQueries({ queryKey: ["essays", assignmentId] });
+    await refetchEssays();
+  };
+
+  const handleCompositionCancel = () => {
+    setComposingEssayId(null);
+    setComposingVersionId(null);
   };
 
   const handleProceed = () => {
@@ -76,19 +105,60 @@ export default function AssignmentEssaysPage() {
   const showReview =
     hasUploaded || (essays && essays.length > 0);
 
+  // When a composition session is active, render the writing interface instead
+  // of the normal page content.
+  if (composingEssayId && composingVersionId) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mb-6 flex items-center gap-4">
+          <h1 className="text-2xl font-bold text-gray-900">Write essay</h1>
+          <p className="text-sm text-gray-500">
+            Your progress is saved automatically every few seconds.
+          </p>
+        </div>
+        <BrowserWritingInterface
+          essayId={composingEssayId}
+          essayVersionId={composingVersionId}
+          onSubmit={handleCompositionComplete}
+          onCancel={handleCompositionCancel}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       {/* Page header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">Essays</h1>
-        <button
-          type="button"
-          onClick={() => setUploadOpen(true)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          Upload essays
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => startCompose()}
+            disabled={isStartingCompose}
+            className="rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-600 shadow-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+          >
+            {isStartingCompose ? "Opening\u2026" : "Write in browser"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setUploadOpen(true)}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            Upload essays
+          </button>
+        </div>
       </div>
+
+      {/* Compose error */}
+      {composeError && (
+        <p
+          role="alert"
+          className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          Failed to start writing session. Please try again.
+        </p>
+      )}
 
       {/* Loading skeleton */}
       {isLoading && (
@@ -130,14 +200,24 @@ export default function AssignmentEssaysPage() {
       {!isLoading && !essaysError && !showReview && (
         <div className="rounded-lg border-2 border-dashed border-gray-200 p-10 text-center">
           <p className="text-sm text-gray-500">
-            No essays uploaded yet.{" "}
+            No essays yet.{" "}
             <button
               type="button"
               onClick={() => setUploadOpen(true)}
               className="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              Upload your first essay
+              Upload essays
             </button>
+            {" "}or{" "}
+            <button
+              type="button"
+              onClick={() => startCompose()}
+              disabled={isStartingCompose}
+              className="font-medium text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              write directly in the browser
+            </button>
+            .
           </p>
         </div>
       )}
@@ -162,3 +242,4 @@ export default function AssignmentEssaysPage() {
     </div>
   );
 }
+

@@ -768,3 +768,280 @@ async def assign_essay_to_student(
         submitted_at=version.submitted_at,
         auto_assign_status="assigned",
     )
+
+
+# ---------------------------------------------------------------------------
+# Browser composition — M5-09
+# ---------------------------------------------------------------------------
+
+import html as _html_module  # noqa: E402 — placed after existing imports for clarity
+import re as _re  # noqa: E402
+
+from app.schemas.essay import (  # noqa: E402
+    ComposeEssayResponse,
+    GetSnapshotsResponse,
+    SnapshotItem,
+    WriteSnapshotResponse,
+)
+
+
+def _strip_html_tags(html_content: str) -> str:
+    """Return plain text by stripping all HTML tags and decoding entities.
+
+    Used to derive a grading-compatible plain-text ``content`` value from the
+    browser editor's innerHTML.  The result is never executed — it is stored
+    and used only as plain-text input to the LLM grading pipeline.
+    """
+    # Replace block-level tags with newlines to preserve paragraph structure.
+    html_content = _re.sub(r"<(br|p|div|li|h[1-6])[^>]*>", "\n", html_content, flags=_re.IGNORECASE)
+    # Strip all remaining tags.
+    text = _re.sub(r"<[^>]+>", "", html_content)
+    # Decode HTML entities (e.g. &amp; → &, &nbsp; → space).
+    text = _html_module.unescape(text)
+    return normalize_text(text)
+
+
+async def create_composed_essay(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    student_id: uuid.UUID | None = None,
+) -> ComposeEssayResponse:
+    """Create an empty essay version for in-browser composition.
+
+    Equivalent to starting a blank document — no file upload or text extraction
+    is performed.  The essay version is created with empty ``content`` and an
+    empty ``writing_snapshots`` list so subsequent snapshot saves can append
+    to it.
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        assignment_id: Target assignment UUID.
+        student_id: Optional — if provided, the essay is immediately assigned
+            to this student.  The student must be owned by *teacher_id* and
+            actively enrolled in the assignment's class.
+
+    Returns:
+        A :class:`~app.schemas.essay.ComposeEssayResponse` with the new essay
+        and version IDs.
+
+    Raises:
+        NotFoundError:  Assignment does not exist, or *student_id* is provided
+            but the student is not found for this teacher.
+        ForbiddenError: Assignment belongs to a different teacher, or
+            *student_id* is provided but the student is not enrolled.
+
+    No student PII appears in any log output.
+    """
+    assignment = await _get_assignment_for_teacher(db, assignment_id, teacher_id)
+
+    if student_id is not None:
+        await _validate_student_for_assignment(db, student_id, teacher_id, assignment.class_id)
+
+    essay = Essay(
+        assignment_id=assignment.id,
+        student_id=student_id,
+        status=EssayStatus.unassigned if student_id is None else EssayStatus.queued,
+    )
+    db.add(essay)
+    await db.flush()  # populate essay.id
+
+    version = EssayVersion(
+        essay_id=essay.id,
+        version_number=1,
+        content="",
+        file_storage_key=None,
+        word_count=0,
+        writing_snapshots=[],  # empty list signals browser-composed essay
+    )
+    db.add(version)
+
+    await db.commit()
+    await db.refresh(essay)
+    await db.refresh(version)
+
+    logger.info(
+        "Browser-composed essay created",
+        extra={
+            "essay_id": str(essay.id),
+            "essay_version_id": str(version.id),
+            "assignment_id": str(assignment.id),
+        },
+    )
+
+    return ComposeEssayResponse(
+        essay_id=essay.id,
+        essay_version_id=version.id,
+        assignment_id=essay.assignment_id,
+        student_id=essay.student_id,
+        status=essay.status,
+        current_content="",
+        word_count=0,
+    )
+
+
+async def save_writing_snapshot(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+    html_content: str,
+    word_count: int,
+) -> WriteSnapshotResponse:
+    """Append a writing-process snapshot to the essay version and update content.
+
+    Called by the browser autosave on each debounce tick.  Each call:
+    1. Verifies the essay belongs to *teacher_id* (tenant isolation).
+    2. Loads the latest essay version.
+    3. Strips HTML tags → derives plain-text ``content`` for the LLM pipeline.
+    4. Appends a snapshot record (seq, ts, word_count, html_content) to the
+       version's ``writing_snapshots`` JSONB array.
+    5. Updates ``EssayVersion.content`` and ``word_count``.
+    6. Commits.
+
+    The function is idempotent to duplicate payloads — identical content sent
+    twice simply adds a second snapshot entry (no deduplication is performed
+    at this layer; the timeline consumer in M5-10 is responsible for
+    coalescing identical snapshots).
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: Target essay UUID.
+        html_content: Raw innerHTML string from the browser editor.
+        word_count: Pre-computed word count (HTML tags stripped, split on whitespace).
+
+    Returns:
+        A :class:`~app.schemas.essay.WriteSnapshotResponse`.
+
+    Raises:
+        NotFoundError:  Essay or its latest version is not found.
+        ForbiddenError: Essay belongs to a different teacher.
+
+    No student PII appears in any log output.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415 — local import for clarity
+
+    essay = await _get_essay_for_teacher(db, essay_id, teacher_id)
+
+    # Load the latest essay version.
+    version_result = await db.execute(
+        select(EssayVersion)
+        .where(EssayVersion.essay_id == essay_id)
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    version = version_result.scalar_one_or_none()
+    if version is None:
+        raise NotFoundError("Essay version not found.")
+
+    # Build the new snapshot entry.
+    existing: list = list(version.writing_snapshots or [])
+    seq = len(existing) + 1
+    ts = datetime.now(UTC).isoformat()
+    snapshot = {
+        "seq": seq,
+        "ts": ts,
+        "word_count": word_count,
+        "html_content": html_content,
+    }
+    existing.append(snapshot)
+
+    # Derive plain-text content from HTML (for LLM grading compatibility).
+    plain_text = _strip_html_tags(html_content)
+
+    # Update the version in-place.  The JSONB column requires a full
+    # replacement (SQLAlchemy does not track list mutations automatically).
+    version.writing_snapshots = existing
+    version.content = plain_text
+    version.word_count = word_count
+
+    # Update the parent essay's submitted_at timestamp on each save so the
+    # essay list reflects recency.
+    essay.submitted_at = datetime.now(UTC)
+
+    await db.commit()
+    await db.refresh(version)
+
+    logger.info(
+        "Writing snapshot saved",
+        extra={
+            "essay_id": str(essay_id),
+            "essay_version_id": str(version.id),
+            "snapshot_seq": seq,
+        },
+    )
+
+    return WriteSnapshotResponse(
+        essay_id=essay_id,
+        essay_version_id=version.id,
+        snapshot_count=seq,
+        word_count=word_count,
+        saved_at=datetime.now(UTC),
+    )
+
+
+async def get_writing_snapshots(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+) -> GetSnapshotsResponse:
+    """Return current content and snapshot metadata for a browser-composed essay.
+
+    Used by the browser writing interface to recover editor state after a
+    page refresh or navigation.
+
+    The response includes the current ``html_content`` (from the latest
+    snapshot) and lightweight snapshot metadata (seq, ts, word_count) for
+    the full history.  The individual ``html_content`` values of earlier
+    snapshots are not returned here to keep the response size manageable;
+    they will be used by the writing-process timeline (M5-10, M5-11).
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: Target essay UUID.
+
+    Returns:
+        A :class:`~app.schemas.essay.GetSnapshotsResponse`.
+
+    Raises:
+        NotFoundError:  Essay or its latest version is not found.
+        ForbiddenError: Essay belongs to a different teacher.
+
+    No student PII appears in any log output.
+    """
+    await _get_essay_for_teacher(db, essay_id, teacher_id)
+
+    version_result = await db.execute(
+        select(EssayVersion)
+        .where(EssayVersion.essay_id == essay_id)
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    version = version_result.scalar_one_or_none()
+    if version is None:
+        raise NotFoundError("Essay version not found.")
+
+    raw_snapshots: list = list(version.writing_snapshots or [])
+
+    # Recover the latest HTML content from the most recent snapshot for
+    # editor restoration.  Falls back to empty string for newly created essays.
+    latest_html = raw_snapshots[-1]["html_content"] if raw_snapshots else ""
+
+    snapshot_items = [
+        SnapshotItem(
+            seq=s["seq"],
+            ts=s["ts"],
+            word_count=s["word_count"],
+        )
+        for s in raw_snapshots
+    ]
+
+    return GetSnapshotsResponse(
+        essay_id=essay_id,
+        essay_version_id=version.id,
+        current_content=latest_html,
+        word_count=version.word_count,
+        snapshots=snapshot_items,
+    )

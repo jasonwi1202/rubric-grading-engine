@@ -10,7 +10,7 @@
  * - File type and size are validated client-side (Zod) and server-side (MIME).
  */
 
-import { apiGet, apiPatch, apiPostForm } from "@/lib/api/client";
+import { apiGet, apiPatch, apiPost, apiPostForm } from "@/lib/api/client";
 import type { ConfidenceLevel } from "@/lib/api/grades";
 
 // ---------------------------------------------------------------------------
@@ -137,6 +137,94 @@ export async function assignEssay(
   data: AssignEssayRequest,
 ): Promise<EssayListItem> {
   return apiPatch<EssayListItem>(`/essays/${essayId}`, data);
+}
+
+// ---------------------------------------------------------------------------
+// Browser composition — M5-09
+// ---------------------------------------------------------------------------
+
+/** Request body for POST /assignments/{id}/essays/compose */
+export interface ComposeEssayRequest {
+  student_id?: string | null;
+}
+
+/** Response from POST /assignments/{id}/essays/compose */
+export interface ComposedEssay {
+  essay_id: string;
+  essay_version_id: string;
+  assignment_id: string;
+  student_id: string | null;
+  status: string;
+  current_content: string;
+  word_count: number;
+}
+
+/** Request body for POST /essays/{id}/snapshots */
+export interface WriteSnapshotRequest {
+  html_content: string;
+  word_count: number;
+}
+
+/** Response from POST /essays/{id}/snapshots */
+export interface WriteSnapshotResponse {
+  essay_id: string;
+  essay_version_id: string;
+  snapshot_count: number;
+  word_count: number;
+  saved_at: string;
+}
+
+/** One snapshot's metadata (no html_content returned in list) */
+export interface SnapshotItem {
+  seq: number;
+  ts: string;
+  word_count: number;
+}
+
+/** Response from GET /essays/{id}/snapshots */
+export interface EssaySnapshotState {
+  essay_id: string;
+  essay_version_id: string;
+  /** Latest HTML content for editor restoration after refresh */
+  current_content: string;
+  word_count: number;
+  snapshots: SnapshotItem[];
+}
+
+/**
+ * Create a blank essay for in-browser composition.
+ * Calls POST /api/v1/assignments/{assignmentId}/essays/compose.
+ *
+ * Returns the new essay_id and essay_version_id so the writing interface
+ * can immediately start saving snapshots.
+ */
+export async function createComposedEssay(
+  assignmentId: string,
+  payload: ComposeEssayRequest = {},
+): Promise<ComposedEssay> {
+  return apiPost<ComposedEssay>(`/assignments/${assignmentId}/essays/compose`, payload);
+}
+
+/**
+ * Save a writing-process snapshot (autosave tick).
+ * Calls POST /api/v1/essays/{essayId}/snapshots.
+ *
+ * Security: the content is sent to the backend only; never stored in browser
+ * storage (localStorage / sessionStorage / cookies).
+ */
+export async function saveSnapshot(
+  essayId: string,
+  data: WriteSnapshotRequest,
+): Promise<WriteSnapshotResponse> {
+  return apiPost<WriteSnapshotResponse>(`/essays/${essayId}/snapshots`, data);
+}
+
+/**
+ * Retrieve writing snapshots for editor state recovery after refresh.
+ * Calls GET /api/v1/essays/{essayId}/snapshots.
+ */
+export async function getSnapshots(essayId: string): Promise<EssaySnapshotState> {
+  return apiGet<EssaySnapshotState>(`/essays/${essayId}/snapshots`);
 }
 
 /**
