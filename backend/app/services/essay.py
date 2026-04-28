@@ -54,13 +54,13 @@ from app.schemas.essay import (
     ComposeEssayResponse,
     EssayListItemResponse,
     GetSnapshotsResponse,
+    PasteEventResponse,
     ProcessSignalsResponse,
     RapidCompletionEventResponse,
     SessionSegmentResponse,
     SnapshotItem,
     WriteSnapshotResponse,
 )
-from app.schemas.essay import PasteEventResponse as PasteEventSchemaResponse
 from app.services.composition_timeline import analyze_writing_process
 from app.services.student_matching import HEADER_CHAR_LIMIT, AutoAssignResult, match_student
 from app.storage.s3 import delete_file, upload_file
@@ -1220,7 +1220,7 @@ async def get_process_signals(
         raise NotFoundError("Essay version not found.")
 
     raw_snapshots: list[dict[str, Any]] = (
-        list(version.writing_snapshots) if version.writing_snapshots is not None else []
+        version.writing_snapshots if version.writing_snapshots is not None else []
     )
 
     # Determine whether the cached signals are still valid.  We compare the
@@ -1325,7 +1325,7 @@ async def get_process_signals(
         active_writing_seconds=cached["active_writing_seconds"],
         total_elapsed_seconds=cached["total_elapsed_seconds"],
         paste_events=[
-            PasteEventSchemaResponse(
+            PasteEventResponse(
                 snapshot_seq=e["snapshot_seq"],
                 occurred_at=datetime.fromisoformat(e["occurred_at"]),
                 words_before=e["words_before"],

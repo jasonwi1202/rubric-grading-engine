@@ -141,9 +141,7 @@ def _parse_snapshots(raw: list[dict]) -> list[_ParsedSnap]:
             seq = int(snap["seq"])
             ts_raw = str(snap["ts"])
             ts = datetime.fromisoformat(ts_raw)
-            ts = (
-                    ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
-                )
+            ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
             word_count = max(0, int(snap["word_count"]))
             parsed.append((seq, ts, word_count))
         except (KeyError, ValueError, TypeError):
