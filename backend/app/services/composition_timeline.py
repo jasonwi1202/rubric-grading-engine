@@ -235,7 +235,7 @@ def analyze_writing_process(
 
     for i in range(1, len(parsed)):
         gap = (parsed[i][1] - parsed[i - 1][1]).total_seconds()
-        if gap > session_gap_seconds:
+        if gap >= session_gap_seconds:
             sessions.append(_make_session(current, len(sessions)))
             current = [parsed[i]]
         else:
@@ -260,25 +260,26 @@ def analyze_writing_process(
     # Paste event detection
     # -----------------------------------------------------------------------
     paste_events: list[PasteEvent] = []
-    for i in range(1, len(parsed)):
-        seq, ts, wc = parsed[i]
-        prev_wc = parsed[i - 1][2]
-        delta = wc - prev_wc
-        if delta < paste_min_words:
-            continue
-        if final_word_count > 0 and (delta / final_word_count) < paste_min_fraction:
-            continue
-        session_index = _find_session_index(sessions, ts)
-        paste_events.append(
-            PasteEvent(
-                snapshot_seq=seq,
-                occurred_at=ts,
-                words_before=prev_wc,
-                words_after=wc,
-                words_added=delta,
-                session_index=session_index,
+    if final_word_count > 0:
+        for i in range(1, len(parsed)):
+            seq, ts, wc = parsed[i]
+            prev_wc = parsed[i - 1][2]
+            delta = wc - prev_wc
+            if delta < paste_min_words:
+                continue
+            if (delta / final_word_count) < paste_min_fraction:
+                continue
+            session_index = _find_session_index(sessions, ts)
+            paste_events.append(
+                PasteEvent(
+                    snapshot_seq=seq,
+                    occurred_at=ts,
+                    words_before=prev_wc,
+                    words_after=wc,
+                    words_added=delta,
+                    session_index=session_index,
+                )
             )
-        )
 
     # -----------------------------------------------------------------------
     # Rapid-completion detection

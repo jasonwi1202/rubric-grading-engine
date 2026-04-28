@@ -710,7 +710,7 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
 }
 ```
 
-Signals are computed lazily on first request and cached in `EssayVersion.process_signals`. The cache is automatically invalidated when new snapshots are added (detected by comparing snapshot counts). When `has_process_data` is `false`, the essay was submitted as a file upload — all list fields are empty and numeric metrics are zero. `paste_events` and `rapid_completion_events` are informational signals for teacher review, not definitive findings — they should always be presented with appropriate context. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`.
+Signals are computed lazily on first request and cached in `EssayVersion.process_signals`. The cache is automatically invalidated when new snapshots are added (detected by comparing snapshot counts). When `has_process_data` is `false`, no usable writing-process data was available for that essay version — for example, the essay may have been submitted via file upload, the snapshot list may be empty, or the stored snapshots may be entirely unparseable. In that case, all list fields are empty and numeric metrics are zero. `paste_events` and `rapid_completion_events` are informational signals for teacher review, not definitive findings — they should always be presented with appropriate context. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`.
 
 ---
 

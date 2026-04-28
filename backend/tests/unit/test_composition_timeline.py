@@ -141,6 +141,26 @@ class TestSessionSegmentation:
         gap = result.inter_session_gaps_seconds[0]
         assert gap > 0
 
+    def test_gap_exactly_at_threshold_creates_new_session(self) -> None:
+        """A gap of exactly 30 minutes (= session_gap_seconds) → two sessions.
+
+        The boundary is inclusive: gaps >= threshold open a new session.
+        """
+        session1 = [_snap(1, _ts(0), 0), _snap(2, _ts(5), 100)]
+        # Exactly 30 minutes (1800 s) after snap 2 at t=5 min → snap 3 at t=35 min
+        session2 = [_snap(3, _ts(35), 100), _snap(4, _ts(40), 150)]
+        snaps = session1 + session2
+        result = analyze_writing_process(snaps, session_gap_seconds=1800.0)
+        assert result.session_count == 2
+        assert len(result.inter_session_gaps_seconds) == 1
+
+    def test_gap_one_second_below_threshold_stays_same_session(self) -> None:
+        """A gap of 1799 s (< 1800 s threshold) stays in the same session."""
+        # snap 1 at t=0, snap 2 at t=29min59s (1799 s gap)
+        snaps = [_snap(1, _ts(0), 0), _snap(2, _ts(29.983), 100)]
+        result = analyze_writing_process(snaps, session_gap_seconds=1800.0)
+        assert result.session_count == 1
+
     def test_multiple_sessions_all_indexed_correctly(self) -> None:
         """Three sessions separated by long gaps."""
         s1 = [_snap(1, _ts(0), 0), _snap(2, _ts(5), 50)]

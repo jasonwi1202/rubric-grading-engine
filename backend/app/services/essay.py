@@ -1184,9 +1184,12 @@ async def get_process_signals(
     snapshot counts), the signals are re-computed and the cached value is
     updated.
 
-    For file-upload essays (``writing_snapshots IS NULL``) the response has
-    ``has_process_data=False`` and all list fields are empty.  This is not an
-    error — the caller can surface a plain-language explanation to the teacher.
+    If no usable writing-process snapshot data is available, the response has
+    ``has_process_data=False`` and all list fields are empty.  This includes
+    file-upload essays (``writing_snapshots IS NULL``) as well as browser-
+    composed essays with empty or otherwise unusable snapshot data.  This is
+    not an error — the caller can surface a plain-language explanation to the
+    teacher.
 
     Args:
         db: Async database session.
@@ -1226,13 +1229,42 @@ async def get_process_signals(
     # Determine whether the cached signals are still valid.  We compare the
     # snapshot count stored in the cache with the current length of
     # writing_snapshots.  A mismatch means new snapshots were added and the
-    # cache must be invalidated.
+    # cache must be invalidated. Because process_signals is stored in JSONB,
+    # treat any parse/validation failure as a cache miss and recompute.
     cached: dict[str, Any] | None = version.process_signals
-    cached_snapshot_count: int = int(cached.get("snapshot_count", -1)) if cached else -1
     current_snapshot_count = len(raw_snapshots)
 
+    _REQUIRED_CACHE_KEYS = {
+        "snapshot_count",
+        "computed_at",
+        "has_process_data",
+        "session_count",
+        "active_writing_seconds",
+        "total_elapsed_seconds",
+        "inter_session_gaps_seconds",
+        "sessions",
+        "paste_events",
+        "rapid_completion_events",
+    }
+
+    cached_snapshot_count = -1
+    cache_is_valid = False
+    if cached is not None:
+        try:
+            cache_is_valid = (
+                _REQUIRED_CACHE_KEYS.issubset(cached)
+                and isinstance(cached.get("sessions"), list)
+                and isinstance(cached.get("paste_events"), list)
+                and isinstance(cached.get("rapid_completion_events"), list)
+            )
+            if cache_is_valid:
+                cached_snapshot_count = int(cached["snapshot_count"])
+        except (TypeError, ValueError, KeyError):
+            cache_is_valid = False
+            cached_snapshot_count = -1
+
     needs_compute = (
-        cached is None
+        not cache_is_valid
         or cached_snapshot_count != current_snapshot_count
     )
 

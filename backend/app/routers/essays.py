@@ -475,8 +475,9 @@ async def get_process_signals_endpoint(
     - Summary metrics: ``session_count``, ``active_writing_seconds``,
       ``total_elapsed_seconds``, ``inter_session_gaps_seconds``.
 
-    When ``has_process_data`` is ``false`` the essay was submitted as a file
-    upload (no writing-process data captured).  All list fields are empty and
+    When ``has_process_data`` is ``false`` no usable writing-process data is
+    available for the essay. This can happen for file uploads, or when saved
+    snapshot data is missing, empty, or invalid. All list fields are empty and
     numeric metrics are zero.  This is not an error — the frontend should
     surface a plain-language explanation to the teacher.
 

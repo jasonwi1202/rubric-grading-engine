@@ -218,9 +218,11 @@ class ProcessSignalsResponse(BaseModel):
     Carries the full composition timeline analysis: session segments,
     detected events, and summary metrics.
 
-    When ``has_process_data`` is ``False`` the essay was submitted as a file
-    upload (no writing-process data was captured) and all list fields are
-    empty with numeric metrics set to zero.
+    When ``has_process_data`` is ``False`` there is no analyzable
+    writing-process data for the essay version. This includes file-upload
+    essays (no writing-process data was captured) and cases where the
+    snapshot history is empty or contains no valid snapshots to analyze. In
+    that case, all list fields are empty and numeric metrics are set to zero.
     """
 
     essay_id: uuid.UUID
