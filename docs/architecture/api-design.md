@@ -544,6 +544,7 @@ Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND`
 | Method | Path | Description |
 |---|---|---|
 | POST | `/assignments/{assignmentId}/essays` | Upload one or more essays |
+| POST | `/assignments/{assignmentId}/essays/compose` | Create a blank essay for in-browser composition (M5-09) |
 | GET | `/assignments/{assignmentId}/essays` | List essays with status and student assignment |
 | GET | `/essays/{essayId}` | Get essay detail with current grade |
 | PATCH | `/essays/{essayId}` | Assign to student (manual assignment) |
@@ -553,6 +554,8 @@ Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND`
 | PATCH | `/integrity-reports/{reportId}/status` | Update teacher review status (`reviewed_clear` or `flagged`) |
 | GET | `/assignments/{assignmentId}/integrity/summary` | Class-level integrity signal counts (flagged / clear / pending) |
 | POST | `/essays/{essayId}/grade/retry` | Re-enqueue a single failed essay for grading |
+| POST | `/essays/{essayId}/snapshots` | Save a writing-process snapshot (autosave, M5-09) |
+| GET | `/essays/{essayId}/snapshots` | Retrieve writing snapshots for editor state recovery (M5-09) |
 
 **POST /assignments/{id}/essays** — multipart form:
 - `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
@@ -593,6 +596,79 @@ Errors: `404 NOT_FOUND` (assignment not found, or student not found for this tea
 Re-enqueues a single essay for grading. Only available when the essay has `status=queued` (essays fail and are reverted to `queued` after exhausting retries). Returns `202` immediately.
 
 Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (essay not found), `409 CONFLICT` (essay is currently being graded or has already been completed).
+
+**POST /assignments/{id}/essays/compose** — JSON body (M5-09):
+```json
+{
+  "student_id": null
+}
+```
+- `student_id`: optional — if provided, the new essay is immediately assigned to this student (must be enrolled in the assignment's class)
+
+Creates a blank `Essay` and `EssayVersion` (empty content, `writing_snapshots: []`) without a file upload. The client then drives composition via the snapshot endpoints below.
+
+**POST /assignments/{id}/essays/compose response (201):**
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "assignment_id": "uuid",
+    "student_id": null,
+    "status": "unassigned",
+    "current_content": "",
+    "word_count": 0
+  }
+}
+```
+
+Errors: `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled), `404 NOT_FOUND` (assignment or student not found).
+
+**POST /essays/{essayId}/snapshots** — JSON body (M5-09):
+```json
+{
+  "html_content": "<p>Essay text…</p>",
+  "word_count": 150
+}
+```
+- `html_content`: raw innerHTML from the browser editor (max 500 000 characters); stored in `writing_snapshots` JSONB and also stripped to plain text for the LLM pipeline
+- `word_count`: pre-computed by the client (HTML tags stripped, split on whitespace)
+
+Each call appends a snapshot entry `{seq, ts, word_count, html_content}` to the version's `writing_snapshots` array and updates `EssayVersion.content` (plain text) and `word_count`. Called by the browser autosave every 10–15 seconds of user activity.
+
+**POST /essays/{essayId}/snapshots response (200):**
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "snapshot_count": 3,
+    "word_count": 150,
+    "saved_at": "2026-04-28T10:00:12+00:00"
+  }
+}
+```
+
+Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (essay or version not found), `422 VALIDATION_ERROR` (`html_content` missing or exceeds 500 000 characters).
+
+**GET /essays/{essayId}/snapshots response (200)** (M5-09):
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "current_content": "<p>Essay text…</p>",
+    "word_count": 150,
+    "snapshots": [
+      {"seq": 1, "ts": "2026-04-28T10:00:00+00:00", "word_count": 50},
+      {"seq": 2, "ts": "2026-04-28T10:00:12+00:00", "word_count": 100},
+      {"seq": 3, "ts": "2026-04-28T10:00:24+00:00", "word_count": 150}
+    ]
+  }
+}
+```
+
+`current_content` is the `html_content` of the most recent snapshot — ready to inject directly into the browser editor for state recovery after a page refresh. Individual `html_content` values of earlier snapshots are not returned here; they are used by the writing-process timeline (M5-10/11). This endpoint is only valid for browser-composed essays. File-upload essays (where `writing_snapshots` is `NULL`) return `422 VALIDATION_ERROR` because there is no snapshot-backed editor state to recover. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`, `422 VALIDATION_ERROR` (essay has no writing snapshots — was created via file upload).
 
 ---
 

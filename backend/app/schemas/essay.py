@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.essay import EssayStatus
 
@@ -83,3 +83,91 @@ class AssignEssayRequest(BaseModel):
     """
 
     student_id: uuid.UUID
+
+
+# ---------------------------------------------------------------------------
+# Browser compose — M5-09
+# ---------------------------------------------------------------------------
+
+#: Maximum allowed character length for browser-composed essay content.
+_MAX_COMPOSE_CONTENT_LENGTH = 500_000
+
+
+class ComposeEssayRequest(BaseModel):
+    """Request body for ``POST /assignments/{assignmentId}/essays/compose``.
+
+    Creates an empty essay version ready for in-browser composition.
+    The ``student_id`` is optional — callers may assign the student later via
+    ``PATCH /essays/{essayId}``.
+    """
+
+    student_id: uuid.UUID | None = None
+
+
+class ComposeEssayResponse(BaseModel):
+    """Response for ``POST /assignments/{assignmentId}/essays/compose``."""
+
+    essay_id: uuid.UUID
+    essay_version_id: uuid.UUID
+    assignment_id: uuid.UUID
+    student_id: uuid.UUID | None
+    status: EssayStatus
+    current_content: str
+    word_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class WriteSnapshotRequest(BaseModel):
+    """Request body for ``POST /essays/{essayId}/snapshots``.
+
+    Sent by the browser writing interface on each autosave tick.
+    ``html_content`` is the raw innerHTML of the contentEditable editor.
+    ``word_count`` is pre-computed by the client (strip tags, split on
+    whitespace) so the server does not need to parse HTML.
+    """
+
+    html_content: str = Field(
+        max_length=_MAX_COMPOSE_CONTENT_LENGTH,
+        description="Raw HTML from the browser rich-text editor.",
+    )
+    word_count: int = Field(ge=0, description="Pre-computed word count (tags stripped).")
+
+
+class WriteSnapshotResponse(BaseModel):
+    """Response for ``POST /essays/{essayId}/snapshots``."""
+
+    essay_id: uuid.UUID
+    essay_version_id: uuid.UUID
+    snapshot_count: int
+    word_count: int
+    saved_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SnapshotItem(BaseModel):
+    """Metadata for a single writing-process snapshot (no HTML returned in list)."""
+
+    seq: int
+    ts: str
+    word_count: int
+
+
+class GetSnapshotsResponse(BaseModel):
+    """Response for ``GET /essays/{essayId}/snapshots``.
+
+    Returns the current editor content (HTML) and snapshot metadata list so
+    the browser can restore the editor state after a refresh/navigation.
+    The full ``html_content`` of individual snapshots is not returned here;
+    it is stored server-side and will be used by writing-process visibility
+    features (M5-10, M5-11).
+    """
+
+    essay_id: uuid.UUID
+    essay_version_id: uuid.UUID
+    current_content: str
+    word_count: int
+    snapshots: list[SnapshotItem]
+
+    model_config = {"from_attributes": True}
