@@ -5,7 +5,8 @@ Transforms raw writing-process snapshots (stored in
 segments, event flags, and summary metrics for teacher review.
 
 This module is intentionally side-effect-free: all I/O is handled by the
-callers in ``essay.py`` (DB read/write) and ``routers/essays.py`` (HTTP layer).
+callers in ``app/services/essay.py`` (DB read/write) and
+``app/routers/essays.py`` (HTTP layer).
 The core :func:`analyze_writing_process` function takes a plain list of
 snapshot dicts and returns a :class:`CompositionTimeline` dataclass — making
 it straightforward to unit-test without any database mocking.

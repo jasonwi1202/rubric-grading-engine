@@ -1251,15 +1251,27 @@ async def get_process_signals(
     cache_is_valid = False
     if cached is not None:
         try:
+            # Guard against non-dict JSONB values (list, string, etc.) that
+            # would raise AttributeError on .get() / .issubset() calls.
             cache_is_valid = (
-                _REQUIRED_CACHE_KEYS.issubset(cached)
+                isinstance(cached, dict)
+                and _REQUIRED_CACHE_KEYS.issubset(cached)
                 and isinstance(cached.get("sessions"), list)
                 and isinstance(cached.get("paste_events"), list)
                 and isinstance(cached.get("rapid_completion_events"), list)
             )
             if cache_is_valid:
                 cached_snapshot_count = int(cached["snapshot_count"])
-        except (TypeError, ValueError, KeyError):
+                # Validate that timestamp strings are parseable so that corrupt
+                # or schema-evolved caches are caught here (not during response
+                # construction), and treated as a cache miss rather than a 500.
+                datetime.fromisoformat(cached["computed_at"])
+                for s in cached["sessions"]:
+                    datetime.fromisoformat(s["started_at"])
+                    datetime.fromisoformat(s["ended_at"])
+                for e in cached["paste_events"]:
+                    datetime.fromisoformat(e["occurred_at"])
+        except (TypeError, ValueError, KeyError, AttributeError):
             cache_is_valid = False
             cached_snapshot_count = -1
 
