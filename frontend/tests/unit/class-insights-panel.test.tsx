@@ -274,7 +274,7 @@ describe("ScoreDistributionPanel", () => {
       />,
       { wrapper },
     );
-    const histogram = screen.getByRole("img", {
+    const histogram = screen.getByRole("list", {
       name: /score distribution histogram for evidence/i,
     });
     expect(histogram).toBeInTheDocument();
@@ -297,10 +297,10 @@ describe("ScoreDistributionPanel", () => {
       />,
       { wrapper },
     );
-    // The bar for the 0–20% bucket should have ring-amber-500
+    // The listitem for the 0–20% bucket should contain a bar with ring-amber-500
     const outlierBar = screen
-      .getByLabelText(/0-20%: 2 students/i);
-    expect(outlierBar.className).toContain("ring-amber-500");
+      .getByRole("listitem", { name: /0-20%: 2 students/i });
+    expect(outlierBar.innerHTML).toContain("ring-amber-500");
   });
 
   it("does not apply amber ring to mid-range non-outlier buckets", () => {
@@ -321,8 +321,8 @@ describe("ScoreDistributionPanel", () => {
       { wrapper },
     );
     // 40-60% bucket: 5 students — should NOT have the amber ring
-    const midBar = screen.getByLabelText(/40-60%: 5 students/i);
-    expect(midBar.className).not.toContain("ring-amber-500");
+    const midBar = screen.getByRole("listitem", { name: /40-60%: 5 students/i });
+    expect(midBar.innerHTML).not.toContain("ring-amber-500");
   });
 });
 
@@ -549,7 +549,7 @@ describe("ClassInsightsPanel", () => {
     });
     await waitFor(() => {
       // Evidence and thesis histograms should both appear
-      const histograms = screen.getAllByRole("img", {
+      const histograms = screen.getAllByRole("list", {
         name: /score distribution histogram for/i,
       });
       expect(histograms.length).toBeGreaterThanOrEqual(2);

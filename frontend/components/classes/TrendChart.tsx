@@ -87,11 +87,15 @@ export function TrendChart({ assignments }: TrendChartProps) {
     );
 
   // Fetch analytics for each completed assignment in parallel.
+  // staleTime keeps results fresh for 5 minutes; refetchOnWindowFocus is
+  // disabled to avoid a burst of requests every time the teacher re-focuses.
   const analyticsQueries = useQueries({
     queries: completedAssignments.map((a) => ({
       queryKey: ["assignment-analytics", a.id],
       queryFn: () => getAssignmentAnalytics(a.id),
       enabled: completedAssignments.length >= 2,
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     })),
   });
 
@@ -223,7 +227,7 @@ export function TrendChart({ assignments }: TrendChartProps) {
           const d = dataPoints[i];
           const pct = Math.round(d.score * 100);
           return (
-            <g key={i}>
+            <g key={d.id}>
               <circle
                 cx={pt.x}
                 cy={pt.y}

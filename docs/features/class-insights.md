@@ -1,7 +1,18 @@
 # Feature: Class Insights
 
 **Phase:** 3 — Insights
-**Status:** Implemented (M5-07 heatmap + M5-08 common issues / distribution UI)
+**Status:** Partially Implemented
+
+| Capability | Status |
+|---|---|
+| Skill heatmap (per-student, per-skill grid) | ✅ Shipped (M5-07) |
+| Common issues panel (class-level skill averages below threshold, ranked) | ✅ Shipped (M5-08) |
+| Score distribution histograms (per-skill, per-assignment) | ✅ Shipped (M5-08) |
+| Cross-assignment trend chart (class avg over time) | ✅ Shipped (M5-08) |
+| Direct links from common-issues panel to affected students | 🔲 Planned |
+| Outlier students highlighted at both ends of distribution | 🔲 Planned |
+| Cohort / cross-class comparisons | 🔲 Planned |
+| Overall class health indicator | 🔲 Planned |
 
 ---
 

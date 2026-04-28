@@ -72,10 +72,10 @@ function DistributionHistogram({
         {skillDimension.replace(/_/g, " ")}
       </h4>
 
-      {/* Histogram bars */}
+      {/* Histogram bars — list semantics so each bucket is individually reachable by assistive technology */}
       <div
         className="flex items-end gap-1"
-        role="img"
+        role="list"
         aria-label={`Score distribution histogram for ${skillDimension.replace(/_/g, " ")}`}
       >
         {buckets.map((bucket) => {
@@ -93,15 +93,18 @@ function DistributionHistogram({
           return (
             <div
               key={bucket.label}
+              role="listitem"
+              aria-label={`${bucket.label}: ${studentLabel}`}
               className="flex flex-1 flex-col items-center gap-0.5"
             >
               {/* Count label above bar */}
-              <span className="text-xs font-medium text-gray-600">
+              <span className="text-xs font-medium text-gray-600" aria-hidden="true">
                 {bucket.count > 0 ? bucket.count : ""}
               </span>
 
-              {/* Bar */}
+              {/* Bar — visual only; label is on the listitem */}
               <div
+                aria-hidden="true"
                 className={`w-full rounded-t ${barColor} ${
                   outlier
                     ? "ring-2 ring-amber-500 ring-offset-1"
@@ -111,12 +114,10 @@ function DistributionHistogram({
                   height: `${height}px`,
                   minHeight: height > 0 ? "4px" : "0px",
                 }}
-                title={`${bucket.label}: ${studentLabel}`}
-                aria-label={`${bucket.label}: ${studentLabel}`}
               />
 
               {/* Bucket label below bar */}
-              <span className="text-center text-xs leading-tight text-gray-500">
+              <span className="text-center text-xs leading-tight text-gray-500" aria-hidden="true">
                 {bucket.label}
               </span>
             </div>
