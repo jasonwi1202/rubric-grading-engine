@@ -782,8 +782,9 @@ export async function seedStudentProfileFixture(
   const token = await loginApi(creds.email, creds.password);
 
   const ts = Date.now();
+  const studentName = "Kappa Writer";
   const classId = await seedClass(token, `J5 Class ${ts}`);
-  const studentId = await seedStudent(token, classId, "Kappa Writer");
+  const studentId = await seedStudent(token, classId, studentName);
 
   // ── Assignment 1 ─────────────────────────────────────────────────────────
   const rubric1Id = await seedRubric(token, `J5 Rubric A ${ts}`);
@@ -795,7 +796,7 @@ export async function seedStudentProfileFixture(
     assignment1Title,
   );
 
-  const essay1Id = await seedEssay(token, assignment1Id, studentId, "Kappa Writer");
+  const essay1Id = await seedEssay(token, assignment1Id, studentId, studentName);
 
   // Trigger batch grading for assignment 1.
   const grade1Res = await fetch(
@@ -903,7 +904,7 @@ export async function seedStudentProfileFixture(
     assignment2Title,
   );
 
-  const essay2Id = await seedEssay(token, assignment2Id, studentId, "Kappa Writer");
+  const essay2Id = await seedEssay(token, assignment2Id, studentId, studentName);
 
   // Trigger batch grading for assignment 2.
   const grade2Res = await fetch(

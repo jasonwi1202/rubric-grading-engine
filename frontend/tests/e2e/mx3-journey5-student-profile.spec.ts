@@ -230,7 +230,8 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
       });
     }
 
-    // If the API says there are gaps, the Needs Support callout must be visible.
+    // If the API says there are gaps, the Gaps callout must be visible.
+    // The component renders this region with aria-label="Gaps".
     if (gapSkills.length > 0) {
       await expect(page.getByLabel("Gaps")).toBeVisible({ timeout: 10_000 });
     }
@@ -255,13 +256,13 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     // Assert that at least one trend badge is rendered on the page.
     const trendPatterns = [/improving/i, /stable/i, /declining/i];
 
-    const anyTrendVisible = await trendPatterns.reduce(
-      async (acc, pattern) => {
-        if (await acc) return true;
-        return page.getByText(pattern).first().isVisible().catch(() => false);
-      },
-      Promise.resolve(false),
-    );
+    let anyTrendVisible = false;
+    for (const pattern of trendPatterns) {
+      if (await page.getByText(pattern).first().isVisible().catch(() => false)) {
+        anyTrendVisible = true;
+        break;
+      }
+    }
 
     expect(anyTrendVisible).toBe(true);
   });
