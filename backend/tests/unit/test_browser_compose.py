@@ -23,7 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.main import create_app
 from app.schemas.essay import (
     ComposeEssayResponse,
@@ -134,7 +134,9 @@ class TestCreateComposedEssay:
         essay = _make_essay(assignment_id=assignment_id)
         version = _make_version(essay_id=essay.id, writing_snapshots=[])
 
-        db = AsyncMock()
+        # Use MagicMock for the db so sync methods (add) are not AsyncMocks.
+        db = MagicMock()
+        db.add = MagicMock()
         db.flush = AsyncMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
@@ -175,13 +177,12 @@ class TestCreateComposedEssay:
         with patch(
             "app.services.essay._get_assignment_for_teacher",
             new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ):
-            with pytest.raises(ForbiddenError):
-                await create_composed_essay(
-                    db=db,
-                    teacher_id=uuid.uuid4(),
-                    assignment_id=uuid.uuid4(),
-                )
+        ), pytest.raises(ForbiddenError):
+            await create_composed_essay(
+                db=db,
+                teacher_id=uuid.uuid4(),
+                assignment_id=uuid.uuid4(),
+            )
 
     @pytest.mark.asyncio
     async def test_assignment_not_found_raises_not_found(self) -> None:
@@ -191,13 +192,12 @@ class TestCreateComposedEssay:
         with patch(
             "app.services.essay._get_assignment_for_teacher",
             new=AsyncMock(side_effect=NotFoundError("not found")),
-        ):
-            with pytest.raises(NotFoundError):
-                await create_composed_essay(
-                    db=db,
-                    teacher_id=uuid.uuid4(),
-                    assignment_id=uuid.uuid4(),
-                )
+        ), pytest.raises(NotFoundError):
+            await create_composed_essay(
+                db=db,
+                teacher_id=uuid.uuid4(),
+                assignment_id=uuid.uuid4(),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -216,29 +216,25 @@ class TestSaveWritingSnapshot:
         html = "<p>Hello world</p>"
         word_count = 2
 
-        essay = _make_essay(essay_id=essay_id)
         version = _make_version(essay_id=essay_id, writing_snapshots=[])
         version.id = uuid.uuid4()
 
-        db = AsyncMock()
+        scalar_mock = MagicMock()
+        scalar_mock.scalar_one_or_none.return_value = version
+
+        # Use MagicMock for the db so sync methods (add) are not AsyncMocks.
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=scalar_mock)
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
 
-        scalar_mock = MagicMock()
-        scalar_mock.scalar_one_or_none.return_value = version
-        db.execute = AsyncMock(return_value=scalar_mock)
-
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(return_value=essay),
-        ):
-            result = await save_writing_snapshot(
-                db=db,
-                teacher_id=teacher_id,
-                essay_id=essay_id,
-                html_content=html,
-                word_count=word_count,
-            )
+        result = await save_writing_snapshot(
+            db=db,
+            teacher_id=teacher_id,
+            essay_id=essay_id,
+            html_content=html,
+            word_count=word_count,
+        )
 
         assert result.essay_id == essay_id
         assert result.snapshot_count == 1
@@ -248,6 +244,7 @@ class TestSaveWritingSnapshot:
         snap = version.writing_snapshots[0]
         assert snap["seq"] == 1
         assert snap["word_count"] == word_count
+        # html_content stored is the sanitized form; for safe input it is identical
         assert snap["html_content"] == html
         assert "ts" in snap
 
@@ -268,75 +265,104 @@ class TestSaveWritingSnapshot:
             "word_count": 2,
             "html_content": "<p>Hello world</p>",
         }
-        essay = _make_essay(essay_id=essay_id)
         version = _make_version(essay_id=essay_id, writing_snapshots=[first_snap])
         version.id = uuid.uuid4()
 
-        db = AsyncMock()
+        scalar_mock = MagicMock()
+        scalar_mock.scalar_one_or_none.return_value = version
+
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=scalar_mock)
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
 
-        scalar_mock = MagicMock()
-        scalar_mock.scalar_one_or_none.return_value = version
-        db.execute = AsyncMock(return_value=scalar_mock)
-
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(return_value=essay),
-        ):
-            result = await save_writing_snapshot(
-                db=db,
-                teacher_id=teacher_id,
-                essay_id=essay_id,
-                html_content=html2,
-                word_count=word_count2,
-            )
+        result = await save_writing_snapshot(
+            db=db,
+            teacher_id=teacher_id,
+            essay_id=essay_id,
+            html_content=html2,
+            word_count=word_count2,
+        )
 
         assert result.snapshot_count == 2
         assert len(version.writing_snapshots) == 2
         assert version.writing_snapshots[1]["seq"] == 2
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_raises_forbidden(self) -> None:
+    async def test_file_upload_essay_raises_validation_error(self) -> None:
+        """writing_snapshots=None (file-upload essay) raises ValidationError."""
         from app.services.essay import save_writing_snapshot
 
-        db = AsyncMock()
+        # A version with writing_snapshots=None represents a file-upload essay.
+        version = _make_version(writing_snapshots=None)
+        version.writing_snapshots = None  # MagicMock default is not None; force it
+
+        scalar_mock = MagicMock()
+        scalar_mock.scalar_one_or_none.return_value = version
+
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=scalar_mock)
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+
+        with pytest.raises(ValidationError):
+            await save_writing_snapshot(
+                db=db,
+                teacher_id=uuid.uuid4(),
+                essay_id=uuid.uuid4(),
+                html_content="<p>text</p>",
+                word_count=1,
+            )
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_raises_forbidden(self) -> None:
+        """JOIN returns None → _get_essay_for_teacher raises ForbiddenError."""
+        from app.services.essay import save_writing_snapshot
+
+        # The JOIN query returns None (cross-teacher access — teacher_id mismatch).
+        scalar_mock = MagicMock()
+        scalar_mock.scalar_one_or_none.return_value = None
+
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=scalar_mock)
+
         with patch(
             "app.services.essay._get_essay_for_teacher",
             new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ):
-            with pytest.raises(ForbiddenError):
-                await save_writing_snapshot(
-                    db=db,
-                    teacher_id=uuid.uuid4(),
-                    essay_id=uuid.uuid4(),
-                    html_content="<p>text</p>",
-                    word_count=1,
-                )
+        ), pytest.raises(ForbiddenError):
+            await save_writing_snapshot(
+                db=db,
+                teacher_id=uuid.uuid4(),
+                essay_id=uuid.uuid4(),
+                html_content="<p>text</p>",
+                word_count=1,
+            )
 
     @pytest.mark.asyncio
     async def test_version_not_found_raises_not_found(self) -> None:
+        """JOIN returns None and essay exists for teacher → NotFoundError for missing version."""
         from app.services.essay import save_writing_snapshot
 
         essay = _make_essay()
-        db = AsyncMock()
 
+        # The JOIN query returns None (essay exists but has no version row).
         scalar_mock = MagicMock()
         scalar_mock.scalar_one_or_none.return_value = None
+
+        db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
         with patch(
             "app.services.essay._get_essay_for_teacher",
             new=AsyncMock(return_value=essay),
-        ):
-            with pytest.raises(NotFoundError):
-                await save_writing_snapshot(
-                    db=db,
-                    teacher_id=uuid.uuid4(),
-                    essay_id=uuid.uuid4(),
-                    html_content="<p>text</p>",
-                    word_count=1,
-                )
+        ), pytest.raises(NotFoundError):
+            await save_writing_snapshot(
+                db=db,
+                teacher_id=uuid.uuid4(),
+                essay_id=uuid.uuid4(),
+                html_content="<p>text</p>",
+                word_count=1,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -356,20 +382,16 @@ class TestGetWritingSnapshots:
             {"seq": 1, "ts": "2026-04-28T10:00:00+00:00", "word_count": 2, "html_content": "<p>First</p>"},
             {"seq": 2, "ts": "2026-04-28T10:00:12+00:00", "word_count": 3, "html_content": html},
         ]
-        essay = _make_essay(essay_id=essay_id)
         version = _make_version(essay_id=essay_id, writing_snapshots=snaps, word_count=3)
         version.id = uuid.uuid4()
 
-        db = AsyncMock()
         scalar_mock = MagicMock()
         scalar_mock.scalar_one_or_none.return_value = version
+
+        db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(return_value=essay),
-        ):
-            result = await get_writing_snapshots(db=db, teacher_id=teacher_id, essay_id=essay_id)
+        result = await get_writing_snapshots(db=db, teacher_id=teacher_id, essay_id=essay_id)
 
         assert result.essay_id == essay_id
         assert result.essay_version_id == version.id
@@ -383,39 +405,41 @@ class TestGetWritingSnapshots:
     async def test_empty_snapshots_returns_empty_content(self) -> None:
         from app.services.essay import get_writing_snapshots
 
-        essay = _make_essay()
         version = _make_version(writing_snapshots=[], word_count=0)
         version.id = uuid.uuid4()
 
-        db = AsyncMock()
         scalar_mock = MagicMock()
         scalar_mock.scalar_one_or_none.return_value = version
+
+        db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(return_value=essay),
-        ):
-            result = await get_writing_snapshots(
-                db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4()
-            )
+        result = await get_writing_snapshots(
+            db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4()
+        )
 
         assert result.current_content == ""
         assert result.snapshots == []
 
     @pytest.mark.asyncio
     async def test_cross_teacher_raises_forbidden(self) -> None:
+        """JOIN returns None → _get_essay_for_teacher raises ForbiddenError."""
         from app.services.essay import get_writing_snapshots
 
-        db = AsyncMock()
+        # The JOIN query returns None (cross-teacher mismatch).
+        scalar_mock = MagicMock()
+        scalar_mock.scalar_one_or_none.return_value = None
+
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=scalar_mock)
+
         with patch(
             "app.services.essay._get_essay_for_teacher",
             new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ):
-            with pytest.raises(ForbiddenError):
-                await get_writing_snapshots(
-                    db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4()
-                )
+        ), pytest.raises(ForbiddenError):
+            await get_writing_snapshots(
+                db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4()
+            )
 
 
 # ---------------------------------------------------------------------------

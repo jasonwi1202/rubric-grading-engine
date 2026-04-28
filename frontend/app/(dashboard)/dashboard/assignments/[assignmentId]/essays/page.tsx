@@ -113,7 +113,7 @@ export default function AssignmentEssaysPage() {
         <div className="mb-6 flex items-center gap-4">
           <h1 className="text-2xl font-bold text-gray-900">Write essay</h1>
           <p className="text-sm text-gray-500">
-            Your progress is saved automatically every few seconds.
+            Your progress is saved automatically every ~12 seconds while you type.
           </p>
         </div>
         <BrowserWritingInterface

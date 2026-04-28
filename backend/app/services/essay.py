@@ -30,13 +30,20 @@ import re
 import unicodedata
 import uuid
 from datetime import UTC, datetime
+from html.parser import HTMLParser as _HtmlParser
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
+from app.exceptions import (
+    FileTooLargeError,
+    FileTypeNotAllowedError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
@@ -800,6 +807,61 @@ def _strip_html_tags(html_content: str) -> str:
     return normalize_text(text)
 
 
+class _SafeHtmlFilter(_HtmlParser):
+    """Whitelist-based HTML sanitizer for browser-composed essay content.
+
+    Retains only a safe subset of formatting tags (bold, italic, underline,
+    paragraph, div, span, br) with **no attributes**.  All other tags are
+    removed; their text content is preserved but HTML-escaped to prevent
+    injection if the tag itself is disallowed.
+
+    This is a defence-in-depth measure: the frontend already sanitises before
+    sending, but the server should not trust client-supplied HTML unconditionally.
+    """
+
+    _ALLOWED_TAGS: frozenset[str] = frozenset(
+        {"p", "b", "i", "u", "em", "strong", "br", "span", "div"}
+    )
+    # Void elements that have no closing tag.
+    _VOID_TAGS: frozenset[str] = frozenset({"br"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._ALLOWED_TAGS:
+            self._buf.append(f"<{tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._ALLOWED_TAGS and tag not in self._VOID_TAGS:
+            self._buf.append(f"</{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # Self-closing tags (e.g. <br/>).
+        if tag in self._ALLOWED_TAGS:
+            self._buf.append(f"<{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        # Escape all text data to prevent injection of disallowed markup.
+        self._buf.append(_html_module.escape(data))
+
+    def get_output(self) -> str:
+        return "".join(self._buf)
+
+
+def _sanitize_html_content(html_content: str) -> str:
+    """Strip disallowed tags and attributes from HTML before persisting.
+
+    Only the tags in ``_SafeHtmlFilter._ALLOWED_TAGS`` are preserved, with no
+    attributes.  This prevents stored-XSS when the sanitised HTML is later
+    re-injected into the teacher's editor via ``innerHTML``.
+    """
+    filt = _SafeHtmlFilter()
+    filt.feed(html_content)
+    return filt.get_output()
+
+
 async def create_composed_essay(
     db: AsyncSession,
     teacher_id: uuid.UUID,
@@ -907,45 +969,71 @@ async def save_writing_snapshot(
         db: Async database session.
         teacher_id: The authenticated teacher's UUID (tenant scoping).
         essay_id: Target essay UUID.
-        html_content: Raw innerHTML string from the browser editor.
+        html_content: Raw innerHTML string from the browser editor (sanitized
+            server-side before persisting).
         word_count: Pre-computed word count (HTML tags stripped, split on whitespace).
 
     Returns:
         A :class:`~app.schemas.essay.WriteSnapshotResponse`.
 
     Raises:
-        NotFoundError:  Essay or its latest version is not found.
-        ForbiddenError: Essay belongs to a different teacher.
+        NotFoundError:   Essay or its latest version is not found.
+        ForbiddenError:  Essay belongs to a different teacher.
+        ValidationError: Essay was created via file upload (``writing_snapshots``
+            is ``NULL``); only browser-composed essays accept snapshots.
 
     No student PII appears in any log output.
     """
-    essay = await _get_essay_for_teacher(db, essay_id, teacher_id)
-
-    # Load the latest essay version.
+    # Load the latest essay version with teacher ownership enforced in the
+    # same JOIN query (Essay → Assignment → Class.teacher_id).  The FOR UPDATE
+    # lock prevents concurrent snapshot writes from computing the same seq
+    # number and losing data.
     version_result = await db.execute(
         select(EssayVersion)
-        .where(EssayVersion.essay_id == essay_id)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            EssayVersion.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
         .order_by(EssayVersion.version_number.desc())
         .limit(1)
+        .with_for_update()
     )
     version = version_result.scalar_one_or_none()
     if version is None:
+        # Distinguish 403 (cross-teacher) from 404 (no version) by calling
+        # the ownership helper, which raises the appropriate domain error.
+        await _get_essay_for_teacher(db, essay_id, teacher_id)
         raise NotFoundError("Essay version not found.")
 
+    # Reject snapshot saves against file-upload essays.  writing_snapshots is
+    # NULL for essays ingested via file upload; only browser-composed essays
+    # (created by POST .../essays/compose) have an initialised [] array.
+    if version.writing_snapshots is None:
+        raise ValidationError(
+            "Writing snapshots are not supported for file-upload essays.",
+            field="essay_id",
+        )
+
+    # Sanitize the HTML before persisting to prevent stored XSS.
+    safe_html = _sanitize_html_content(html_content)
+
     # Build the new snapshot entry.
-    existing: list[dict[str, Any]] = list(version.writing_snapshots or [])
+    existing: list[dict[str, Any]] = list(version.writing_snapshots)
     seq = len(existing) + 1
     ts = datetime.now(UTC).isoformat()
     snapshot = {
         "seq": seq,
         "ts": ts,
         "word_count": word_count,
-        "html_content": html_content,
+        "html_content": safe_html,
     }
     existing.append(snapshot)
 
     # Derive plain-text content from HTML (for LLM grading compatibility).
-    plain_text = _strip_html_tags(html_content)
+    plain_text = _strip_html_tags(safe_html)
 
     # Update the version in-place.  The JSONB column requires a full
     # replacement (SQLAlchemy does not track list mutations automatically).
@@ -953,9 +1041,8 @@ async def save_writing_snapshot(
     version.content = plain_text
     version.word_count = word_count
 
-    # Update the parent essay's submitted_at timestamp on each save so the
-    # essay list reflects recency.
-    essay.submitted_at = datetime.now(UTC)
+    # Update the version's submitted_at so the essay list reflects recency.
+    version.submitted_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(version)
@@ -1008,16 +1095,26 @@ async def get_writing_snapshots(
 
     No student PII appears in any log output.
     """
-    await _get_essay_for_teacher(db, essay_id, teacher_id)
-
+    # Load the latest essay version with tenant isolation enforced in the
+    # JOIN (Essay → Assignment → Class.teacher_id — avoids the check-then-fetch
+    # two-query pattern).
     version_result = await db.execute(
         select(EssayVersion)
-        .where(EssayVersion.essay_id == essay_id)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            EssayVersion.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
         .order_by(EssayVersion.version_number.desc())
         .limit(1)
     )
     version = version_result.scalar_one_or_none()
     if version is None:
+        # Distinguish 403 (cross-teacher) from 404 (no version) by calling
+        # the ownership helper, which raises the appropriate domain error.
+        await _get_essay_for_teacher(db, essay_id, teacher_id)
         raise NotFoundError("Essay version not found.")
 
     raw_snapshots: list[dict[str, Any]] = list(version.writing_snapshots or [])

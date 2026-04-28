@@ -51,13 +51,55 @@ export interface BrowserWritingInterfaceProps {
 // ---------------------------------------------------------------------------
 
 /**
- * Count words in an HTML string by stripping tags and splitting on whitespace.
- * Must match the word-count logic used by the backend `_strip_html_tags` path.
+ * Count words in an HTML string by stripping tags, decoding HTML entities,
+ * normalising whitespace, and splitting on whitespace.
+ *
+ * Uses the textarea trick to decode entities in the same way browsers do, so
+ * the count matches the backend's `_strip_html_tags` path (which calls
+ * `html.unescape`).
  */
 export function countWordsFromHtml(html: string): number {
-  const text = html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").trim();
-  if (!text) return 0;
-  return text.split(/\s+/).filter(Boolean).length;
+  const htmlWithoutTags = html.replace(/<[^>]*>/g, " ");
+  const decoder = document.createElement("textarea");
+  decoder.innerHTML = htmlWithoutTags;
+  // Replace non-breaking spaces with regular spaces before splitting.
+  const normalizedText = decoder.value.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalizedText) return 0;
+  return normalizedText.split(" ").filter(Boolean).length;
+}
+
+/**
+ * Sanitize HTML from the server before injecting it into the editor's
+ * `innerHTML`, preventing stored-XSS from persisted snapshot content.
+ *
+ * Removes `<script>`, `<style>`, `<link>`, `<iframe>`, `<form>`, and other
+ * dangerous elements, and strips all `on*` event-handler attributes and
+ * `javascript:` URLs from the remaining elements.
+ *
+ * Uses `<template>` so no scripts are parsed or executed during processing.
+ */
+function sanitizeEditorHtml(html: string): string {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  // Remove dangerous elements entirely.
+  template.content
+    .querySelectorAll(
+      "script,style,link,meta,iframe,object,embed,form,input,button,textarea,select",
+    )
+    .forEach((el) => el.remove());
+  // Strip event-handler attributes and javascript: URLs from remaining nodes.
+  template.content.querySelectorAll("*").forEach((el) => {
+    for (const attr of Array.from(el.attributes)) {
+      if (
+        attr.name.startsWith("on") ||
+        ((attr.name === "href" || attr.name === "src" || attr.name === "action") &&
+          /^javascript:/i.test(attr.value))
+      ) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  });
+  return template.innerHTML;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +135,8 @@ export function BrowserWritingInterface({
     if (!editorRef.current || isEditorReady) return;
     if (snapshotState !== undefined) {
       const content = snapshotState.current_content ?? "";
-      editorRef.current.innerHTML = content;
+      // Sanitize recovered HTML before injecting to prevent stored-XSS.
+      editorRef.current.innerHTML = sanitizeEditorHtml(content);
       lastSavedContentRef.current = content;
       setIsEditorReady(true);
     }
@@ -101,7 +144,11 @@ export function BrowserWritingInterface({
 
   // ── Autosave mutation ─────────────────────────────────────────────────────
 
-  const { mutate: doSave } = useMutation({
+  const {
+    mutate: doSave,
+    mutateAsync: doSaveAsync,
+    isPending: isSaving,
+  } = useMutation({
     mutationFn: ({
       html_content,
       word_count,
@@ -129,11 +176,14 @@ export function BrowserWritingInterface({
   }, []);
 
   const triggerSave = useCallback(() => {
+    // Skip if a save is already in flight — prevents overlapping requests from
+    // racing and overwriting each other's seq / lastSavedContentRef.
+    if (isSaving) return;
     const content = getCurrentHtml();
     if (content === lastSavedContentRef.current) return;
     const wordCount = countWordsFromHtml(content);
     doSave({ html_content: content, word_count: wordCount });
-  }, [getCurrentHtml, doSave]);
+  }, [getCurrentHtml, doSave, isSaving]);
 
   // ── Input handler — resets debounce timer on every keystroke ─────────────
 
@@ -153,7 +203,10 @@ export function BrowserWritingInterface({
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (!hasUnsaved) return;
+      // Both preventDefault() and setting returnValue are needed for broad
+      // browser compatibility — modern Chrome/Firefox require returnValue.
       e.preventDefault();
+      e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
@@ -182,19 +235,32 @@ export function BrowserWritingInterface({
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
-  const handleSubmit = () => {
-    // Fire a final save synchronously (if there are unsaved changes) before
-    // handing control to the parent's onSubmit callback.
-    if (hasUnsaved) triggerSave();
+  const handleSubmit = useCallback(async () => {
+    // Clear any pending debounce timer so we don't duplicate the final save.
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    // Await a final save for any unsaved changes before handing off to the
+    // parent's onSubmit callback (which may navigate away immediately).
+    const content = getCurrentHtml();
+    if (content !== lastSavedContentRef.current && content.trim()) {
+      const wordCount = countWordsFromHtml(content);
+      try {
+        await doSaveAsync({ html_content: content, word_count: wordCount });
+      } catch {
+        // If the final save fails, still allow the submission to proceed.
+      }
+    }
     onSubmit();
-  };
+  }, [getCurrentHtml, doSaveAsync, onSubmit]);
 
   // ── Status label ──────────────────────────────────────────────────────────
 
   const statusLabel: string = (() => {
     if (saveStatus === "saving") return "Saving\u2026";
     if (saveStatus === "saved") return "Saved";
-    if (saveStatus === "error") return "Save failed \u2014 will retry";
+    if (saveStatus === "error") return "Save failed";
     if (hasUnsaved) return "Unsaved changes";
     return "";
   })();

@@ -35,12 +35,9 @@ from app.schemas.batch_grading import RetryGradingRequest
 from app.schemas.essay import (
     AssignEssayRequest,
     ComposeEssayRequest,
-    ComposeEssayResponse,
     EssayListItemResponse,
     EssayUploadItemResponse,
-    GetSnapshotsResponse,
     WriteSnapshotRequest,
-    WriteSnapshotResponse,
 )
 from app.services.batch_grading import retry_essay_grading
 from app.services.essay import (
@@ -316,7 +313,6 @@ async def retry_essay_grading_endpoint(
     "/{assignment_id}/essays/compose",
     status_code=201,
     summary="Create a blank essay for in-browser composition",
-    response_model=ComposeEssayResponse,
 )
 async def compose_essay_endpoint(
     assignment_id: uuid.UUID,
@@ -362,7 +358,6 @@ async def compose_essay_endpoint(
     "/{essay_id}/snapshots",
     status_code=200,
     summary="Save a writing-process snapshot (autosave)",
-    response_model=WriteSnapshotResponse,
 )
 async def save_snapshot_endpoint(
     essay_id: uuid.UUID,
@@ -412,7 +407,6 @@ async def save_snapshot_endpoint(
 @essay_router.get(
     "/{essay_id}/snapshots",
     summary="Retrieve writing snapshots for editor state recovery",
-    response_model=GetSnapshotsResponse,
 )
 async def get_snapshots_endpoint(
     essay_id: uuid.UUID,
