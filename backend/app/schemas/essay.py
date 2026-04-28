@@ -171,3 +171,66 @@ class GetSnapshotsResponse(BaseModel):
     snapshots: list[SnapshotItem]
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Composition timeline / process signals — M5-10
+# ---------------------------------------------------------------------------
+
+
+class SessionSegmentResponse(BaseModel):
+    """One contiguous writing session derived from the snapshot history."""
+
+    session_index: int
+    started_at: datetime
+    ended_at: datetime
+    duration_seconds: float
+    snapshot_count: int
+    word_count_start: int
+    word_count_end: int
+    words_added: int
+
+
+class PasteEventResponse(BaseModel):
+    """A snapshot step where a large word-count jump was detected."""
+
+    snapshot_seq: int
+    occurred_at: datetime
+    words_before: int
+    words_after: int
+    words_added: int
+    session_index: int
+
+
+class RapidCompletionEventResponse(BaseModel):
+    """A session that brought the essay near-complete in a short time."""
+
+    session_index: int
+    duration_seconds: float
+    words_at_start: int
+    words_at_end: int
+    completion_fraction: float
+
+
+class ProcessSignalsResponse(BaseModel):
+    """Response for ``GET /essays/{essayId}/process-signals``.
+
+    Carries the full composition timeline analysis: session segments,
+    detected events, and summary metrics.
+
+    When ``has_process_data`` is ``False`` the essay was submitted as a file
+    upload (no writing-process data was captured) and all list fields are
+    empty with numeric metrics set to zero.
+    """
+
+    essay_id: uuid.UUID
+    essay_version_id: uuid.UUID
+    has_process_data: bool
+    session_count: int
+    sessions: list[SessionSegmentResponse]
+    inter_session_gaps_seconds: list[float]
+    active_writing_seconds: float
+    total_elapsed_seconds: float
+    paste_events: list[PasteEventResponse]
+    rapid_completion_events: list[RapidCompletionEventResponse]
+    computed_at: datetime
