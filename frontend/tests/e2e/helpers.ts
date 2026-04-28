@@ -760,13 +760,117 @@ export interface StudentProfileFixture {
 }
 
 /**
+ * Trigger batch grading for `assignmentId` and poll until the job reaches a
+ * terminal state.  Throws if grading fails or does not complete within 120 s.
+ */
+async function triggerBatchGradingAndWait(
+  token: string,
+  assignmentId: string,
+  label: string,
+): Promise<void> {
+  const gradeRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}/grade`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ strictness: "balanced" }),
+    },
+  );
+  if (!gradeRes.ok) {
+    const text = await gradeRes.text().catch(() => "");
+    throw new Error(
+      `${label} (trigger grading) failed: ${gradeRes.status} ${gradeRes.statusText} — ${text}`,
+    );
+  }
+
+  const deadline = Date.now() + 120_000;
+  let lastStatus = "pending";
+  let pollCount = 0;
+  let reachedTerminal = false;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    pollCount += 1;
+    const statusRes = await fetch(
+      `${API_BASE}/api/v1/assignments/${assignmentId}/grading-status`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!statusRes.ok) {
+      const text = await statusRes.text().catch(() => "");
+      if (statusRes.status < 500) {
+        throw new Error(
+          `${label} (poll grading status) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
+        );
+      }
+      continue;
+    }
+    const statusBody = (await statusRes.json()) as { data: { status: string } };
+    lastStatus = statusBody.data.status;
+    if (lastStatus === "complete") {
+      reachedTerminal = true;
+      break;
+    }
+    if (lastStatus === "partial" || lastStatus === "failed") {
+      throw new Error(`${label}: grading ended in ${lastStatus} state`);
+    }
+  }
+  if (!reachedTerminal) {
+    throw new Error(
+      `${label}: grading did not reach terminal state within 120 s ` +
+        `(last status: "${lastStatus}", polls: ${pollCount})`,
+    );
+  }
+}
+
+/**
+ * Fetch the grade for `essayId` and lock it.  Throws on any HTTP error.
+ */
+async function lockGradeForEssay(
+  token: string,
+  essayId: string,
+  label: string,
+): Promise<void> {
+  const fetchGradeRes = await fetch(
+    `${API_BASE}/api/v1/essays/${essayId}/grade`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!fetchGradeRes.ok) {
+    const text = await fetchGradeRes.text().catch(() => "");
+    throw new Error(
+      `${label} (fetch grade) failed: ${fetchGradeRes.status} ${fetchGradeRes.statusText} — ${text}`,
+    );
+  }
+  const gradeBody = (await fetchGradeRes.json()) as { data: { id: string } };
+  const gradeId = gradeBody.data.id;
+
+  const lockRes = await fetch(`${API_BASE}/api/v1/grades/${gradeId}/lock`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({}),
+  });
+  if (!lockRes.ok) {
+    const text = await lockRes.text().catch(() => "");
+    throw new Error(
+      `${label} (lock grade) failed: ${lockRes.status} ${lockRes.statusText} — ${text}`,
+    );
+  }
+}
+
+/**
  * Seed a fixture for Journey 5: one student with locked grades on two separate
  * assignments, so their skill profile is populated with data from both.
  *
  * Creates a fresh verified teacher account, one class, one student, two rubrics,
  * two assignments; uploads one essay per assignment; triggers batch grading for
- * each; locks both grades; and polls until the skill profile reflects both
- * assignments (assignment_count >= 2).
+ * each; and locks both grades.  After the second lock, makes a best-effort 30 s
+ * poll for the skill profile to reach assignment_count >= 2.  Callers must not
+ * assume the profile is fully aggregated when this function returns — the
+ * Celery task may still be in flight.
  *
  * The two assignments are created and locked sequentially so their locked_at
  * timestamps differ, making the chronological order deterministic:
@@ -802,97 +906,19 @@ export async function seedStudentProfileFixture(
 
   const essay1Id = await seedEssay(token, assignment1Id, studentId, studentName);
 
-  // Trigger batch grading for assignment 1.
-  const grade1Res = await fetch(
-    `${API_BASE}/api/v1/assignments/${assignment1Id}/grade`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ strictness: "balanced" }),
-    },
+  // Trigger batch grading for assignment 1 and wait for completion.
+  await triggerBatchGradingAndWait(
+    token,
+    assignment1Id,
+    "seedStudentProfileFixture (assignment1)",
   );
-  if (!grade1Res.ok) {
-    const text = await grade1Res.text().catch(() => "");
-    throw new Error(
-      `seedStudentProfileFixture (trigger grading assignment1) failed: ${grade1Res.status} ${grade1Res.statusText} — ${text}`,
-    );
-  }
-
-  // Poll until assignment 1 grading reaches a terminal state.
-  {
-    const deadline = Date.now() + 120_000;
-    let lastStatus = "pending";
-    let pollCount = 0;
-    let reachedTerminal = false;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 3_000));
-      pollCount += 1;
-      const statusRes = await fetch(
-        `${API_BASE}/api/v1/assignments/${assignment1Id}/grading-status`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (!statusRes.ok) {
-        const text = await statusRes.text().catch(() => "");
-        if (statusRes.status < 500) {
-          throw new Error(
-            `seedStudentProfileFixture (poll assignment1 grading) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
-          );
-        }
-        continue;
-      }
-      const statusBody = (await statusRes.json()) as { data: { status: string } };
-      lastStatus = statusBody.data.status;
-      if (lastStatus === "complete") {
-        reachedTerminal = true;
-        break;
-      }
-      if (lastStatus === "partial" || lastStatus === "failed") {
-        throw new Error(
-          `seedStudentProfileFixture: assignment1 grading ended in ${lastStatus} state`,
-        );
-      }
-    }
-    if (!reachedTerminal) {
-      throw new Error(
-        `seedStudentProfileFixture: assignment1 grading did not reach terminal state within 120 s ` +
-          `(last status: "${lastStatus}", polls: ${pollCount})`,
-      );
-    }
-  }
 
   // Lock the grade for essay 1.
-  {
-    const fetchGradeRes = await fetch(
-      `${API_BASE}/api/v1/essays/${essay1Id}/grade`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!fetchGradeRes.ok) {
-      const text = await fetchGradeRes.text().catch(() => "");
-      throw new Error(
-        `seedStudentProfileFixture (fetch grade for essay1) failed: ${fetchGradeRes.status} ${fetchGradeRes.statusText} — ${text}`,
-      );
-    }
-    const gradeBody = (await fetchGradeRes.json()) as { data: { id: string } };
-    const gradeId = gradeBody.data.id;
-
-    const lockRes = await fetch(`${API_BASE}/api/v1/grades/${gradeId}/lock`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!lockRes.ok) {
-      const text = await lockRes.text().catch(() => "");
-      throw new Error(
-        `seedStudentProfileFixture (lock grade for essay1) failed: ${lockRes.status} ${lockRes.statusText} — ${text}`,
-      );
-    }
-  }
+  await lockGradeForEssay(
+    token,
+    essay1Id,
+    "seedStudentProfileFixture (essay1)",
+  );
 
   // Wait a moment so assignment 2's locked_at timestamp is clearly later than
   // assignment 1's, making the newest-first history order deterministic.
@@ -910,97 +936,19 @@ export async function seedStudentProfileFixture(
 
   const essay2Id = await seedEssay(token, assignment2Id, studentId, studentName);
 
-  // Trigger batch grading for assignment 2.
-  const grade2Res = await fetch(
-    `${API_BASE}/api/v1/assignments/${assignment2Id}/grade`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ strictness: "balanced" }),
-    },
+  // Trigger batch grading for assignment 2 and wait for completion.
+  await triggerBatchGradingAndWait(
+    token,
+    assignment2Id,
+    "seedStudentProfileFixture (assignment2)",
   );
-  if (!grade2Res.ok) {
-    const text = await grade2Res.text().catch(() => "");
-    throw new Error(
-      `seedStudentProfileFixture (trigger grading assignment2) failed: ${grade2Res.status} ${grade2Res.statusText} — ${text}`,
-    );
-  }
-
-  // Poll until assignment 2 grading reaches a terminal state.
-  {
-    const deadline = Date.now() + 120_000;
-    let lastStatus = "pending";
-    let pollCount = 0;
-    let reachedTerminal = false;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 3_000));
-      pollCount += 1;
-      const statusRes = await fetch(
-        `${API_BASE}/api/v1/assignments/${assignment2Id}/grading-status`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (!statusRes.ok) {
-        const text = await statusRes.text().catch(() => "");
-        if (statusRes.status < 500) {
-          throw new Error(
-            `seedStudentProfileFixture (poll assignment2 grading) failed: ${statusRes.status} ${statusRes.statusText} — ${text}`,
-          );
-        }
-        continue;
-      }
-      const statusBody = (await statusRes.json()) as { data: { status: string } };
-      lastStatus = statusBody.data.status;
-      if (lastStatus === "complete") {
-        reachedTerminal = true;
-        break;
-      }
-      if (lastStatus === "partial" || lastStatus === "failed") {
-        throw new Error(
-          `seedStudentProfileFixture: assignment2 grading ended in ${lastStatus} state`,
-        );
-      }
-    }
-    if (!reachedTerminal) {
-      throw new Error(
-        `seedStudentProfileFixture: assignment2 grading did not reach terminal state within 120 s ` +
-          `(last status: "${lastStatus}", polls: ${pollCount})`,
-      );
-    }
-  }
 
   // Lock the grade for essay 2.
-  {
-    const fetchGradeRes = await fetch(
-      `${API_BASE}/api/v1/essays/${essay2Id}/grade`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!fetchGradeRes.ok) {
-      const text = await fetchGradeRes.text().catch(() => "");
-      throw new Error(
-        `seedStudentProfileFixture (fetch grade for essay2) failed: ${fetchGradeRes.status} ${fetchGradeRes.statusText} — ${text}`,
-      );
-    }
-    const gradeBody = (await fetchGradeRes.json()) as { data: { id: string } };
-    const gradeId = gradeBody.data.id;
-
-    const lockRes = await fetch(`${API_BASE}/api/v1/grades/${gradeId}/lock`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!lockRes.ok) {
-      const text = await lockRes.text().catch(() => "");
-      throw new Error(
-        `seedStudentProfileFixture (lock grade for essay2) failed: ${lockRes.status} ${lockRes.statusText} — ${text}`,
-      );
-    }
-  }
+  await lockGradeForEssay(
+    token,
+    essay2Id,
+    "seedStudentProfileFixture (essay2)",
+  );
 
   // Poll until the skill profile reflects both locked assignments.  The
   // update_skill_profile Celery task is enqueued on each grade lock, so there

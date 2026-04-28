@@ -11,7 +11,7 @@
  * - Asserts historical timeline shows both assignments in chronological order
  *   (newest-first: Assignment B first, then Assignment A)
  * - Asserts strengths and gaps callouts reflect the seeded scores
- * - Asserts growth indicator shows correct direction (improving / stable / declining)
+ * - Asserts growth indicators are present (at least one of: improving / stable / declining)
  * - Test is independent: all data seeded via API before the test runs
  *
  * Depends on: MX.3a (#125), M5.2, M5.3, M5.4, M5.5
@@ -224,17 +224,36 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
       ([, d]) => d.avg_score < 0.5 && d.data_points >= 2,
     );
 
-    // If the API says there are strengths, the Strengths callout must be visible.
+    // If the API says there are strengths, the Strengths callout must be visible
+    // and contain at least one expected skill label.
     if (strengthSkills.length > 0) {
-      await expect(page.getByLabel("Strengths")).toBeVisible({
-        timeout: 10_000,
-      });
+      const strengthsCallout = page.getByLabel("Strengths");
+      await expect(strengthsCallout).toBeVisible({ timeout: 10_000 });
+      // API keys use snake_case; the UI renders them as title-case labels.
+      const [firstStrengthKey] = strengthSkills[0];
+      const strengthLabel = firstStrengthKey
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+      await expect(
+        strengthsCallout.getByText(new RegExp(strengthLabel, "i")),
+      ).toBeVisible();
     }
 
-    // If the API says there are gaps, the Gaps callout must be visible.
+    // If the API says there are gaps, the Gaps callout must be visible and
+    // contain at least one expected skill label.
     // The component renders this region with aria-label="Gaps".
     if (gapSkills.length > 0) {
-      await expect(page.getByLabel("Gaps")).toBeVisible({ timeout: 10_000 });
+      const gapsCallout = page.getByLabel("Gaps");
+      await expect(gapsCallout).toBeVisible({ timeout: 10_000 });
+      const [firstGapKey] = gapSkills[0];
+      const gapLabel = firstGapKey
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+      await expect(
+        gapsCallout.getByText(new RegExp(gapLabel, "i")),
+      ).toBeVisible();
     }
 
     // In all cases, the skill bars section must be visible with scores.
