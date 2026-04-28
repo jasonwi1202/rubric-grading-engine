@@ -13,6 +13,7 @@ Endpoints (``essay_router``, prefix ``/essays``):
   POST  /essays/{essayId}/grade/retry      — re-enqueue grading for a failed essay
   POST  /essays/{essayId}/snapshots        — save a writing-process snapshot (M5-09)
   GET   /essays/{essayId}/snapshots        — retrieve snapshots for editor recovery (M5-09)
+  GET   /essays/{essayId}/process-signals  — composition timeline signals (M5-10)
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from app.services.batch_grading import retry_essay_grading
 from app.services.essay import (
     assign_essay_to_student,
     create_composed_essay,
+    get_process_signals,
     get_writing_snapshots,
     ingest_essay,
     list_essays_for_assignment,
@@ -432,6 +434,61 @@ async def get_snapshots_endpoint(
     Returns 404 if the essay or its version does not exist.
     """
     result = await get_writing_snapshots(
+        db=db,
+        teacher_id=teacher.id,
+        essay_id=essay_id,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/process-signals  (M5-10)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.get(
+    "/{essay_id}/process-signals",
+    summary="Get composition timeline and process signals for a browser-composed essay",
+)
+async def get_process_signals_endpoint(
+    essay_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return composition timeline signals derived from the writing-process snapshots.
+
+    Signals are computed lazily on first request and cached in the database.
+    If the snapshot history has grown since the last computation the cache is
+    automatically invalidated and re-computed.
+
+    The response includes:
+
+    - ``sessions`` — list of contiguous writing sessions with start/end times
+      and word-count data.
+    - ``paste_events`` — snapshot steps where the word count jumped by a large
+      amount in a single autosave tick (potential paste-from-clipboard signal).
+    - ``rapid_completion_events`` — sessions where a large fraction of the
+      final essay was written in a short time window.
+    - Summary metrics: ``session_count``, ``active_writing_seconds``,
+      ``total_elapsed_seconds``, ``inter_session_gaps_seconds``.
+
+    When ``has_process_data`` is ``false`` no usable writing-process data is
+    available for the essay. This can happen for file uploads, or when saved
+    snapshot data is missing, empty, or invalid. All list fields are empty and
+    numeric metrics are zero.  This is not an error — the frontend should
+    surface a plain-language explanation to the teacher.
+
+    Response body: ``{"data": ProcessSignalsResponse}``
+
+    Returns 403 if the essay belongs to a different teacher.
+    Returns 404 if the essay or its version does not exist.
+
+    Security: no essay content or student PII appears in log output.
+    """
+    result = await get_process_signals(
         db=db,
         teacher_id=teacher.id,
         essay_id=essay_id,

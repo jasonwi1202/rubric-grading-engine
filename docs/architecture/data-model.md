@@ -178,6 +178,7 @@ A specific version of an essay (original submission or resubmission).
 | word_count | INTEGER | |
 | submitted_at | TIMESTAMPTZ | |
 | writing_snapshots | JSONB | Nullable — `NULL` for file-upload essays; `[]` for browser-composed essays, populated with snapshot entries `{seq, ts, word_count, html_content}` by the autosave endpoint (M5-09) |
+| process_signals | JSONB | Nullable — `NULL` until first requested. Cached composition timeline analysis (M5-10): session segments, paste events, rapid-completion events, and summary metrics. Automatically invalidated when `snapshot_count` in the cache differs from the current length of `writing_snapshots`. |
 
 ---
 

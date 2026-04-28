@@ -54,9 +54,14 @@ from app.schemas.essay import (
     ComposeEssayResponse,
     EssayListItemResponse,
     GetSnapshotsResponse,
+    PasteEventResponse,
+    ProcessSignalsResponse,
+    RapidCompletionEventResponse,
+    SessionSegmentResponse,
     SnapshotItem,
     WriteSnapshotResponse,
 )
+from app.services.composition_timeline import analyze_writing_process
 from app.services.student_matching import HEADER_CHAR_LIMIT, AutoAssignResult, match_student
 from app.storage.s3 import delete_file, upload_file
 
@@ -1158,4 +1163,234 @@ async def get_writing_snapshots(
         current_content=latest_html,
         word_count=version.word_count,
         snapshots=snapshot_items,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Composition timeline / process signals — M5-10
+# ---------------------------------------------------------------------------
+
+
+async def get_process_signals(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+) -> ProcessSignalsResponse:
+    """Return composition timeline signals for a browser-composed essay.
+
+    Signals are computed lazily on first request and cached in
+    ``EssayVersion.process_signals``.  If the version's ``writing_snapshots``
+    column has changed since the last computation (detected by comparing
+    snapshot counts), the signals are re-computed and the cached value is
+    updated.
+
+    If no usable writing-process snapshot data is available, the response has
+    ``has_process_data=False`` and all list fields are empty.  This includes
+    file-upload essays (``writing_snapshots IS NULL``) as well as browser-
+    composed essays with empty or otherwise unusable snapshot data.  This is
+    not an error — the caller can surface a plain-language explanation to the
+    teacher.
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: Target essay UUID.
+
+    Returns:
+        A :class:`~app.schemas.essay.ProcessSignalsResponse`.
+
+    Raises:
+        NotFoundError:  Essay or its latest version is not found.
+        ForbiddenError: Essay belongs to a different teacher.
+
+    No student PII appears in any log output.
+    """
+    version_result = await db.execute(
+        select(EssayVersion)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            EssayVersion.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    version = version_result.scalar_one_or_none()
+    if version is None:
+        await _get_essay_for_teacher(db, essay_id, teacher_id)
+        raise NotFoundError("Essay version not found.")
+
+    raw_snapshots: list[dict[str, Any]] = (
+        version.writing_snapshots if version.writing_snapshots is not None else []
+    )
+
+    # Determine whether the cached signals are still valid.  We compare the
+    # snapshot count stored in the cache with the current length of
+    # writing_snapshots.  A mismatch means new snapshots were added and the
+    # cache must be invalidated. Because process_signals is stored in JSONB,
+    # treat any parse/validation failure as a cache miss and recompute.
+    cached: dict[str, Any] | None = version.process_signals
+    current_snapshot_count = len(raw_snapshots)
+
+    _REQUIRED_CACHE_KEYS = {
+        "snapshot_count",
+        "computed_at",
+        "has_process_data",
+        "session_count",
+        "active_writing_seconds",
+        "total_elapsed_seconds",
+        "inter_session_gaps_seconds",
+        "sessions",
+        "paste_events",
+        "rapid_completion_events",
+    }
+
+    cached_snapshot_count = -1
+    cache_is_valid = False
+    if cached is not None:
+        try:
+            # Guard against non-dict JSONB values (list, string, etc.) that
+            # would raise AttributeError on .get() / .issubset() calls.
+            cache_is_valid = (
+                isinstance(cached, dict)
+                and _REQUIRED_CACHE_KEYS.issubset(cached)
+                and isinstance(cached.get("sessions"), list)
+                and isinstance(cached.get("paste_events"), list)
+                and isinstance(cached.get("rapid_completion_events"), list)
+            )
+            if cache_is_valid:
+                cached_snapshot_count = int(cached["snapshot_count"])
+                # Validate that timestamp strings are parseable so that corrupt
+                # or schema-evolved caches are caught here (not during response
+                # construction), and treated as a cache miss rather than a 500.
+                datetime.fromisoformat(cached["computed_at"])
+                for s in cached["sessions"]:
+                    datetime.fromisoformat(s["started_at"])
+                    datetime.fromisoformat(s["ended_at"])
+                for e in cached["paste_events"]:
+                    datetime.fromisoformat(e["occurred_at"])
+        except (TypeError, ValueError, KeyError, AttributeError):
+            cache_is_valid = False
+            cached_snapshot_count = -1
+
+    needs_compute = (
+        not cache_is_valid
+        or cached_snapshot_count != current_snapshot_count
+    )
+
+    if needs_compute:
+        computed_at = datetime.now(UTC)
+        timeline = analyze_writing_process(raw_snapshots)
+
+        # Serialise the timeline to a plain dict for JSONB storage.
+        payload: dict[str, Any] = {
+            "snapshot_count": current_snapshot_count,
+            "computed_at": computed_at.isoformat(),
+            "has_process_data": timeline.has_process_data,
+            "session_count": timeline.session_count,
+            "active_writing_seconds": timeline.active_writing_seconds,
+            "total_elapsed_seconds": timeline.total_elapsed_seconds,
+            "inter_session_gaps_seconds": timeline.inter_session_gaps_seconds,
+            "sessions": [
+                {
+                    "session_index": s.session_index,
+                    "started_at": s.started_at.isoformat(),
+                    "ended_at": s.ended_at.isoformat(),
+                    "duration_seconds": s.duration_seconds,
+                    "snapshot_count": s.snapshot_count,
+                    "word_count_start": s.word_count_start,
+                    "word_count_end": s.word_count_end,
+                    "words_added": s.words_added,
+                }
+                for s in timeline.sessions
+            ],
+            "paste_events": [
+                {
+                    "snapshot_seq": e.snapshot_seq,
+                    "occurred_at": e.occurred_at.isoformat(),
+                    "words_before": e.words_before,
+                    "words_after": e.words_after,
+                    "words_added": e.words_added,
+                    "session_index": e.session_index,
+                }
+                for e in timeline.paste_events
+            ],
+            "rapid_completion_events": [
+                {
+                    "session_index": e.session_index,
+                    "duration_seconds": e.duration_seconds,
+                    "words_at_start": e.words_at_start,
+                    "words_at_end": e.words_at_end,
+                    "completion_fraction": e.completion_fraction,
+                }
+                for e in timeline.rapid_completion_events
+            ],
+        }
+
+        version.process_signals = payload
+        await db.commit()
+        await db.refresh(version)
+
+        logger.info(
+            "Process signals computed and cached",
+            extra={
+                "essay_id": str(essay_id),
+                "essay_version_id": str(version.id),
+                "session_count": timeline.session_count,
+            },
+        )
+        cached = payload
+
+    # Build the response from the cached (or freshly computed) payload.
+    # At this point `cached` is guaranteed non-None: either it was already set
+    # before the branch, or `needs_compute` ran and set `cached = payload`.
+    assert cached is not None  # narrowing for mypy
+    computed_at_str: str = cached["computed_at"]
+    computed_at_dt = datetime.fromisoformat(computed_at_str)
+
+    return ProcessSignalsResponse(
+        essay_id=essay_id,
+        essay_version_id=version.id,
+        has_process_data=cached["has_process_data"],
+        session_count=cached["session_count"],
+        sessions=[
+            SessionSegmentResponse(
+                session_index=s["session_index"],
+                started_at=datetime.fromisoformat(s["started_at"]),
+                ended_at=datetime.fromisoformat(s["ended_at"]),
+                duration_seconds=s["duration_seconds"],
+                snapshot_count=s["snapshot_count"],
+                word_count_start=s["word_count_start"],
+                word_count_end=s["word_count_end"],
+                words_added=s["words_added"],
+            )
+            for s in cached["sessions"]
+        ],
+        inter_session_gaps_seconds=cached["inter_session_gaps_seconds"],
+        active_writing_seconds=cached["active_writing_seconds"],
+        total_elapsed_seconds=cached["total_elapsed_seconds"],
+        paste_events=[
+            PasteEventResponse(
+                snapshot_seq=e["snapshot_seq"],
+                occurred_at=datetime.fromisoformat(e["occurred_at"]),
+                words_before=e["words_before"],
+                words_after=e["words_after"],
+                words_added=e["words_added"],
+                session_index=e["session_index"],
+            )
+            for e in cached["paste_events"]
+        ],
+        rapid_completion_events=[
+            RapidCompletionEventResponse(
+                session_index=e["session_index"],
+                duration_seconds=e["duration_seconds"],
+                words_at_start=e["words_at_start"],
+                words_at_end=e["words_at_end"],
+                completion_fraction=e["completion_fraction"],
+            )
+            for e in cached["rapid_completion_events"]
+        ],
+        computed_at=computed_at_dt,
     )

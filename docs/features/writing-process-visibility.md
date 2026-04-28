@@ -1,7 +1,7 @@
 # Feature: Writing Process Visibility
 
 **Phase:** 3 — Insights
-**Status:** Planned
+**Status:** In Progress (M5-09 snapshot capture complete; M5-10 timeline signals complete)
 
 ---
 
