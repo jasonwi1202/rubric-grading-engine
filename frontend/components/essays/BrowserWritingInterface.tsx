@@ -54,16 +54,19 @@ export interface BrowserWritingInterfaceProps {
  * Count words in an HTML string by stripping tags, decoding HTML entities,
  * normalising whitespace, and splitting on whitespace.
  *
- * Uses the textarea trick to decode entities in the same way browsers do, so
- * the count matches the backend's `_strip_html_tags` path (which calls
- * `html.unescape`).
+ * Uses `DOMParser` with `text/html` to decode entities and extract plain text
+ * safely (no script execution), matching the backend's `_strip_html_tags` path
+ * which calls `html.unescape`.
  */
 export function countWordsFromHtml(html: string): number {
-  const htmlWithoutTags = html.replace(/<[^>]*>/g, " ");
-  const decoder = document.createElement("textarea");
-  decoder.innerHTML = htmlWithoutTags;
-  // Replace non-breaking spaces with regular spaces before splitting.
-  const normalizedText = decoder.value.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+  // First strip tags via regex to obtain a plain-text-ish string, then use
+  // DOMParser to decode any remaining HTML entities accurately.
+  const withoutTags = html.replace(/<[^>]*>/g, " ");
+  const doc = new DOMParser().parseFromString(withoutTags, "text/html");
+  // textContent gives the decoded text without any markup.
+  const rawText = doc.body.textContent ?? "";
+  // Normalise whitespace (including non-breaking spaces) and trim.
+  const normalizedText = rawText.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
   if (!normalizedText) return 0;
   return normalizedText.split(" ").filter(Boolean).length;
 }
@@ -84,7 +87,7 @@ function sanitizeEditorHtml(html: string): string {
   // Remove dangerous elements entirely.
   template.content
     .querySelectorAll(
-      "script,style,link,meta,iframe,object,embed,form,input,button,textarea,select",
+      "script,style,link,meta,iframe,object,embed,form,input,button,textarea,select,svg",
     )
     .forEach((el) => el.remove());
   // Strip event-handler attributes and javascript: URLs from remaining nodes.
@@ -92,7 +95,7 @@ function sanitizeEditorHtml(html: string): string {
     for (const attr of Array.from(el.attributes)) {
       if (
         attr.name.startsWith("on") ||
-        ((attr.name === "href" || attr.name === "src" || attr.name === "action") &&
+        (["href", "src", "action", "data"].includes(attr.name) &&
           /^javascript:/i.test(attr.value))
       ) {
         el.removeAttribute(attr.name);

@@ -31,7 +31,7 @@ from app.schemas.essay import (
     SnapshotItem,
     WriteSnapshotResponse,
 )
-from app.services.essay import _strip_html_tags, create_composed_essay
+from app.services.essay import _sanitize_html_content, _strip_html_tags, create_composed_essay
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -60,17 +60,22 @@ def _make_essay(
     return e
 
 
+# Sentinel used by _make_version to distinguish "caller passed None" from "no value provided".
+_UNSET: object = object()
+
+
 def _make_version(
     version_id: uuid.UUID | None = None,
     essay_id: uuid.UUID | None = None,
-    writing_snapshots: list | None = None,
+    writing_snapshots: list | None = _UNSET,  # type: ignore[assignment]
     word_count: int = 0,
 ) -> MagicMock:
     v = MagicMock()
     v.id = version_id or uuid.uuid4()
     v.essay_id = essay_id or uuid.uuid4()
     v.word_count = word_count
-    v.writing_snapshots = writing_snapshots if writing_snapshots is not None else []
+    # Allow None to be explicitly set (represents a file-upload essay with no snapshot array).
+    v.writing_snapshots = [] if writing_snapshots is _UNSET else writing_snapshots
     v.content = ""
     v.submitted_at = datetime.now(UTC)
     return v
@@ -116,6 +121,43 @@ class TestStripHtmlTags:
 
 
 # ---------------------------------------------------------------------------
+# _sanitize_html_content — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeHtmlContent:
+    def test_passes_safe_formatting_through(self) -> None:
+        html = "<p>Hello <b>world</b></p>"
+        assert _sanitize_html_content(html) == html
+
+    def test_strips_script_tags_and_preserves_text(self) -> None:
+        result = _sanitize_html_content("<script>alert(1)</script><p>text</p>")
+        # The <script> tag itself is removed (no executable code).
+        assert "<script>" not in result
+        assert "</script>" not in result
+        # Legitimate paragraph content is preserved.
+        assert "<p>text</p>" in result
+
+    def test_strips_event_handler_attributes(self) -> None:
+        result = _sanitize_html_content('<p onclick="alert(1)">text</p>')
+        assert 'onclick' not in result
+        assert "<p>" in result
+        assert "text" in result
+
+    def test_strips_disallowed_tags_but_keeps_text(self) -> None:
+        result = _sanitize_html_content("<img src='x' onerror='alert(1)'>")
+        assert "<img" not in result
+
+    def test_empty_string(self) -> None:
+        assert _sanitize_html_content("") == ""
+
+    def test_entity_round_trip(self) -> None:
+        """HTML entities in text are preserved correctly after sanitization."""
+        result = _sanitize_html_content("<p>Tom &amp; Jerry</p>")
+        assert result == "<p>Tom &amp; Jerry</p>"
+
+
+# ---------------------------------------------------------------------------
 # create_composed_essay — service unit tests (mocked DB)
 # ---------------------------------------------------------------------------
 
@@ -136,7 +178,6 @@ class TestCreateComposedEssay:
 
         # Use MagicMock for the db so sync methods (add) are not AsyncMocks.
         db = MagicMock()
-        db.add = MagicMock()
         db.flush = AsyncMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
@@ -293,9 +334,8 @@ class TestSaveWritingSnapshot:
         """writing_snapshots=None (file-upload essay) raises ValidationError."""
         from app.services.essay import save_writing_snapshot
 
-        # A version with writing_snapshots=None represents a file-upload essay.
+        # writing_snapshots=None represents a file-upload essay (no snapshot array).
         version = _make_version(writing_snapshots=None)
-        version.writing_snapshots = None  # MagicMock default is not None; force it
 
         scalar_mock = MagicMock()
         scalar_mock.scalar_one_or_none.return_value = version
