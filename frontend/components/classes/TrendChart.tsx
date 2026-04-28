@@ -78,9 +78,13 @@ interface TrendChartProps {
  */
 export function TrendChart({ assignments }: TrendChartProps) {
   // Only completed or returned assignments contribute analytics data.
-  const completedAssignments = assignments.filter(
-    (a) => a.status === "complete" || a.status === "returned",
-  );
+  // Sort ascending by created_at so the x-axis represents time progression.
+  const completedAssignments = assignments
+    .filter((a) => a.status === "complete" || a.status === "returned")
+    .sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
 
   // Fetch analytics for each completed assignment in parallel.
   const analyticsQueries = useQueries({
@@ -121,14 +125,16 @@ export function TrendChart({ assignments }: TrendChartProps) {
     );
   }
 
-  // Build (title, normalised score) data points — skip assignments with null scores.
+  // Build (id, title, normalised score) data points — skip assignments with null scores.
   const dataPoints = completedAssignments
     .map((a, i) => ({
+      id: a.id,
       title: a.title,
       score: analyticsQueries[i]?.data?.overall_avg_normalized_score ?? null,
     }))
     .filter(
-      (d): d is { title: string; score: number } => d.score !== null,
+      (d): d is { id: string; title: string; score: number } =>
+        d.score !== null,
     );
 
   if (dataPoints.length < 2) {
@@ -254,7 +260,7 @@ export function TrendChart({ assignments }: TrendChartProps) {
         })}
       </svg>
 
-      {/* Accessible data table — screen readers and keyboard users see this. */}
+      {/* Accessible data table — screen readers see this. */}
       <table className="sr-only" aria-label="Cross-assignment trend data">
         <caption>Overall normalized class average per completed assignment</caption>
         <thead>
@@ -265,7 +271,7 @@ export function TrendChart({ assignments }: TrendChartProps) {
         </thead>
         <tbody>
           {dataPoints.map((d) => (
-            <tr key={d.title}>
+            <tr key={d.id}>
               <td>{d.title}</td>
               <td>{Math.round(d.score * 100)}%</td>
             </tr>
