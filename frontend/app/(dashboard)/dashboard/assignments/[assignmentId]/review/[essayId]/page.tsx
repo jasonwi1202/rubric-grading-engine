@@ -33,6 +33,8 @@ import { getGrade } from "@/lib/api/grades";
 import type { GradeResponse } from "@/lib/api/grades";
 import { getIntegrityReport } from "@/lib/api/integrity";
 import type { IntegrityReportResponse } from "@/lib/api/integrity";
+import { getProcessSignals } from "@/lib/api/process-signals";
+import { getSnapshots } from "@/lib/api/essays";
 import { ApiError } from "@/lib/api/errors";
 import {
   EssayReviewPanel,
@@ -44,6 +46,11 @@ import {
   IntegrityPanelSkeleton,
   IntegrityPanelEmpty,
 } from "@/components/grading/IntegrityPanel";
+import {
+  WritingProcessPanel,
+  WritingProcessPanelSkeleton,
+  WritingProcessPanelEmpty,
+} from "@/components/grading/WritingProcessPanel";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -103,6 +110,47 @@ export default function EssayReviewPage() {
       }
     },
     enabled: !!essayId,
+    staleTime: 60_000,
+  });
+
+  // Load writing process signals — 404 means no report; null means no data.
+  const {
+    data: processSignals,
+    isLoading: processLoading,
+  } = useQuery({
+    queryKey: ["process-signals", essayId],
+    queryFn: async () => {
+      try {
+        return await getProcessSignals(essayId);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    enabled: !!essayId,
+    staleTime: 60_000,
+  });
+
+  // Load snapshot metadata for the snapshot viewer — only relevant when
+  // process data is available (has_process_data === true).
+  const {
+    data: snapshotState,
+  } = useQuery({
+    queryKey: ["snapshots", essayId],
+    queryFn: async () => {
+      try {
+        return await getSnapshots(essayId);
+      } catch (err) {
+        // 422 = file-upload essay (no snapshot history); treat as no data.
+        if (err instanceof ApiError && (err.status === 404 || err.status === 422 || err.status === 403)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    enabled: !!essayId && processSignals?.has_process_data === true,
     staleTime: 60_000,
   });
 
@@ -275,6 +323,18 @@ export default function EssayReviewPage() {
             ) : (
               <IntegrityPanelEmpty />
             )}
+
+            {/* Writing process panel */}
+            {processLoading ? (
+              <WritingProcessPanelSkeleton />
+            ) : processSignals && processSignals.has_process_data ? (
+              <WritingProcessPanel
+                signals={processSignals}
+                snapshots={snapshotState?.snapshots ?? []}
+              />
+            ) : processSignals ? (
+              <WritingProcessPanelEmpty />
+            ) : null}
           </div>
 
           {/* Right panel — rubric scores + feedback editing */}
