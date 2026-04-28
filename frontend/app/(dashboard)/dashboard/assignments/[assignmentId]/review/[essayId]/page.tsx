@@ -140,16 +140,20 @@ export default function EssayReviewPage() {
   } = useQuery({
     queryKey: ["snapshots", essayId],
     queryFn: async () => {
-      try {
-        return await getSnapshots(essayId);
-      } catch (err) {
-        // 422 = file-upload essay (no snapshot history); treat as no data.
-        if (err instanceof ApiError && (err.status === 404 || err.status === 422 || err.status === 403)) {
-          return null;
+        try {
+          return await getSnapshots(essayId);
+        } catch (err) {
+          // 422 VALIDATION_ERROR means the essay was created via file upload
+          // and has no snapshot history (the /snapshots endpoint is only valid
+          // for browser-composed essays). 404/403 mean no access or not found.
+          // All three are treated as "no snapshot data available" here,
+          // distinct from process-signals where 422 is not a valid response.
+          if (err instanceof ApiError && (err.status === 404 || err.status === 422 || err.status === 403)) {
+            return null;
+          }
+          throw err;
         }
-        throw err;
-      }
-    },
+      },
     enabled: !!essayId && processSignals?.has_process_data === true,
     staleTime: 60_000,
   });

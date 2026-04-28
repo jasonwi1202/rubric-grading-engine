@@ -21,7 +21,7 @@
  * - API error messages are mapped to static strings; raw server text is never shown.
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type {
   ProcessSignalsResponse,
   SessionSegment,
@@ -263,6 +263,12 @@ export interface SnapshotItem {
 function SnapshotViewer({ snapshots }: { snapshots: SnapshotItem[] }) {
   const [selected, setSelected] = useState<number | null>(null);
 
+  // Memoize the selected snapshot to avoid a linear search on every render.
+  const selectedSnapshot = useMemo(
+    () => (selected !== null ? snapshots.find((s) => s.seq === selected) : undefined),
+    [selected, snapshots],
+  );
+
   if (snapshots.length === 0) {
     return (
       <p className="text-xs text-gray-400">
@@ -277,32 +283,31 @@ function SnapshotViewer({ snapshots }: { snapshots: SnapshotItem[] }) {
         {snapshots.length} snapshot{snapshots.length !== 1 ? "s" : ""} recorded.
         Select a point to view essay state at that time.
       </p>
-      <div
+      <ul
         className="max-h-48 overflow-y-auto rounded-md border border-gray-200"
-        role="listbox"
         aria-label="Essay snapshots"
       >
         {[...snapshots].reverse().map((snap) => (
-          <button
-            key={snap.seq}
-            type="button"
-            role="option"
-            aria-selected={selected === snap.seq}
-            onClick={() =>
-              setSelected((prev) => (prev === snap.seq ? null : snap.seq))
-            }
-            className={`flex w-full items-center justify-between border-b border-gray-100 px-3 py-2 text-left text-xs last:border-0 hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500 ${
-              selected === snap.seq
-                ? "bg-blue-50 font-medium text-blue-700"
-                : "text-gray-600"
-            }`}
-            data-testid={`snapshot-item-${snap.seq}`}
-          >
-            <span>{formatTimestamp(snap.ts)}</span>
-            <span className="text-gray-400">{snap.word_count} words</span>
-          </button>
+          <li key={snap.seq} className="border-b border-gray-100 last:border-0">
+            <button
+              type="button"
+              aria-pressed={selected === snap.seq}
+              onClick={() =>
+                setSelected((prev) => (prev === snap.seq ? null : snap.seq))
+              }
+              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500 ${
+                selected === snap.seq
+                  ? "bg-blue-50 font-medium text-blue-700"
+                  : "text-gray-600"
+              }`}
+              data-testid={`snapshot-item-${snap.seq}`}
+            >
+              <span>{formatTimestamp(snap.ts)}</span>
+              <span className="text-gray-400">{snap.word_count} words</span>
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
 
       {selected !== null && (
         <div
@@ -311,7 +316,7 @@ function SnapshotViewer({ snapshots }: { snapshots: SnapshotItem[] }) {
           data-testid="snapshot-preview-note"
         >
           <p className="text-xs text-blue-800">
-            Snapshot #{selected} selected ({snapshots.find((s) => s.seq === selected)?.word_count ?? 0} words).
+            Snapshot #{selected} selected ({selectedSnapshot?.word_count ?? 0} words).
             Full snapshot content preview is available in the writing interface.
           </p>
         </div>
