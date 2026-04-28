@@ -15,6 +15,7 @@ No student PII in fixtures.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.session import get_db
 from app.dependencies import get_current_teacher
 from app.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.main import create_app
@@ -89,6 +91,17 @@ def _app_with_teacher(teacher: MagicMock | None = None) -> Any:
     teacher = teacher or _make_teacher()
     app = create_app()
     app.dependency_overrides[get_current_teacher] = lambda: teacher  # type: ignore[attr-defined]
+
+    # Override get_db with a MagicMock session so that the dependency teardown
+    # (which runs SET commands for tenant context) does not attempt a real DB
+    # connection during unit tests — keeping them fast and isolated.
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+
+    async def _mock_get_db() -> AsyncGenerator[MagicMock, None]:
+        yield mock_db
+
+    app.dependency_overrides[get_db] = _mock_get_db  # type: ignore[attr-defined]
     return app
 
 

@@ -1027,6 +1027,14 @@ async def save_writing_snapshot(
     # Sanitize the HTML before persisting to prevent stored XSS.
     safe_html = _sanitize_html_content(html_content)
 
+    # Derive plain-text content from the sanitized HTML (for LLM grading
+    # compatibility) and compute word count server-side.  The client-supplied
+    # word_count is accepted in the request body for schema compatibility but
+    # is ignored for storage — using the server-derived value prevents
+    # inconsistent or forged counts from reaching the database.
+    plain_text = _strip_html_tags(safe_html)
+    server_word_count = len(plain_text.split()) if plain_text.strip() else 0
+
     # Build the new snapshot entry.
     existing: list[dict[str, Any]] = list(version.writing_snapshots)
     seq = len(existing) + 1
@@ -1034,19 +1042,16 @@ async def save_writing_snapshot(
     snapshot = {
         "seq": seq,
         "ts": ts,
-        "word_count": word_count,
+        "word_count": server_word_count,
         "html_content": safe_html,
     }
     existing.append(snapshot)
-
-    # Derive plain-text content from HTML (for LLM grading compatibility).
-    plain_text = _strip_html_tags(safe_html)
 
     # Update the version in-place.  The JSONB column requires a full
     # replacement (SQLAlchemy does not track list mutations automatically).
     version.writing_snapshots = existing
     version.content = plain_text
-    version.word_count = word_count
+    version.word_count = server_word_count
 
     # Update the version's submitted_at so the essay list reflects recency.
     version.submitted_at = datetime.now(UTC)
@@ -1067,7 +1072,7 @@ async def save_writing_snapshot(
         essay_id=essay_id,
         essay_version_id=version.id,
         snapshot_count=seq,
-        word_count=word_count,
+        word_count=server_word_count,
         saved_at=datetime.now(UTC),
     )
 

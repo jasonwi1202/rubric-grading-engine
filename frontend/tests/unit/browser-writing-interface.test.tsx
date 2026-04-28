@@ -585,3 +585,86 @@ describe("BrowserWritingInterface — submit and cancel", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Snapshot recovery error
+// ---------------------------------------------------------------------------
+
+describe("BrowserWritingInterface — snapshot recovery error", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows a recoverable error alert when snapshot fetch fails", async () => {
+    mockGetSnapshots.mockRejectedValue(new Error("Network error"));
+
+    render(
+      <BrowserWritingInterface
+        essayId={ESSAY_ID}
+        essayVersionId={VERSION_ID}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    // Editor should not be rendered when recovery fails
+    expect(screen.queryByTestId("essay-editor")).not.toBeInTheDocument();
+    // A Retry button should be present
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Paste sanitization
+// ---------------------------------------------------------------------------
+
+describe("BrowserWritingInterface — paste sanitization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSnapshots.mockResolvedValue(emptySnapshot());
+    mockSaveSnapshot.mockResolvedValue(snapshotSaveResult());
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("strips dangerous elements from pasted HTML", async () => {
+    render(
+      <BrowserWritingInterface
+        essayId={ESSAY_ID}
+        essayVersionId={VERSION_ID}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    await waitFor(() => expect(screen.queryByTestId("essay-editor")).toBeInTheDocument());
+
+    const editor = screen.getByTestId("essay-editor");
+
+    // Simulate a paste event with dangerous HTML
+    const pasteHtml = '<p>Safe text</p><script>alert(1)</script><img src="http://test-tracking.example/pixel.png">';
+    const pasteData = {
+      getData: (type: string) => (type === "text/html" ? pasteHtml : ""),
+    };
+    const pasteEvent = new Event("paste", { bubbles: true }) as unknown as React.ClipboardEvent<HTMLDivElement>;
+    Object.defineProperty(pasteEvent, "clipboardData", { value: pasteData });
+    Object.defineProperty(pasteEvent, "preventDefault", { value: vi.fn() });
+
+    act(() => {
+      editor.dispatchEvent(pasteEvent as unknown as Event);
+    });
+
+    // The pasted content should not contain <script> or <img> in the editor
+    expect(editor.innerHTML).not.toContain("<script>");
+    expect(editor.innerHTML).not.toContain("<img");
+  });
+});

@@ -139,7 +139,12 @@ export function BrowserWritingInterface({
     return (editorRef.current?.textContent?.trim().length ?? 0) > 0;
   }, []);
 
-  const { data: snapshotState, isLoading: isLoadingSnapshots } = useQuery({
+  const {
+    data: snapshotState,
+    isLoading: isLoadingSnapshots,
+    isError: isSnapshotError,
+    refetch: refetchSnapshots,
+  } = useQuery({
     queryKey: ["snapshots", essayId],
     queryFn: () => getSnapshots(essayId),
     enabled: !!essayId,
@@ -187,10 +192,13 @@ export function BrowserWritingInterface({
     onSuccess: (_data, variables) => {
       setSaveStatus("saved");
       lastSavedContentRef.current = variables.html_content;
-      // Clear the unsaved flag only if no new content arrived during the save.
-      // If pendingContentRef is set, onSettled will schedule a follow-up save
-      // and hasUnsaved should remain true until that save completes.
-      setHasUnsaved(pendingContentRef.current !== null);
+      // Derive hasUnsaved by comparing the current sanitized editor content
+      // against the just-acknowledged saved content.  This is monotonically
+      // correct even if submit logic cleared pendingContentRef mid-flight:
+      // if the editor differs from what was just saved, a new save is still
+      // needed and hasUnsaved must stay true.
+      const currentContent = sanitizeEditorHtml(editorRef.current?.innerHTML ?? "");
+      setHasUnsaved(currentContent !== variables.html_content);
     },
     onError: () => {
       setSaveStatus("error");
@@ -246,6 +254,38 @@ export function BrowserWritingInterface({
     }
     autosaveTimerRef.current = setTimeout(triggerSave, AUTOSAVE_DEBOUNCE_MS);
   }, [triggerSave, getHasContent]);
+
+  // ── Paste handler — sanitize at insertion time ────────────────────────────
+  // Intercepts paste events to strip dangerous elements/attributes from
+  // pasted HTML before they are inserted into the live DOM.  Without this,
+  // <img>, <svg>, onerror= and similar payloads would exist in the editor
+  // and could load external resources or execute handlers in the browser
+  // even before the first autosave call sanitizes the outgoing payload.
+  const handlePaste = useCallback(
+    (e: { preventDefault(): void; clipboardData: DataTransfer }) => {
+      e.preventDefault();
+      // Prefer sanitized HTML to preserve formatting; fall back to plain text
+      // if HTML is not available (e.g., plain-text-only clipboard content).
+      const plainText = e.clipboardData.getData("text/plain");
+      const rawHtml = e.clipboardData.getData("text/html");
+      const toInsert = rawHtml ? sanitizeEditorHtml(rawHtml) : plainText;
+      // Insert at the current caret position using the Selection/Range API.
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+      selection.deleteFromDocument();
+      const range = selection.getRangeAt(0);
+      const frag = range.createContextualFragment(toInsert);
+      range.insertNode(frag);
+      // Move caret to end of insertion.
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      // Fire the normal input handler so hasUnsaved, hasContent, and the
+      // debounce timer are all updated after the paste.
+      handleInput();
+    },
+    [handleInput],
+  );
 
   // ── beforeunload — warn on unsaved changes ────────────────────────────────
 
@@ -303,6 +343,9 @@ export function BrowserWritingInterface({
         // Block navigation — navigating away with a failed final save would
         // permanently drop the latest edits.  Surface an error so the user
         // can retry or copy their work before leaving.
+        // Ensure hasUnsaved stays true so the beforeunload guard fires even if
+        // onSuccess from an earlier in-flight save cleared it.
+        setHasUnsaved(true);
         setSubmitError(
           "Your latest changes could not be saved. Please try again or copy your work before submitting.",
         );
@@ -378,8 +421,25 @@ export function BrowserWritingInterface({
         />
       )}
 
+      {/* ── Snapshot recovery error — shown instead of editor ────────────── */}
+      {isSnapshotError && (
+        <div
+          role="alert"
+          className="rounded-b-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          <p>Could not recover your previous draft. Please try again.</p>
+          <button
+            type="button"
+            onClick={() => void refetchSnapshots()}
+            className="mt-2 text-xs font-medium underline hover:no-underline focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* ── Rich-text editor surface ──────────────────────────────────────── */}
-      {!isLoadingSnapshots && (
+      {!isLoadingSnapshots && !isSnapshotError && (
         <div
           ref={editorRef}
           contentEditable
@@ -389,6 +449,7 @@ export function BrowserWritingInterface({
           aria-describedby="writing-interface-status"
           suppressContentEditableWarning
           onInput={handleInput}
+          onPaste={handlePaste}
           className="min-h-64 rounded-b-md border border-t-0 border-gray-300 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           data-testid="essay-editor"
         />
