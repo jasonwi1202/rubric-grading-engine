@@ -60,14 +60,18 @@ def _make_essay(
     return e
 
 
-# Sentinel used by _make_version to distinguish "caller passed None" from "no value provided".
-_UNSET: object = object()
+# Sentinel class used by _make_version to distinguish "caller passed None" from "no value provided".
+class _UnsetType:
+    pass
+
+
+_UNSET = _UnsetType()
 
 
 def _make_version(
     version_id: uuid.UUID | None = None,
     essay_id: uuid.UUID | None = None,
-    writing_snapshots: list | None = _UNSET,  # type: ignore[assignment]
+    writing_snapshots: list[Any] | None | _UnsetType = _UNSET,
     word_count: int = 0,
 ) -> MagicMock:
     v = MagicMock()
@@ -75,7 +79,7 @@ def _make_version(
     v.essay_id = essay_id or uuid.uuid4()
     v.word_count = word_count
     # Allow None to be explicitly set (represents a file-upload essay with no snapshot array).
-    v.writing_snapshots = [] if writing_snapshots is _UNSET else writing_snapshots
+    v.writing_snapshots = [] if isinstance(writing_snapshots, _UnsetType) else writing_snapshots
     v.content = ""
     v.submitted_at = datetime.now(UTC)
     return v

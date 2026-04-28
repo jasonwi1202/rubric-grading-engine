@@ -999,7 +999,7 @@ async def save_writing_snapshot(
         )
         .order_by(EssayVersion.version_number.desc())
         .limit(1)
-        .with_for_update()
+        .with_for_update(of=EssayVersion)
     )
     version = version_result.scalar_one_or_none()
     if version is None:

@@ -644,7 +644,7 @@ Each call appends a snapshot entry `{seq, ts, word_count, html_content}` to the 
     "essay_version_id": "uuid",
     "snapshot_count": 3,
     "word_count": 150,
-    "saved_at": "2026-04-28T10:00:12Z"
+    "saved_at": "2026-04-28T10:00:12+00:00"
   }
 }
 ```
@@ -660,9 +660,9 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
     "current_content": "<p>Essay text…</p>",
     "word_count": 150,
     "snapshots": [
-      {"seq": 1, "ts": "2026-04-28T10:00:00Z", "word_count": 50},
-      {"seq": 2, "ts": "2026-04-28T10:00:12Z", "word_count": 100},
-      {"seq": 3, "ts": "2026-04-28T10:00:24Z", "word_count": 150}
+      {"seq": 1, "ts": "2026-04-28T10:00:00+00:00", "word_count": 50},
+      {"seq": 2, "ts": "2026-04-28T10:00:12+00:00", "word_count": 100},
+      {"seq": 3, "ts": "2026-04-28T10:00:24+00:00", "word_count": 150}
     ]
   }
 }

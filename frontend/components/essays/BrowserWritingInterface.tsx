@@ -84,10 +84,12 @@ export function countWordsFromHtml(html: string): number {
 function sanitizeEditorHtml(html: string): string {
   const template = document.createElement("template");
   template.innerHTML = html;
-  // Remove dangerous elements entirely.
+  // Remove dangerous or external-resource-loading elements entirely.
+  // img is excluded because pasted images load external URLs in the teacher's browser
+  // and introduce uncontrolled content into what is essentially a plain-text essay surface.
   template.content
     .querySelectorAll(
-      "script,style,link,meta,iframe,object,embed,form,input,button,textarea,select,svg",
+      "script,style,link,meta,iframe,object,embed,form,input,button,textarea,select,svg,img",
     )
     .forEach((el) => el.remove());
   // Strip event-handler attributes and javascript: URLs from remaining nodes.
@@ -121,6 +123,14 @@ export function BrowserWritingInterface({
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>("");
   const [isEditorReady, setIsEditorReady] = useState(false);
+  // Holds sanitized content that arrived while a save was in flight, so it can
+  // be flushed in onSettled once the current request completes.
+  const pendingContentRef = useRef<string | null>(null);
+  // Forward-reference to the stable mutate function, used inside onSettled to
+  // schedule a follow-up save without creating a circular useMutation dependency.
+  const saveMutationRef = useRef<
+    ((vars: { html_content: string; word_count: number }) => void) | null
+  >(null);
 
   // ── Load snapshot state on mount (editor recovery after refresh) ──────────
 
@@ -164,13 +174,29 @@ export function BrowserWritingInterface({
     },
     onSuccess: (_data, variables) => {
       setSaveStatus("saved");
-      setHasUnsaved(false);
       lastSavedContentRef.current = variables.html_content;
+      // Clear the unsaved flag only if no new content arrived during the save.
+      // If pendingContentRef is set, onSettled will schedule a follow-up save
+      // and hasUnsaved should remain true until that save completes.
+      setHasUnsaved(pendingContentRef.current !== null);
     },
     onError: () => {
       setSaveStatus("error");
     },
+    onSettled: () => {
+      // If new content arrived while the previous save was in flight, save it now.
+      const pending = pendingContentRef.current;
+      if (pending !== null && pending !== lastSavedContentRef.current) {
+        pendingContentRef.current = null;
+        const wordCount = countWordsFromHtml(pending);
+        saveMutationRef.current?.({ html_content: pending, word_count: wordCount });
+      } else {
+        pendingContentRef.current = null;
+      }
+    },
   });
+  // Keep forward-ref in sync on every render (doSave is stable across renders).
+  saveMutationRef.current = doSave;
 
   // ── Content helpers ───────────────────────────────────────────────────────
 
@@ -179,11 +205,19 @@ export function BrowserWritingInterface({
   }, []);
 
   const triggerSave = useCallback(() => {
-    // Skip if a save is already in flight — prevents overlapping requests from
-    // racing and overwriting each other's seq / lastSavedContentRef.
-    if (isSaving) return;
-    const content = getCurrentHtml();
-    if (content === lastSavedContentRef.current) return;
+    // Sanitize the raw editor HTML before computing word count or sending to the
+    // backend. This ensures what the user sees and what is persisted are the same.
+    const content = sanitizeEditorHtml(getCurrentHtml());
+    if (content === lastSavedContentRef.current) {
+      pendingContentRef.current = null;
+      return;
+    }
+    if (isSaving) {
+      // A save is in flight — queue the latest content so onSettled can flush it.
+      pendingContentRef.current = content;
+      return;
+    }
+    pendingContentRef.current = null;
     const wordCount = countWordsFromHtml(content);
     doSave({ html_content: content, word_count: wordCount });
   }, [getCurrentHtml, doSave, isSaving]);
@@ -244,11 +278,12 @@ export function BrowserWritingInterface({
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
-    // Await a final save for any unsaved changes before handing off to the
-    // parent's onSubmit callback (which may navigate away immediately).
-    const content = getCurrentHtml();
-    if (content !== lastSavedContentRef.current && content.trim()) {
-      const wordCount = countWordsFromHtml(content);
+    pendingContentRef.current = null; // cancel any queued follow-up save
+    // Sanitize and await a final save for any unsaved changes before handing off
+    // to the parent's onSubmit callback (which may navigate away immediately).
+    const content = sanitizeEditorHtml(getCurrentHtml());
+    const wordCount = countWordsFromHtml(content);
+    if (content !== lastSavedContentRef.current && wordCount > 0) {
       try {
         await doSaveAsync({ html_content: content, word_count: wordCount });
       } catch {
@@ -268,7 +303,9 @@ export function BrowserWritingInterface({
     return "";
   })();
 
-  const canSubmit = getCurrentHtml().trim().length > 0;
+  // Use textContent (not innerHTML) so markup-only states like <br>/<div><br></div>
+  // don't incorrectly enable submission of an effectively-empty essay.
+  const canSubmit = (editorRef.current?.textContent?.trim().length ?? 0) > 0;
 
   return (
     <div className="flex flex-col gap-3">

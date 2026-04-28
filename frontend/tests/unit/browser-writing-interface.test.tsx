@@ -117,9 +117,9 @@ describe("countWordsFromHtml", () => {
   });
 
   it("handles HTML entities", () => {
-    // &amp; → space → not a word boundary issue
+    // &amp; decodes to "&" — the result should be 3 words: "Tom", "&", "Jerry"
     const count = countWordsFromHtml("Tom &amp; Jerry");
-    expect(count).toBeGreaterThanOrEqual(2);
+    expect(count).toBe(3);
   });
 });
 
