@@ -461,7 +461,7 @@ describe("BrowserWritingInterface — status indicator", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Saved")).toBeInTheDocument();
-      expect(mockSaveSnapshot).toHaveBeenCalled();
+      expect(mockSaveSnapshot).toHaveBeenCalledTimes(1);
     });
   });
 

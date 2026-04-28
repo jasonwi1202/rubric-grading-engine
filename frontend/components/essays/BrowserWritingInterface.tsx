@@ -133,6 +133,12 @@ export function BrowserWritingInterface({
 
   // ── Load snapshot state on mount (editor recovery after refresh) ──────────
 
+  // Returns true when the editor contains real text (not just markup whitespace).
+  // Defined before the snapshot-restore useEffect so it can appear in the dep array.
+  const getHasContent = useCallback((): boolean => {
+    return (editorRef.current?.textContent?.trim().length ?? 0) > 0;
+  }, []);
+
   const { data: snapshotState, isLoading: isLoadingSnapshots } = useQuery({
     queryKey: ["snapshots", essayId],
     queryFn: () => getSnapshots(essayId),
@@ -156,10 +162,10 @@ export function BrowserWritingInterface({
       lastSavedContentRef.current = sanitized;
       // Initialise hasContent from the recovered snapshot so the Submit button
       // is enabled immediately when the editor is pre-filled after a refresh.
-      setHasContent((editorRef.current.textContent?.trim().length ?? 0) > 0);
+      setHasContent(getHasContent());
       setIsEditorReady(true);
     }
-  }, [snapshotState, isEditorReady]);
+  }, [snapshotState, isEditorReady, getHasContent]);
 
   // ── Autosave mutation ─────────────────────────────────────────────────────
 
@@ -231,7 +237,7 @@ export function BrowserWritingInterface({
   const handleInput = useCallback(() => {
     setHasUnsaved(true);
     // Track whether editor has real text (not just markup) for Submit eligibility.
-    setHasContent((editorRef.current?.textContent?.trim().length ?? 0) > 0);
+    setHasContent(getHasContent());
     // Reset to "idle" only if not currently saving
     setSaveStatus((prev) => (prev === "saving" ? prev : "idle"));
 
@@ -239,7 +245,7 @@ export function BrowserWritingInterface({
       clearTimeout(autosaveTimerRef.current);
     }
     autosaveTimerRef.current = setTimeout(triggerSave, AUTOSAVE_DEBOUNCE_MS);
-  }, [triggerSave]);
+  }, [triggerSave, getHasContent]);
 
   // ── beforeunload — warn on unsaved changes ────────────────────────────────
 

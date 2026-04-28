@@ -861,6 +861,10 @@ def _sanitize_html_content(html_content: str) -> str:
     try:
         filt.feed(html_content)
     finally:
+        # close() must be called in a finally block so the parser is finalised
+        # even if feed() raises (e.g. on deeply malformed HTML).  Without close(),
+        # any content buffered by HTMLParser's internal state machine is never
+        # flushed to _buf, producing truncated output.
         filt.close()
     return filt.get_output()
 
