@@ -170,8 +170,11 @@ export function BrowserWritingInterface({
   // ── Toolbar formatting commands ───────────────────────────────────────────
 
   const execFormat = (command: string) => {
-    // document.execCommand is deprecated but widely supported and the simplest
-    // approach without an external rich-text library.
+    // document.execCommand is deprecated by the HTML spec but has near-universal
+    // browser support and avoids pulling in a full rich-text library for this
+    // initial implementation.
+    // TODO(M5-09 follow-up): migrate to Selection/Range API or adopt a maintained
+    // rich-text library (e.g., TipTap) if execCommand support is dropped.
     document.execCommand(command, false);
     editorRef.current?.focus();
     handleInput();

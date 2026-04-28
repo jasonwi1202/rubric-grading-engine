@@ -22,12 +22,14 @@ No student PII is logged at any point — only entity IDs appear in log output.
 from __future__ import annotations
 
 import asyncio
+import html as _html_module
 import io
 import logging
 import os
 import re
 import unicodedata
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +42,13 @@ from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.student import Student
 from app.schemas.essay import AutoAssignStatus as AutoAssignStatusType
-from app.schemas.essay import EssayListItemResponse
+from app.schemas.essay import (
+    ComposeEssayResponse,
+    EssayListItemResponse,
+    GetSnapshotsResponse,
+    SnapshotItem,
+    WriteSnapshotResponse,
+)
 from app.services.student_matching import HEADER_CHAR_LIMIT, AutoAssignResult, match_student
 from app.storage.s3 import delete_file, upload_file
 
@@ -774,16 +782,6 @@ async def assign_essay_to_student(
 # Browser composition — M5-09
 # ---------------------------------------------------------------------------
 
-import html as _html_module  # noqa: E402 — placed after existing imports for clarity
-import re as _re  # noqa: E402
-
-from app.schemas.essay import (  # noqa: E402
-    ComposeEssayResponse,
-    GetSnapshotsResponse,
-    SnapshotItem,
-    WriteSnapshotResponse,
-)
-
 
 def _strip_html_tags(html_content: str) -> str:
     """Return plain text by stripping all HTML tags and decoding entities.
@@ -793,9 +791,9 @@ def _strip_html_tags(html_content: str) -> str:
     and used only as plain-text input to the LLM grading pipeline.
     """
     # Replace block-level tags with newlines to preserve paragraph structure.
-    html_content = _re.sub(r"<(br|p|div|li|h[1-6])[^>]*>", "\n", html_content, flags=_re.IGNORECASE)
+    html_content = re.sub(r"<(br|p|div|li|h[1-6])[^>]*>", "\n", html_content, flags=re.IGNORECASE)
     # Strip all remaining tags.
-    text = _re.sub(r"<[^>]+>", "", html_content)
+    text = re.sub(r"<[^>]+>", "", html_content)
     # Decode HTML entities (e.g. &amp; → &, &nbsp; → space).
     text = _html_module.unescape(text)
     return normalize_text(text)
@@ -920,8 +918,6 @@ async def save_writing_snapshot(
 
     No student PII appears in any log output.
     """
-    from datetime import UTC, datetime  # noqa: PLC0415 — local import for clarity
-
     essay = await _get_essay_for_teacher(db, essay_id, teacher_id)
 
     # Load the latest essay version.

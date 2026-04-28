@@ -86,8 +86,8 @@ export default function AssignmentEssaysPage() {
     setComposingVersionId(null);
     setHasUploaded(true);
     // Invalidate essay list so the newly composed essay appears in the review table.
+    // invalidateQueries triggers a refetch automatically for active queries.
     await queryClient.invalidateQueries({ queryKey: ["essays", assignmentId] });
-    await refetchEssays();
   };
 
   const handleCompositionCancel = () => {
