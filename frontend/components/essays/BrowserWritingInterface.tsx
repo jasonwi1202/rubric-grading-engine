@@ -186,12 +186,10 @@ export function BrowserWritingInterface({
     onSettled: () => {
       // If new content arrived while the previous save was in flight, save it now.
       const pending = pendingContentRef.current;
+      pendingContentRef.current = null;
       if (pending !== null && pending !== lastSavedContentRef.current) {
-        pendingContentRef.current = null;
         const wordCount = countWordsFromHtml(pending);
         saveMutationRef.current?.({ html_content: pending, word_count: wordCount });
-      } else {
-        pendingContentRef.current = null;
       }
     },
   });

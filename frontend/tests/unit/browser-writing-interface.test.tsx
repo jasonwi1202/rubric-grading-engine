@@ -117,7 +117,9 @@ describe("countWordsFromHtml", () => {
   });
 
   it("handles HTML entities", () => {
-    // &amp; decodes to "&" — the result should be 3 words: "Tom", "&", "Jerry"
+    // &amp; decodes to "&" which is treated as its own whitespace-delimited token,
+    // giving "Tom" + "&" + "Jerry" = 3 words. The function counts whitespace-separated
+    // tokens, not semantic English words.
     const count = countWordsFromHtml("Tom &amp; Jerry");
     expect(count).toBe(3);
   });
