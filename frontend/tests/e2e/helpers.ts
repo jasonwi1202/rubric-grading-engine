@@ -783,6 +783,9 @@ export async function seedStudentProfileFixture(
   const token = await loginApi(creds.email, creds.password);
 
   const ts = Date.now();
+  // Synthetic student name — follows the "Greek letter + Writer" convention
+  // established by all other E2E fixture helpers in this file
+  // (Gamma, Delta, Epsilon, Theta, Iota → Kappa).
   const studentName = "Kappa Writer";
   const classId = await seedClass(token, `J5 Class ${ts}`);
   const studentId = await seedStudent(token, classId, studentName);

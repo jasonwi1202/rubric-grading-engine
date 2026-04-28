@@ -254,7 +254,15 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     // With two locked assignments, the Celery aggregation computes a trend
     // direction for every skill dimension.
     //
-    // Assert that at least one trend badge is rendered on the page.
+    // This test asserts presence of at least one trend badge rather than
+    // verifying the specific direction.  The accuracy of the trend computation
+    // (i.e. that "improving" is shown when scores rose) is tested at the unit
+    // level in backend/tests/test_student_skill_profile.py (M5.3).  Here the
+    // E2E concern is that the UI correctly renders whatever direction the API
+    // returns — which is validated in Test 4 where we cross-check the API
+    // response against the rendered callouts.  Asserting the exact direction
+    // would require replicating the backend's recency-weighted average logic
+    // in the test, which couples the test too tightly to implementation details.
     const trendPatterns = [/improving/i, /stable/i, /declining/i];
 
     let anyTrendVisible = false;
