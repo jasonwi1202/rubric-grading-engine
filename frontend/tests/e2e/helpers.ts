@@ -751,6 +751,7 @@ export interface StudentProfileFixture {
   email: string;
   password: string;
   studentId: string;
+  studentName: string;
   classId: string;
   assignment1Id: string;
   assignment2Id: string;
@@ -1030,6 +1031,7 @@ export async function seedStudentProfileFixture(
     email: creds.email,
     password: creds.password,
     studentId,
+    studentName,
     classId,
     assignment1Id,
     assignment2Id,

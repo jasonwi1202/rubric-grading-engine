@@ -41,6 +41,7 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     email: string;
     password: string;
     studentId: string;
+    studentName: string;
     classId: string;
     assignment1Id: string;
     assignment2Id: string;
@@ -52,6 +53,7 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     email: "",
     password: "",
     studentId: "",
+    studentName: "",
     classId: "",
     assignment1Id: "",
     assignment2Id: "",
@@ -62,12 +64,10 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
   };
 
   // seedStudentProfileFixture triggers two full grading cycles (up to 120 s
-  // each) and polls for the skill profile.  Raise the timeout well above
-  // Playwright's 30 s default so beforeAll doesn't time out.
-  test.setTimeout(300_000);
+  // each) and polls for the skill profile.  The describe-level timeout of
+  // 300_000 ms covers both the beforeAll and all serial test steps.
 
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(300_000);
     // Seed a complete fixture independently of all other journeys:
     //   teacher → class → 1 student → 2 rubrics → 2 assignments
     //   → 2 essays → 2x batch grading → 2x lock grades
@@ -76,6 +76,7 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     state.email = fixture.email;
     state.password = fixture.password;
     state.studentId = fixture.studentId;
+    state.studentName = fixture.studentName;
     state.classId = fixture.classId;
     state.assignment1Id = fixture.assignment1Id;
     state.assignment2Id = fixture.assignment2Id;
@@ -113,7 +114,7 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     await page.goto(`/dashboard/classes/${state.classId}`);
 
     // Wait for the roster to load — the student link should appear.
-    const profileLink = page.getByRole("link", { name: "Kappa Writer" });
+    const profileLink = page.getByRole("link", { name: state.studentName });
     await expect(profileLink).toBeVisible({ timeout: 15_000 });
 
     // Click the student's name link in the roster table.
@@ -258,7 +259,9 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
 
     let anyTrendVisible = false;
     for (const pattern of trendPatterns) {
-      if (await page.getByText(pattern).first().isVisible().catch(() => false)) {
+      // isVisible() returns false (not throws) when the element is not found,
+      // so no catch is needed.
+      if (await page.getByText(pattern).first().isVisible()) {
         anyTrendVisible = true;
         break;
       }
