@@ -173,10 +173,11 @@ A specific version of an essay (original submission or resubmission).
 | id | UUID | Primary key |
 | essay_id | UUID | FK → Essay |
 | version_number | INTEGER | 1 = original, 2+ = resubmissions |
-| content | TEXT | Full essay text |
-| file_storage_key | VARCHAR(500) | Nullable — S3 key for original uploaded file |
+| content | TEXT | Full essay text (plain text; for browser-composed essays, derived by stripping HTML from the latest snapshot) |
+| file_storage_key | VARCHAR(500) | Nullable — S3 key for original uploaded file; `NULL` for browser-composed essays |
 | word_count | INTEGER | |
 | submitted_at | TIMESTAMPTZ | |
+| writing_snapshots | JSONB | Nullable — `NULL` for file-upload essays; `[]` for browser-composed essays, populated with snapshot entries `{seq, ts, word_count, html_content}` by the autosave endpoint (M5-09) |
 
 ---
 

@@ -30,6 +30,7 @@ import re
 import unicodedata
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -932,7 +933,7 @@ async def save_writing_snapshot(
         raise NotFoundError("Essay version not found.")
 
     # Build the new snapshot entry.
-    existing: list = list(version.writing_snapshots or [])
+    existing: list[dict[str, Any]] = list(version.writing_snapshots or [])
     seq = len(existing) + 1
     ts = datetime.now(UTC).isoformat()
     snapshot = {
@@ -1019,7 +1020,7 @@ async def get_writing_snapshots(
     if version is None:
         raise NotFoundError("Essay version not found.")
 
-    raw_snapshots: list = list(version.writing_snapshots or [])
+    raw_snapshots: list[dict[str, Any]] = list(version.writing_snapshots or [])
 
     # Recover the latest HTML content from the most recent snapshot for
     # editor restoration.  Falls back to empty string for newly created essays.
