@@ -668,7 +668,7 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
 }
 ```
 
-`current_content` is the `html_content` of the most recent snapshot — ready to inject directly into the browser editor for state recovery after a page refresh. Individual `html_content` values of earlier snapshots are not returned here; they are used by the writing-process timeline (M5-10/11). Errors: `403 FORBIDDEN`, `404 NOT_FOUND`.
+`current_content` is the `html_content` of the most recent snapshot — ready to inject directly into the browser editor for state recovery after a page refresh. Individual `html_content` values of earlier snapshots are not returned here; they are used by the writing-process timeline (M5-10/11). This endpoint is only valid for browser-composed essays. File-upload essays (where `writing_snapshots` is `NULL`) return `422 VALIDATION_ERROR` because there is no snapshot-backed editor state to recover. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`, `422 VALIDATION_ERROR` (essay has no writing snapshots — was created via file upload).
 
 ---
 

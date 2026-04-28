@@ -92,16 +92,13 @@ function sanitizeEditorHtml(html: string): string {
       "script,style,link,meta,iframe,object,embed,form,input,button,textarea,select,svg,img",
     )
     .forEach((el) => el.remove());
-  // Strip event-handler attributes and javascript: URLs from remaining nodes.
+  // Strip ALL attributes from the remaining elements to match the backend
+  // _sanitize_html_content() which preserves only allowed tags with no attributes.
+  // This prevents style/class/href mismatches between what the user sees in the
+  // editor and what is persisted after server-side sanitization.
   template.content.querySelectorAll("*").forEach((el) => {
     for (const attr of Array.from(el.attributes)) {
-      if (
-        attr.name.startsWith("on") ||
-        (["href", "src", "action", "data"].includes(attr.name) &&
-          /^javascript:/i.test(attr.value))
-      ) {
-        el.removeAttribute(attr.name);
-      }
+      el.removeAttribute(attr.name);
     }
   });
   return template.innerHTML;
@@ -120,6 +117,8 @@ export function BrowserWritingInterface({
   const editorRef = useRef<HTMLDivElement>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>("");
   const [isEditorReady, setIsEditorReady] = useState(false);
@@ -149,8 +148,15 @@ export function BrowserWritingInterface({
     if (snapshotState !== undefined) {
       const content = snapshotState.current_content ?? "";
       // Sanitize recovered HTML before injecting to prevent stored-XSS.
-      editorRef.current.innerHTML = sanitizeEditorHtml(content);
-      lastSavedContentRef.current = content;
+      const sanitized = sanitizeEditorHtml(content);
+      editorRef.current.innerHTML = sanitized;
+      // Use the sanitized value for future equality checks so that
+      // triggerSave does not immediately schedule a redundant save after
+      // comparing the sanitized DOM against the raw server response.
+      lastSavedContentRef.current = sanitized;
+      // Initialise hasContent from the recovered snapshot so the Submit button
+      // is enabled immediately when the editor is pre-filled after a refresh.
+      setHasContent((editorRef.current.textContent?.trim().length ?? 0) > 0);
       setIsEditorReady(true);
     }
   }, [snapshotState, isEditorReady]);
@@ -224,6 +230,8 @@ export function BrowserWritingInterface({
 
   const handleInput = useCallback(() => {
     setHasUnsaved(true);
+    // Track whether editor has real text (not just markup) for Submit eligibility.
+    setHasContent((editorRef.current?.textContent?.trim().length ?? 0) > 0);
     // Reset to "idle" only if not currently saving
     setSaveStatus((prev) => (prev === "saving" ? prev : "idle"));
 
@@ -271,6 +279,7 @@ export function BrowserWritingInterface({
   // ── Submit ────────────────────────────────────────────────────────────────
 
   const handleSubmit = useCallback(async () => {
+    setSubmitError(null);
     // Clear any pending debounce timer so we don't duplicate the final save.
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
@@ -285,7 +294,13 @@ export function BrowserWritingInterface({
       try {
         await doSaveAsync({ html_content: content, word_count: wordCount });
       } catch {
-        // If the final save fails, still allow the submission to proceed.
+        // Block navigation — navigating away with a failed final save would
+        // permanently drop the latest edits.  Surface an error so the user
+        // can retry or copy their work before leaving.
+        setSubmitError(
+          "Your latest changes could not be saved. Please try again or copy your work before submitting.",
+        );
+        return;
       }
     }
     onSubmit();
@@ -301,9 +316,9 @@ export function BrowserWritingInterface({
     return "";
   })();
 
-  // Use textContent (not innerHTML) so markup-only states like <br>/<div><br></div>
-  // don't incorrectly enable submission of an effectively-empty essay.
-  const canSubmit = (editorRef.current?.textContent?.trim().length ?? 0) > 0;
+  // canSubmit is derived from hasContent state (updated on every input event) so that
+  // contentEditable mutations are reflected in React re-renders reliably.
+  const canSubmit = hasContent;
 
   return (
     <div className="flex flex-col gap-3">
@@ -408,6 +423,13 @@ export function BrowserWritingInterface({
           </button>
         </div>
       </div>
+
+      {/* ── Submit error (final-save failure) ────────────────────────────── */}
+      {submitError && (
+        <p role="alert" className="text-xs text-red-600">
+          {submitError}
+        </p>
+      )}
     </div>
   );
 }

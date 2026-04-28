@@ -858,7 +858,10 @@ def _sanitize_html_content(html_content: str) -> str:
     re-injected into the teacher's editor via ``innerHTML``.
     """
     filt = _SafeHtmlFilter()
-    filt.feed(html_content)
+    try:
+        filt.feed(html_content)
+    finally:
+        filt.close()
     return filt.get_output()
 
 
@@ -1117,7 +1120,15 @@ async def get_writing_snapshots(
         await _get_essay_for_teacher(db, essay_id, teacher_id)
         raise NotFoundError("Essay version not found.")
 
-    raw_snapshots: list[dict[str, Any]] = list(version.writing_snapshots or [])
+    # Reject file-upload essays (writing_snapshots IS NULL) — they have no
+    # snapshot-backed editor state to recover.  Consistent with save_writing_snapshot()
+    # which also rejects NULL essays with ValidationError.
+    if version.writing_snapshots is None:
+        raise ValidationError(
+            "This essay was created via file upload and has no writing snapshots."
+        )
+
+    raw_snapshots: list[dict[str, Any]] = list(version.writing_snapshots)
 
     # Recover the latest HTML content from the most recent snapshot for
     # editor restoration.  Falls back to empty string for newly created essays.

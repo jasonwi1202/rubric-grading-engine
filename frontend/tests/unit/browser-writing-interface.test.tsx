@@ -460,7 +460,8 @@ describe("BrowserWritingInterface — status indicator", () => {
     act(() => vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS));
 
     await waitFor(() => {
-      expect(screen.getByText(/saved/i)).toBeInTheDocument();
+      expect(screen.getByText("Saved")).toBeInTheDocument();
+      expect(mockSaveSnapshot).toHaveBeenCalled();
     });
   });
 
@@ -521,6 +522,43 @@ describe("BrowserWritingInterface — submit and cancel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks navigation and shows error when final save fails on submit", async () => {
+    const onSubmit = vi.fn();
+    // Start with saved content, then reject the final save on submit
+    const snapshotWithData = snapshotWithContent("<p>Some content</p>");
+    mockGetSnapshots.mockResolvedValue(snapshotWithData);
+    mockSaveSnapshot.mockRejectedValue(new Error("Network error"));
+
+    render(
+      <BrowserWritingInterface
+        essayId={ESSAY_ID}
+        essayVersionId={VERSION_ID}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    await waitFor(() => {
+      const editor = screen.queryByTestId("essay-editor");
+      expect(editor?.innerHTML).toBe("<p>Some content</p>");
+    });
+
+    // Type something to create unsaved changes
+    const editor = screen.getByTestId("essay-editor");
+    act(() => {
+      editor.innerHTML = "<p>Some content with new text</p>";
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /submit essay/i }));
+
+    // onSubmit must NOT have been called — navigation should be blocked
+    expect(onSubmit).not.toHaveBeenCalled();
+    // Error message must be visible to the user
+    expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 
   it("calls onSubmit when Submit is clicked (with content)", async () => {
