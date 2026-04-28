@@ -1,7 +1,7 @@
 """essay_versions: add process_signals JSONB column
 
 Revision ID: 025_essay_versions_process_signals
-Revises: 024_essay_versions_writing_snapshots
+Revises: 024_essay_versions_snapshots
 Create Date: 2026-04-28 00:00:00.000000
 
 Adds a ``process_signals`` JSONB column to ``essay_versions`` to support the
@@ -76,8 +76,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "025_essay_versions_process_signals"
-down_revision: str | None = "024_essay_versions_writing_snapshots"
+revision: str = "025_essay_versions_signals"
+down_revision: str | None = "024_essay_versions_snapshots"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
