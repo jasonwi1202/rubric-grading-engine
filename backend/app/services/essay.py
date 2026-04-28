@@ -1300,6 +1300,9 @@ async def get_process_signals(
         cached = payload
 
     # Build the response from the cached (or freshly computed) payload.
+    # At this point `cached` is guaranteed non-None: either it was already set
+    # before the branch, or `needs_compute` ran and set `cached = payload`.
+    assert cached is not None  # narrowing for mypy
     computed_at_str: str = cached["computed_at"]
     computed_at_dt = datetime.fromisoformat(computed_at_str)
 

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Tunable thresholds
@@ -128,7 +129,7 @@ class CompositionTimeline:
 _ParsedSnap = tuple[int, datetime, int]  # (seq, ts, word_count)
 
 
-def _parse_snapshots(raw: list[dict]) -> list[_ParsedSnap]:
+def _parse_snapshots(raw: list[dict[str, Any]]) -> list[_ParsedSnap]:
     """Parse raw snapshot dicts into (seq, ts, word_count) triples.
 
     Snapshots with missing keys, unparseable timestamps, or non-integer seq /
@@ -185,7 +186,7 @@ def _find_session_index(sessions: list[SessionSegment], ts: datetime) -> int:
 
 
 def analyze_writing_process(
-    snapshots: list[dict],
+    snapshots: list[dict[str, Any]],
     *,
     session_gap_seconds: float = SESSION_GAP_SECONDS,
     paste_min_words: int = PASTE_MIN_WORDS,

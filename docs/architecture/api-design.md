@@ -556,6 +556,7 @@ Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND`
 | POST | `/essays/{essayId}/grade/retry` | Re-enqueue a single failed essay for grading |
 | POST | `/essays/{essayId}/snapshots` | Save a writing-process snapshot (autosave, M5-09) |
 | GET | `/essays/{essayId}/snapshots` | Retrieve writing snapshots for editor state recovery (M5-09) |
+| GET | `/essays/{essayId}/process-signals` | Composition timeline and process signals (M5-10) |
 
 **POST /assignments/{id}/essays** — multipart form:
 - `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
@@ -669,6 +670,47 @@ Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (ess
 ```
 
 `current_content` is the `html_content` of the most recent snapshot — ready to inject directly into the browser editor for state recovery after a page refresh. Individual `html_content` values of earlier snapshots are not returned here; they are used by the writing-process timeline (M5-10/11). This endpoint is only valid for browser-composed essays. File-upload essays (where `writing_snapshots` is `NULL`) return `422 VALIDATION_ERROR` because there is no snapshot-backed editor state to recover. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`, `422 VALIDATION_ERROR` (essay has no writing snapshots — was created via file upload).
+
+**GET /essays/{essayId}/process-signals response (200)** (M5-10):
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "has_process_data": true,
+    "session_count": 2,
+    "active_writing_seconds": 1800.0,
+    "total_elapsed_seconds": 90000.0,
+    "inter_session_gaps_seconds": [88200.0],
+    "sessions": [
+      {
+        "session_index": 0,
+        "started_at": "2026-04-28T09:00:00+00:00",
+        "ended_at": "2026-04-28T09:15:00+00:00",
+        "duration_seconds": 900.0,
+        "snapshot_count": 12,
+        "word_count_start": 0,
+        "word_count_end": 250,
+        "words_added": 250
+      }
+    ],
+    "paste_events": [
+      {
+        "snapshot_seq": 4,
+        "occurred_at": "2026-04-28T09:05:00+00:00",
+        "words_before": 50,
+        "words_after": 250,
+        "words_added": 200,
+        "session_index": 0
+      }
+    ],
+    "rapid_completion_events": [],
+    "computed_at": "2026-04-28T10:30:00+00:00"
+  }
+}
+```
+
+Signals are computed lazily on first request and cached in `EssayVersion.process_signals`. The cache is automatically invalidated when new snapshots are added (detected by comparing snapshot counts). When `has_process_data` is `false`, the essay was submitted as a file upload — all list fields are empty and numeric metrics are zero. `paste_events` and `rapid_completion_events` are informational signals for teacher review, not definitive findings — they should always be presented with appropriate context. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`.
 
 ---
 
