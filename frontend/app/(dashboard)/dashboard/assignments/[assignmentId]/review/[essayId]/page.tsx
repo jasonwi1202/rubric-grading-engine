@@ -33,6 +33,8 @@ import { getGrade } from "@/lib/api/grades";
 import type { GradeResponse } from "@/lib/api/grades";
 import { getIntegrityReport } from "@/lib/api/integrity";
 import type { IntegrityReportResponse } from "@/lib/api/integrity";
+import { getProcessSignals } from "@/lib/api/process-signals";
+import { getSnapshots } from "@/lib/api/essays";
 import { ApiError } from "@/lib/api/errors";
 import {
   EssayReviewPanel,
@@ -44,6 +46,11 @@ import {
   IntegrityPanelSkeleton,
   IntegrityPanelEmpty,
 } from "@/components/grading/IntegrityPanel";
+import {
+  WritingProcessPanel,
+  WritingProcessPanelSkeleton,
+  WritingProcessPanelEmpty,
+} from "@/components/grading/WritingProcessPanel";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -103,6 +110,57 @@ export default function EssayReviewPage() {
       }
     },
     enabled: !!essayId,
+    staleTime: 60_000,
+  });
+
+  // Load writing process signals — 403/404 are mapped to null (unavailable).
+  // A successful non-null response can still indicate no process data
+  // via `has_process_data: false`.
+  const {
+    data: processSignals,
+    isLoading: processLoading,
+  } = useQuery({
+    queryKey: ["process-signals", essayId],
+    queryFn: async () => {
+      try {
+        return await getProcessSignals(essayId);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    enabled: !!essayId,
+    staleTime: 60_000,
+  });
+
+  // Load snapshot metadata for the snapshot viewer — only relevant when
+  // process data is available (has_process_data === true).
+  // `select` discards current_content (essay HTML) so it isn't held in
+  // the React Query cache beyond what the snapshot viewer needs.
+  const {
+    data: snapshotItems,
+    isError: snapshotError,
+  } = useQuery({
+    queryKey: ["snapshots", essayId],
+    queryFn: async () => {
+      try {
+        return await getSnapshots(essayId);
+      } catch (err) {
+        // 422 VALIDATION_ERROR means the essay was created via file upload
+        // and has no snapshot history (the /snapshots endpoint is only valid
+        // for browser-composed essays). 404/403 mean no access or not found.
+        // All three are treated as "no snapshot data available" here,
+        // distinct from process-signals where 422 is not a valid response.
+        if (err instanceof ApiError && (err.status === 404 || err.status === 422 || err.status === 403)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    select: (data) => (data === null ? null : { snapshots: data.snapshots }),
+    enabled: !!essayId && processSignals?.has_process_data === true,
     staleTime: 60_000,
   });
 
@@ -275,6 +333,19 @@ export default function EssayReviewPage() {
             ) : (
               <IntegrityPanelEmpty />
             )}
+
+            {/* Writing process panel */}
+            {processLoading ? (
+              <WritingProcessPanelSkeleton />
+            ) : processSignals && processSignals.has_process_data ? (
+              <WritingProcessPanel
+                signals={processSignals}
+                snapshots={snapshotError ? [] : (snapshotItems?.snapshots ?? [])}
+                snapshotLoadFailed={snapshotError}
+              />
+            ) : processSignals ? (
+              <WritingProcessPanelEmpty />
+            ) : null}
           </div>
 
           {/* Right panel — rubric scores + feedback editing */}
