@@ -22,8 +22,8 @@
  * - No credential-format strings in test data.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 
@@ -124,14 +124,11 @@ const signalsWithPaste: ProcessSignalsResponse = makeSignals({
 const signalsWithRapid: ProcessSignalsResponse = makeSignals({
   rapid_completion_events: [
     {
-      snapshot_seq: 8,
-      occurred_at: "2026-04-28T09:12:00Z",
-      words_before: 50,
-      words_after: 350,
-      words_added: 300,
-      completion_fraction: 0.85,
-      duration_seconds: 720,
       session_index: 0,
+      duration_seconds: 720,
+      words_at_start: 50,
+      words_at_end: 350,
+      completion_fraction: 0.85,
     },
   ],
 });
@@ -239,7 +236,7 @@ describe("WritingProcessPanel — process signal flags", () => {
     render(<WritingProcessPanel signals={signalsWithRapid} />);
     const flags = screen.getAllByTestId("rapid-completion-flag");
     expect(flags).toHaveLength(1);
-    expect(flags[0]).toHaveTextContent(/near-complete length/i);
+    expect(flags[0]).toHaveTextContent(/grew from \d+ to \d+ words/i);
     expect(flags[0]).toHaveTextContent(/unusually rapid completion/i);
     expect(flags[0]).toHaveTextContent(/warrants review/i);
   });

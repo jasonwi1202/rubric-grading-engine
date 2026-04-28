@@ -47,14 +47,11 @@ export interface PasteEvent {
 
 /** A session that brought the essay near-complete in a short time. */
 export interface RapidCompletionEvent {
-  snapshot_seq: number;
-  occurred_at: string;
-  words_before: number;
-  words_after: number;
-  words_added: number;
-  completion_fraction: number;
-  duration_seconds: number;
   session_index: number;
+  duration_seconds: number;
+  words_at_start: number;
+  words_at_end: number;
+  completion_fraction: number;
 }
 
 /**
@@ -88,8 +85,8 @@ export interface ProcessSignalsResponse {
  * Fetch composition timeline and process signals for an essay.
  * Calls GET /essays/{essayId}/process-signals.
  *
- * Returns 404 when the essay does not exist or belongs to another teacher.
- * Returns 403 when the teacher does not own the essay.
+ * Returns 404 when the essay or essay version does not exist.
+ * Returns 403 when the essay belongs to another teacher.
  *
  * When `has_process_data` is false on the returned object, no usable
  * writing-process data was available — render the "no process data" state.

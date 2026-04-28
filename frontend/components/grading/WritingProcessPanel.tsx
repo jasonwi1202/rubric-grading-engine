@@ -202,7 +202,7 @@ function SessionBlock({
         {/* Rapid completion flags */}
         {sessionRapid.map((evt) => (
           <div
-            key={`rapid-${evt.snapshot_seq}`}
+            key={`rapid-${evt.session_index}`}
             className="mt-2 flex items-start gap-1.5 rounded bg-orange-50 px-2 py-1.5"
             role="note"
             aria-label="Rapid completion indicator"
@@ -223,7 +223,7 @@ function SessionBlock({
               />
             </svg>
             <p className="text-xs text-orange-800">
-              Essay reached near-complete length in{" "}
+              Essay grew from {evt.words_at_start} to {evt.words_at_end} words in{" "}
               {formatDuration(evt.duration_seconds)} — unusually rapid
               completion. Warrants review.
             </p>

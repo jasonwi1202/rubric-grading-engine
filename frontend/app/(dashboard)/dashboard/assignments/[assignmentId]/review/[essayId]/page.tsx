@@ -113,7 +113,7 @@ export default function EssayReviewPage() {
     staleTime: 60_000,
   });
 
-  // Load writing process signals — 404 means no report; null means no data.
+  // Load writing process signals — 403/404 mean unavailable; null means no data.
   const {
     data: processSignals,
     isLoading: processLoading,
