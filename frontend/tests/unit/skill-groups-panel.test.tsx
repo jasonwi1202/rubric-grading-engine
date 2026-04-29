@@ -136,7 +136,7 @@ describe("SkillGroupsPanel — loading state", () => {
 describe("SkillGroupsPanel — error state", () => {
   it("shows error alert when fetch fails", async () => {
     mockGetClassGroups.mockRejectedValue(
-      new ApiError("Server error", 500, "SERVER_ERROR"),
+      new ApiError(500, { code: "SERVER_ERROR", message: "Server error" }),
     );
     render(<SkillGroupsPanel classId={CLASS_ID} />, { wrapper });
     await waitFor(() => {

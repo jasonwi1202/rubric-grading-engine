@@ -46,7 +46,7 @@ from app.schemas.roster_import import (
     ImportRowStatus,
 )
 from app.schemas.student import EnrolledStudentResponse, EnrollStudentRequest, StudentResponse
-from app.schemas.student_group import PatchGroupMembersRequest, StudentGroupResponse
+from app.schemas.student_group import PatchGroupMembersRequest
 from app.services.assignment import (
     create_assignment,
     list_assignments,

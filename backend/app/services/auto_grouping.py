@@ -48,7 +48,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
@@ -593,12 +593,15 @@ async def update_group_members(
 
     # Determine new stability: empty list → exited, otherwise preserve
     # previous stability or promote from exited to persistent.
+    new_stability: Literal["new", "persistent", "exited"]
     if new_count == 0:
         new_stability = "exited"
     elif group.stability == "exited":
         new_stability = "persistent"
     else:
-        new_stability = group.stability
+        # group.stability is Mapped[str] but always holds a valid Literal value;
+        # cast to satisfy static analysis.
+        new_stability = group.stability  # type: ignore[assignment]
 
     await db.execute(
         update(StudentGroup)
@@ -643,6 +646,6 @@ async def update_group_members(
         label=group.label,
         student_count=new_count,
         students=students_in_group,
-        stability=new_stability,  # type: ignore[arg-type]  # new_stability is str; Pydantic coerces to Literal
+        stability=new_stability,
         computed_at=group.computed_at,
     )
