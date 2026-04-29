@@ -530,3 +530,272 @@ class TestLockGradeTriggersAutoGroupingTask:
         assert len(auto_grouping_delay_calls) == 0, (
             "compute_class_groups.delay must not be called for an already-locked grade"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests — list_class_groups service (M6-02 additions)
+# ---------------------------------------------------------------------------
+
+
+def _make_group_orm(
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID,
+    skill_key: str,
+    stability: str,
+    student_ids: list[str],
+) -> MagicMock:
+    """Build a mock StudentGroup ORM object."""
+    group = MagicMock()
+    group.id = uuid.uuid4()
+    group.teacher_id = teacher_id
+    group.class_id = class_id
+    group.skill_key = skill_key
+    group.label = skill_key.replace("_", " ").title()
+    group.stability = stability
+    group.student_ids = student_ids
+    group.student_count = len(student_ids)
+    from datetime import UTC, datetime
+
+    group.computed_at = datetime.now(UTC)
+    return group
+
+
+def _make_student_row(student_id: uuid.UUID, full_name: str) -> MagicMock:
+    row = MagicMock()
+    row.id = student_id
+    row.full_name = full_name
+    row.external_id = None
+    return row
+
+
+class TestListClassGroupsService:
+    """Service-level tests for list_class_groups().
+
+    The database session is mocked so no real DB is required.
+    These tests cover logic inside the service: class ownership check,
+    student UUID resolution, malformed UUID handling, and response ordering.
+    """
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_when_class_missing(self) -> None:
+        """_assert_class_owned_by raises NotFoundError when class does not exist."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        db = AsyncMock()
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=ownership_result)
+
+        with pytest.raises(NotFoundError):
+            await list_class_groups(db, teacher_id, class_id)
+
+    @pytest.mark.asyncio
+    async def test_raises_forbidden_for_other_teachers_class(self) -> None:
+        """_assert_class_owned_by raises ForbiddenError for cross-tenant class."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        other_teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        db = AsyncMock()
+        # Return a row where teacher_id belongs to a DIFFERENT teacher.
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = other_teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+        db.execute = AsyncMock(return_value=ownership_result)
+
+        with pytest.raises(ForbiddenError):
+            await list_class_groups(db, teacher_id, class_id)
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_groups_when_none_computed(self) -> None:
+        """Returns ClassGroupsResponse with empty groups list when no rows exist."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
+        groups_result = MagicMock()
+        groups_result.scalars.return_value.all.return_value = []
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, groups_result])
+
+        response = await list_class_groups(db, teacher_id, class_id)
+        assert response.class_id == class_id
+        assert response.groups == []
+
+    @pytest.mark.asyncio
+    async def test_active_groups_ordered_before_exited(self) -> None:
+        """Active groups (new/persistent) appear before exited groups in response."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        sid = str(uuid.uuid4())
+        active_group = _make_group_orm(teacher_id, class_id, "thesis", "persistent", [sid])
+        exited_group = _make_group_orm(teacher_id, class_id, "evidence", "exited", [])
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
+        groups_result = MagicMock()
+        groups_result.scalars.return_value.all.return_value = [active_group, exited_group]
+
+        student_row = _make_student_row(uuid.UUID(sid), "Test Student")
+        students_result = MagicMock()
+        students_result.all.return_value = [student_row]
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, groups_result, students_result])
+
+        response = await list_class_groups(db, teacher_id, class_id)
+        assert len(response.groups) == 2
+        assert response.groups[0].stability != "exited", "Active group must come first"
+        assert response.groups[1].stability == "exited"
+
+    @pytest.mark.asyncio
+    async def test_exited_groups_have_empty_student_list(self) -> None:
+        """Exited groups always return an empty students list."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        exited_group = _make_group_orm(teacher_id, class_id, "evidence", "exited", [])
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
+        groups_result = MagicMock()
+        groups_result.scalars.return_value.all.return_value = [exited_group]
+
+        db = AsyncMock()
+        # No students_result needed because no active groups reference student UUIDs.
+        db.execute = AsyncMock(side_effect=[ownership_result, groups_result])
+
+        response = await list_class_groups(db, teacher_id, class_id)
+        assert len(response.groups) == 1
+        assert response.groups[0].stability == "exited"
+        assert response.groups[0].students == []
+
+    @pytest.mark.asyncio
+    async def test_malformed_uuid_in_student_ids_skips_only_that_id(self) -> None:
+        """A single malformed student UUID does not wipe the other student resolutions."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        valid_sid = uuid.uuid4()
+        group = _make_group_orm(
+            teacher_id,
+            class_id,
+            "thesis",
+            "persistent",
+            ["not-a-uuid", str(valid_sid)],
+        )
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
+        groups_result = MagicMock()
+        groups_result.scalars.return_value.all.return_value = [group]
+
+        student_row = _make_student_row(valid_sid, "Valid Student")
+        students_result = MagicMock()
+        students_result.all.return_value = [student_row]
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, groups_result, students_result])
+
+        response = await list_class_groups(db, teacher_id, class_id)
+        assert len(response.groups) == 1
+        # The valid student is resolved; the malformed UUID is silently skipped.
+        student_ids_resolved = [str(s.id) for s in response.groups[0].students]
+        assert str(valid_sid) in student_ids_resolved
+        assert "not-a-uuid" not in student_ids_resolved
+
+    @pytest.mark.asyncio
+    async def test_student_not_in_db_is_omitted_from_response(self) -> None:
+        """A student UUID that is not found in the DB is silently omitted."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        missing_sid = uuid.uuid4()
+        group = _make_group_orm(
+            teacher_id,
+            class_id,
+            "evidence",
+            "new",
+            [str(missing_sid)],
+        )
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
+        groups_result = MagicMock()
+        groups_result.scalars.return_value.all.return_value = [group]
+
+        students_result = MagicMock()
+        students_result.all.return_value = []  # student not found in DB
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, groups_result, students_result])
+
+        response = await list_class_groups(db, teacher_id, class_id)
+        assert len(response.groups) == 1
+        assert response.groups[0].students == []
+
+    @pytest.mark.asyncio
+    async def test_active_groups_sorted_alphabetically_by_label(self) -> None:
+        """Multiple active groups are sorted by label, not insertion order."""
+        from app.services.auto_grouping import list_class_groups
+
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+
+        sid = str(uuid.uuid4())
+        group_z = _make_group_orm(teacher_id, class_id, "zebra_skill", "persistent", [sid])
+        group_a = _make_group_orm(teacher_id, class_id, "apple_skill", "new", [sid])
+
+        ownership_row = MagicMock()
+        ownership_row.teacher_id = teacher_id
+        ownership_result = MagicMock()
+        ownership_result.one_or_none.return_value = ownership_row
+
+        groups_result = MagicMock()
+        # Return in reverse-alphabetical order to confirm sorting is applied.
+        groups_result.scalars.return_value.all.return_value = [group_z, group_a]
+
+        student_row = _make_student_row(uuid.UUID(sid), "Student A")
+        students_result = MagicMock()
+        students_result.all.return_value = [student_row]
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ownership_result, groups_result, students_result])
+
+        response = await list_class_groups(db, teacher_id, class_id)
+        labels = [g.label for g in response.groups]
+        assert labels == sorted(labels), f"Groups not sorted by label: {labels}"

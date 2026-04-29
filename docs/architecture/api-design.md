@@ -174,6 +174,7 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | PATCH | `/classes/{classId}` | Update class name, subject, grade level |
 | POST | `/classes/{classId}/archive` | Archive the class (soft) |
 | GET | `/classes/{classId}/insights` | Class-level skill averages, score distributions, and common issues |
+| GET | `/classes/{classId}/groups` | Current auto-generated skill-gap student groups for a class |
 
 **GET /classes query params:** `?academic_year=2025-26&is_archived=false`
 
@@ -215,6 +216,50 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 - `score_distributions` — five 20-percentage-point buckets per skill, present for every dimension in `skill_averages`.
 - `common_issues` — skill dimensions where the class average normalised score is below 0.60, sorted ascending by `avg_score` (worst first).
 - Only **locked** grades contribute; unlocked grades are excluded.
+
+Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
+
+**GET /classes/{classId}/groups** (requires JWT)
+
+Returns the current auto-generated skill-gap student groups for the class, computed by the auto-grouping Celery task each time a grade is locked.
+
+```json
+{
+  "data": {
+    "class_id": "uuid",
+    "groups": [
+      {
+        "id": "uuid",
+        "skill_key": "evidence",
+        "label": "Evidence",
+        "stability": "persistent",
+        "student_count": 4,
+        "students": [
+          { "id": "uuid", "full_name": "Student Name", "external_id": null }
+        ],
+        "computed_at": "2026-04-29T18:00:00Z"
+      },
+      {
+        "id": "uuid",
+        "skill_key": "thesis",
+        "label": "Thesis",
+        "stability": "exited",
+        "student_count": 0,
+        "students": [],
+        "computed_at": "2026-04-29T18:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+- **`groups`** — ordered: active groups (`new`/`persistent`) first sorted by `label`; exited groups last sorted by `label`. Empty list when no groups have been computed yet.
+- **`stability`** — lifecycle tag for each group:
+  - `new` — first time this skill gap has appeared for the class.
+  - `persistent` — the group existed in the previous computation run.
+  - `exited` — previously existed but no longer meets the minimum group-size threshold; `students` is always empty for exited groups.
+- **`students`** — resolved student summaries (name + optional external ID); empty for `exited` groups.
+- **`computed_at`** — ISO-8601 timestamp of the computation run that produced this group.
 
 Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
 
