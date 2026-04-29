@@ -73,9 +73,7 @@ class TestStudentSkillProfileModel:
             "last_updated_at",
             "created_at",
         }
-        assert expected <= set(table.c.keys()), (
-            f"Missing columns: {expected - set(table.c.keys())}"
-        )
+        assert expected <= set(table.c.keys()), f"Missing columns: {expected - set(table.c.keys())}"
 
     def test_teacher_id_not_nullable(self) -> None:
         assert not _is_nullable(StudentSkillProfile, "teacher_id")
@@ -112,8 +110,7 @@ class TestStudentSkillProfileModel:
                     found = True
                     break
         assert found, (
-            "Expected a UniqueConstraint on (teacher_id, student_id) "
-            "in student_skill_profiles."
+            "Expected a UniqueConstraint on (teacher_id, student_id) in student_skill_profiles."
         )
 
 
@@ -125,29 +122,25 @@ class TestStudentSkillProfileModel:
 class TestMigrationRevisionChain:
     def test_revision_id(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260427_022_student_skill_profiles_create_table"
+            "app.db.migrations.versions.20260427_022_student_skill_profiles_create_table"
         )
         assert mod.revision == "022_student_skill_profiles"
 
     def test_down_revision_points_to_021(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260427_022_student_skill_profiles_create_table"
+            "app.db.migrations.versions.20260427_022_student_skill_profiles_create_table"
         )
         assert mod.down_revision == "021_grades_prompt_version"
 
     def test_upgrade_callable(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260427_022_student_skill_profiles_create_table"
+            "app.db.migrations.versions.20260427_022_student_skill_profiles_create_table"
         )
         assert callable(mod.upgrade)
 
     def test_downgrade_callable(self) -> None:
         mod = importlib.import_module(
-            "app.db.migrations.versions"
-            ".20260427_022_student_skill_profiles_create_table"
+            "app.db.migrations.versions.20260427_022_student_skill_profiles_create_table"
         )
         assert callable(mod.downgrade)
 
@@ -295,9 +288,7 @@ class TestUpsertSkillProfile:
         reload_result = MagicMock()
         reload_result.scalar_one.return_value = profile
 
-        db.execute = AsyncMock(
-            side_effect=[student_result, upsert_result, reload_result]
-        )
+        db.execute = AsyncMock(side_effect=[student_result, upsert_result, reload_result])
 
         result = await upsert_skill_profile(
             db,
@@ -384,9 +375,7 @@ class TestUpsertSkillProfile:
         reload_result = MagicMock()
         reload_result.scalar_one.return_value = updated_profile
 
-        db.execute = AsyncMock(
-            side_effect=[student_result, upsert_result, reload_result]
-        )
+        db.execute = AsyncMock(side_effect=[student_result, upsert_result, reload_result])
 
         result = await upsert_skill_profile(
             db,

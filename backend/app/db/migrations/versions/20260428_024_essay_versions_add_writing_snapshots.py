@@ -1,6 +1,6 @@
 """essay_versions: add writing_snapshots JSONB column
 
-Revision ID: 024_essay_versions_writing_snapshots
+Revision ID: 024_essay_versions_snapshots
 Revises: 023_students_teacher_notes
 Create Date: 2026-04-28 00:00:00.000000
 
@@ -36,7 +36,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "024_essay_versions_writing_snapshots"
+revision: str = "024_essay_versions_snapshots"
 down_revision: str | None = "023_students_teacher_notes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

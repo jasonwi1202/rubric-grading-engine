@@ -22,18 +22,19 @@ Security invariants:
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401  # preserved for test patch compatibility
 import io
 import logging
 import uuid
 import zipfile
 from typing import Any, cast
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import _TaskSessionLocal, run_task_async
 from app.storage.s3 import StorageError, upload_file
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
+AsyncSessionLocal = _TaskSessionLocal
 
 # S3 key prefix for export ZIPs.
 _EXPORT_S3_PREFIX = "exports"
@@ -476,7 +477,7 @@ def export_assignment(
             Celery marks the task as ``FAILURE``.
     """
     try:
-        asyncio.run(_run_export(assignment_id, teacher_id, task_id))
+        run_task_async(_run_export(assignment_id, teacher_id, task_id))
     except Exception as exc:
         attempt = self.request.retries  # type: ignore[attr-defined]
         if attempt < self.max_retries:  # type: ignore[attr-defined]

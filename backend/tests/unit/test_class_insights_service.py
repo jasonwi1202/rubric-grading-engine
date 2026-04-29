@@ -303,9 +303,11 @@ class TestGetClassInsights:
         grade_id = uuid.uuid4()
         crit_id = uuid.uuid4()
 
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
+            ]
+        )
 
         # Two criterion score rows with final_score 2 and 4 → normalised 0.5 and 1.0
         essay_id = uuid.uuid4()
@@ -360,9 +362,11 @@ class TestGetClassInsights:
         crit_id = uuid.uuid4()
 
         # final_score=1 on a 0-4 scale → normalised 0.25 (below 0.60 threshold)
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id), "Evidence Use", min_score=0, max_score=4),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(str(crit_id), "Evidence Use", min_score=0, max_score=4),
+            ]
+        )
         row = _make_row(
             essay_id=uuid.uuid4(),
             student_id=student_id,
@@ -406,9 +410,11 @@ class TestGetClassInsights:
         crit_id = uuid.uuid4()
 
         # final_score=4 on a 0-4 scale → normalised 1.0 (above threshold)
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
+            ]
+        )
         row = _make_row(
             essay_id=uuid.uuid4(),
             student_id=student_id,
@@ -533,9 +539,11 @@ class TestGetAssignmentAnalytics:
         class_id = uuid.uuid4()
         crit_id = uuid.uuid4()
 
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
+            ]
+        )
 
         db = AsyncMock()
 
@@ -596,9 +604,11 @@ class TestGetAssignmentAnalytics:
         class_id = uuid.uuid4()
         crit_id = uuid.uuid4()
 
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(str(crit_id), "Thesis Statement", min_score=0, max_score=4),
+            ]
+        )
 
         db = AsyncMock()
         exists_result = MagicMock()
@@ -669,9 +679,11 @@ class TestGetAssignmentAnalytics:
         class_id = uuid.uuid4()
         crit_id = uuid.uuid4()
 
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id), "Analysis", min_score=0, max_score=4),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(str(crit_id), "Analysis", min_score=0, max_score=4),
+            ]
+        )
 
         db = AsyncMock()
         exists_result = MagicMock()
@@ -720,10 +732,16 @@ class TestGetAssignmentAnalytics:
         crit_id_1 = uuid.uuid4()
         crit_id_2 = uuid.uuid4()
 
-        snapshot = _snapshot_with_criteria([
-            _make_criterion(str(crit_id_2), "Evidence Use", min_score=0, max_score=4, display_order=2),
-            _make_criterion(str(crit_id_1), "Thesis Statement", min_score=0, max_score=4, display_order=1),
-        ])
+        snapshot = _snapshot_with_criteria(
+            [
+                _make_criterion(
+                    str(crit_id_2), "Evidence Use", min_score=0, max_score=4, display_order=2
+                ),
+                _make_criterion(
+                    str(crit_id_1), "Thesis Statement", min_score=0, max_score=4, display_order=1
+                ),
+            ]
+        )
 
         db = AsyncMock()
         exists_result = MagicMock()

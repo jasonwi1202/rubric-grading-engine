@@ -74,9 +74,7 @@ def _load_mapping_cached(path_key: str | None) -> dict[str, list[str]]:
     if path_key is None:
         # Use importlib.resources so the bundled config is accessible even
         # when the package is installed as a wheel or zipapp.
-        ref = importlib.resources.files("app").joinpath(
-            "skill_normalization_config.json"
-        )
+        ref = importlib.resources.files("app").joinpath("skill_normalization_config.json")
         try:
             raw = ref.read_text(encoding="utf-8")
         except (FileNotFoundError, OSError) as exc:
@@ -96,9 +94,7 @@ def _load_mapping_cached(path_key: str | None) -> dict[str, list[str]]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Invalid JSON in skill normalization config: {exc}"
-        ) from exc
+        raise ValueError(f"Invalid JSON in skill normalization config: {exc}") from exc
 
     if not isinstance(data, dict):
         raise ValueError(
@@ -110,8 +106,7 @@ def _load_mapping_cached(path_key: str | None) -> dict[str, list[str]]:
     for k, vs in data.items():
         if not isinstance(vs, list):
             raise ValueError(
-                f"Expected a list of variants for dimension {k!r}; "
-                f"got {type(vs).__name__}"
+                f"Expected a list of variants for dimension {k!r}; got {type(vs).__name__}"
             )
         result[str(k)] = [str(v) for v in vs]
     return result
@@ -138,9 +133,7 @@ def load_skill_mapping(config_path: Path | str | None = None) -> dict[str, list[
         ValueError: If the file contains invalid JSON or an unexpected
             top-level structure.
     """
-    path_key: str | None = (
-        str(Path(config_path).resolve()) if config_path is not None else None
-    )
+    path_key: str | None = str(Path(config_path).resolve()) if config_path is not None else None
     # Return a deep copy so callers cannot mutate the cached mapping.
     return copy.deepcopy(_load_mapping_cached(path_key))
 
@@ -214,9 +207,7 @@ def normalize_criterion_name(
         ValueError: If *threshold* is not in the range ``[0.0, 1.0]``.
     """
     if not 0.0 <= threshold <= 1.0:
-        raise ValueError(
-            f"threshold must be between 0.0 and 1.0 inclusive; got {threshold!r}"
-        )
+        raise ValueError(f"threshold must be between 0.0 and 1.0 inclusive; got {threshold!r}")
 
     if mapping is None:
         # Lazy import: app.config imports app.services modules indirectly via

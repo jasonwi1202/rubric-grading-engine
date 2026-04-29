@@ -267,9 +267,9 @@ class TestPasteDetection:
         """Two qualifying jumps → two paste events."""
         snaps = [
             _snap(1, _ts(0), 0),
-            _snap(2, _ts(1), 200),   # jump 1
+            _snap(2, _ts(1), 200),  # jump 1
             _snap(3, _ts(2), 210),
-            _snap(4, _ts(3), 410),   # jump 2
+            _snap(4, _ts(3), 410),  # jump 2
         ]
         result = analyze_writing_process(
             snaps,
@@ -629,10 +629,13 @@ class TestGetProcessSignalsService:
         db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ), pytest.raises(ForbiddenError):
+        with (
+            patch(
+                "app.services.essay._get_essay_for_teacher",
+                new=AsyncMock(side_effect=ForbiddenError("forbidden")),
+            ),
+            pytest.raises(ForbiddenError),
+        ):
             await get_process_signals(
                 db=db,
                 teacher_id=uuid.uuid4(),
@@ -650,10 +653,13 @@ class TestGetProcessSignalsService:
         db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(side_effect=NotFoundError("not found")),
-        ), pytest.raises(NotFoundError):
+        with (
+            patch(
+                "app.services.essay._get_essay_for_teacher",
+                new=AsyncMock(side_effect=NotFoundError("not found")),
+            ),
+            pytest.raises(NotFoundError),
+        ):
             await get_process_signals(
                 db=db,
                 teacher_id=uuid.uuid4(),

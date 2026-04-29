@@ -157,7 +157,7 @@ class TestSanitizeHtmlContent:
 
     def test_strips_event_handler_attributes(self) -> None:
         result = _sanitize_html_content('<p onclick="alert(1)">text</p>')
-        assert 'onclick' not in result
+        assert "onclick" not in result
         assert "<p>" in result
         assert "text" in result
 
@@ -232,10 +232,13 @@ class TestCreateComposedEssay:
         """_get_assignment_for_teacher raises ForbiddenError → propagates."""
         db = AsyncMock()
 
-        with patch(
-            "app.services.essay._get_assignment_for_teacher",
-            new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ), pytest.raises(ForbiddenError):
+        with (
+            patch(
+                "app.services.essay._get_assignment_for_teacher",
+                new=AsyncMock(side_effect=ForbiddenError("forbidden")),
+            ),
+            pytest.raises(ForbiddenError),
+        ):
             await create_composed_essay(
                 db=db,
                 teacher_id=uuid.uuid4(),
@@ -247,10 +250,13 @@ class TestCreateComposedEssay:
         """_get_assignment_for_teacher raises NotFoundError → propagates."""
         db = AsyncMock()
 
-        with patch(
-            "app.services.essay._get_assignment_for_teacher",
-            new=AsyncMock(side_effect=NotFoundError("not found")),
-        ), pytest.raises(NotFoundError):
+        with (
+            patch(
+                "app.services.essay._get_assignment_for_teacher",
+                new=AsyncMock(side_effect=NotFoundError("not found")),
+            ),
+            pytest.raises(NotFoundError),
+        ):
             await create_composed_essay(
                 db=db,
                 teacher_id=uuid.uuid4(),
@@ -383,10 +389,13 @@ class TestSaveWritingSnapshot:
         db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ), pytest.raises(ForbiddenError):
+        with (
+            patch(
+                "app.services.essay._get_essay_for_teacher",
+                new=AsyncMock(side_effect=ForbiddenError("forbidden")),
+            ),
+            pytest.raises(ForbiddenError),
+        ):
             await save_writing_snapshot(
                 db=db,
                 teacher_id=uuid.uuid4(),
@@ -409,10 +418,13 @@ class TestSaveWritingSnapshot:
         db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(return_value=essay),
-        ), pytest.raises(NotFoundError):
+        with (
+            patch(
+                "app.services.essay._get_essay_for_teacher",
+                new=AsyncMock(return_value=essay),
+            ),
+            pytest.raises(NotFoundError),
+        ):
             await save_writing_snapshot(
                 db=db,
                 teacher_id=uuid.uuid4(),
@@ -436,7 +448,12 @@ class TestGetWritingSnapshots:
         essay_id = uuid.uuid4()
         html = "<p>Final content</p>"
         snaps = [
-            {"seq": 1, "ts": "2026-04-28T10:00:00+00:00", "word_count": 2, "html_content": "<p>First</p>"},
+            {
+                "seq": 1,
+                "ts": "2026-04-28T10:00:00+00:00",
+                "word_count": 2,
+                "html_content": "<p>First</p>",
+            },
             {"seq": 2, "ts": "2026-04-28T10:00:12+00:00", "word_count": 3, "html_content": html},
         ]
         version = _make_version(essay_id=essay_id, writing_snapshots=snaps, word_count=3)
@@ -471,9 +488,7 @@ class TestGetWritingSnapshots:
         db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        result = await get_writing_snapshots(
-            db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4()
-        )
+        result = await get_writing_snapshots(db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4())
 
         assert result.current_content == ""
         assert result.snapshots == []
@@ -490,13 +505,14 @@ class TestGetWritingSnapshots:
         db = MagicMock()
         db.execute = AsyncMock(return_value=scalar_mock)
 
-        with patch(
-            "app.services.essay._get_essay_for_teacher",
-            new=AsyncMock(side_effect=ForbiddenError("forbidden")),
-        ), pytest.raises(ForbiddenError):
-            await get_writing_snapshots(
-                db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4()
-            )
+        with (
+            patch(
+                "app.services.essay._get_essay_for_teacher",
+                new=AsyncMock(side_effect=ForbiddenError("forbidden")),
+            ),
+            pytest.raises(ForbiddenError),
+        ):
+            await get_writing_snapshots(db=db, teacher_id=uuid.uuid4(), essay_id=uuid.uuid4())
 
 
 # ---------------------------------------------------------------------------

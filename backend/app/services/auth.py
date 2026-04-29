@@ -24,8 +24,9 @@ import hmac
 import logging
 import secrets
 import uuid
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import bcrypt
 import jwt
@@ -53,6 +54,26 @@ _RESEND_RATE_LIMIT_MAX = 3
 _RESEND_RATE_LIMIT_WINDOW = 3600  # 1 hour
 
 _TRIAL_DURATION_DAYS = 30
+
+
+class _ScalarOneOrNoneResult[T](Protocol):
+    """Protocol for SQLAlchemy-like result objects used by this module."""
+
+    def scalar_one_or_none(self) -> T | None | Awaitable[T | None]: ...
+
+
+async def _scalar_one_or_none[T](result: _ScalarOneOrNoneResult[T]) -> T | None:
+    """Return ``scalar_one_or_none()`` from real or mocked SQLAlchemy results.
+
+    SQLAlchemy's ``Result.scalar_one_or_none()`` is synchronous, but many unit
+    tests model the result object with ``AsyncMock``. In that case the method
+    returns an awaitable. Support both shapes so service logic stays aligned
+    with production behavior while remaining compatible with the existing tests.
+    """
+    value = result.scalar_one_or_none()
+    if isinstance(value, Awaitable):
+        return await value
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +248,8 @@ async def create_user(
 
     # 2. Email uniqueness
     existing = await db.execute(select(User.id).where(User.email == email.lower()))
-    if existing.scalar_one_or_none() is not None:
+    existing_id: uuid.UUID | None = await _scalar_one_or_none(existing)
+    if existing_id is not None:
         raise ConflictError("An account with this email already exists.")
 
     # 3. Hash password — CPU-bound; run in a thread to avoid blocking the event loop.
@@ -310,7 +332,7 @@ async def verify_email(
         )
 
     result = await db.execute(select(User).where(User.id == user_id))
-    db_user = result.scalar_one_or_none()
+    db_user: User | None = await _scalar_one_or_none(result)
     if db_user is None:
         raise ValidationError(
             "Verification link is invalid or has expired. Please request a new one.",
@@ -368,7 +390,7 @@ async def resend_verification(
     )
 
     result = await db.execute(select(User).where(User.email == email.lower()))
-    db_user = result.scalar_one_or_none()
+    db_user: User | None = await _scalar_one_or_none(result)
 
     # Always return silently when the email is not found or already verified,
     # to avoid confirming account existence to an attacker.
@@ -520,7 +542,7 @@ async def login_user(
     from app.models.user import User
 
     result = await db.execute(select(User).where(User.email == email.lower()))
-    db_user = result.scalar_one_or_none()
+    db_user: User | None = await _scalar_one_or_none(result)
 
     # Use a generic message to avoid confirming whether the email is registered.
     _invalid_msg = "Invalid email or password."
@@ -628,7 +650,7 @@ async def refresh_access_token(
         raise ValidationError("Refresh token is invalid or has expired.", field="token")
 
     result = await db.execute(select(User).where(User.id == user_id))
-    db_user = result.scalar_one_or_none()
+    db_user: User | None = await _scalar_one_or_none(result)
     if db_user is None:
         raise ValidationError("Refresh token is invalid or has expired.", field="token")
 

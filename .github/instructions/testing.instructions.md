@@ -79,6 +79,8 @@ Reference: `docs/architecture/testing-guide.md#llm-mocking`
 - [ ] Minimum per new page: renders without error, primary data is visible, key interactive element (modal, form) opens and closes
 - [ ] No assertions on exact student names or essay content — test structure and behavior, not data values
 - [ ] MSW is not used in E2E — tests run against the real Docker Compose stack
+- [ ] **Local E2E verification uses the CI bring-up order** — infrastructure up -> migrations -> backend/worker/frontend up -> smoke test -> Playwright. If migrations have not run, signup/auth and seeded journeys can fail with misleading errors.
+- [ ] **Before concluding that Playwright is failing, rerun with CI-equivalent config** — use `.env.ci`, set `CI=true`, and confirm worker count/retries match `playwright.config.ts`. Non-CI local runs can produce false negatives due to different parallelism and retry settings.
 
 ## Pre-Push Checklist for Test Files
 

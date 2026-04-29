@@ -66,7 +66,9 @@ def upgrade() -> None:
         sa.Column(
             "student_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("students.id", ondelete="CASCADE", name="fk_student_skill_profiles_students"),
+            sa.ForeignKey(
+                "students.id", ondelete="CASCADE", name="fk_student_skill_profiles_students"
+            ),
             nullable=False,
         ),
         sa.Column(
@@ -132,9 +134,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Drop the RLS policy and disable RLS before dropping the table.
-    op.execute(
-        sa.text("DROP POLICY IF EXISTS tenant_isolation ON student_skill_profiles")
-    )
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON student_skill_profiles"))
     op.execute(sa.text("ALTER TABLE student_skill_profiles NO FORCE ROW LEVEL SECURITY"))
     op.execute(sa.text("ALTER TABLE student_skill_profiles DISABLE ROW LEVEL SECURITY"))
 

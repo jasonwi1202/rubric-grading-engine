@@ -22,20 +22,20 @@ Security invariants:
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401  # preserved for test patch compatibility
 import logging
 import uuid
 
-from app.db import session as session_module
+from app.db.session import _TaskSessionLocal, run_task_async
 from app.exceptions import ConflictError, ForbiddenError, LLMError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
-AsyncSessionLocal = session_module.AsyncSessionLocal
+AsyncSessionLocal = _TaskSessionLocal
 
 
 # ---------------------------------------------------------------------------
-# Async helpers — called via asyncio.run() from the sync Celery task
+# Async helpers — called via run_task_async() from the sync Celery task
 # ---------------------------------------------------------------------------
 
 
@@ -273,7 +273,7 @@ def grade_essay(
             task as ``FAILURE``.
     """
     try:
-        return asyncio.run(_run_grade_essay(essay_id, teacher_id, strictness, assignment_id))
+        return run_task_async(_run_grade_essay(essay_id, teacher_id, strictness, assignment_id))
     except ForbiddenError:
         # Essay does not belong to this teacher — nothing was written and the
         # essay status was never changed, so there is nothing to revert.
@@ -313,10 +313,10 @@ def grade_essay(
             "Grading task failed — retries exhausted, reverting essay to queued",
             extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
-        asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
+        run_task_async(_revert_essay_to_queued(essay_id, teacher_id))
         if assignment_id:
             try:
-                asyncio.run(
+                run_task_async(
                     _update_redis_on_failure(essay_id, assignment_id, teacher_id, "LLM_UNAVAILABLE")
                 )
             except Exception as redis_exc:
@@ -331,10 +331,10 @@ def grade_essay(
             "Grading task failed with unrecoverable error",
             extra={"essay_id": essay_id, "error_type": type(exc).__name__},
         )
-        asyncio.run(_revert_essay_to_queued(essay_id, teacher_id))
+        run_task_async(_revert_essay_to_queued(essay_id, teacher_id))
         if assignment_id:
             try:
-                asyncio.run(
+                run_task_async(
                     _update_redis_on_failure(essay_id, assignment_id, teacher_id, "INTERNAL_ERROR")
                 )
             except Exception as redis_exc:

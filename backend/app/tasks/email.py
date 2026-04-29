@@ -7,7 +7,7 @@ verification).  They do not send email to students or process student data.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401  # preserved for test patch compatibility
 import logging
 import smtplib
 import uuid
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import _TaskSessionLocal, run_task_async
 from app.tasks.celery_app import celery
 
 if TYPE_CHECKING:
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 logger = logging.getLogger(__name__)
+AsyncSessionLocal = _TaskSessionLocal
 
 
 async def _load_inquiry(inquiry_id: str) -> ContactInquiry | None:
@@ -176,7 +177,7 @@ def send_inquiry_notification(self: object, inquiry_id: str) -> None:
         )
         return
 
-    inquiry = asyncio.run(_load_inquiry(inquiry_id))
+    inquiry: ContactInquiry | None = run_task_async(_load_inquiry(inquiry_id))
     if inquiry is None:
         logger.warning(
             "Inquiry record not found — skipping notification email",
@@ -246,7 +247,7 @@ def send_dpa_request_notification(self: object, dpa_request_id: str) -> None:
         )
         return
 
-    dpa_req = asyncio.run(_load_dpa_request(dpa_request_id))
+    dpa_req: DpaRequest | None = run_task_async(_load_dpa_request(dpa_request_id))
     if dpa_req is None:
         logger.warning(
             "DPA request record not found — skipping notification email",
@@ -305,7 +306,7 @@ def send_verification_email(self: object, user_id: str, raw_token: str) -> None:
     """
     from app.config import settings  # imported here to avoid circular import at module load
 
-    db_user = asyncio.run(_load_user(user_id))
+    db_user: User | None = run_task_async(_load_user(user_id))
     if db_user is None:
         logger.warning(
             "User record not found — skipping verification email",
@@ -382,7 +383,7 @@ def send_welcome_email(self: object, user_id: str) -> None:
     """
     from app.config import settings  # noqa: PLC0415
 
-    db_user = asyncio.run(_load_user(user_id))
+    db_user: User | None = run_task_async(_load_user(user_id))
     if db_user is None:
         logger.warning(
             "User record not found — skipping welcome email",
@@ -422,7 +423,7 @@ def send_welcome_email(self: object, user_id: str) -> None:
     try:
         _send_smtp_message(msg)
         logger.info("Welcome email sent", extra={"user_id": user_id})
-        asyncio.run(_write_email_audit_log(user_id, "welcome"))
+        run_task_async(_write_email_audit_log(user_id, "welcome"))
     except (smtplib.SMTPException, OSError) as exc:
         logger.warning(
             "Failed to send welcome email — will retry",
@@ -451,7 +452,7 @@ def send_trial_expiry_warning(self: object, user_id: str, days_remaining: int) -
     """
     from app.config import settings  # noqa: PLC0415
 
-    db_user = asyncio.run(_load_user(user_id))
+    db_user: User | None = run_task_async(_load_user(user_id))
     if db_user is None:
         logger.warning(
             "User record not found — skipping trial expiry warning",
@@ -501,7 +502,7 @@ def send_trial_expiry_warning(self: object, user_id: str, days_remaining: int) -
             "Trial expiry warning sent",
             extra={"user_id": user_id, "days_remaining": days_remaining},
         )
-        asyncio.run(_write_email_audit_log(user_id, "trial_warning"))
+        run_task_async(_write_email_audit_log(user_id, "trial_warning"))
     except (smtplib.SMTPException, OSError) as exc:
         logger.warning(
             "Failed to send trial expiry warning — will retry",
@@ -529,7 +530,7 @@ def send_trial_expired(self: object, user_id: str) -> None:
     """
     from app.config import settings  # noqa: PLC0415
 
-    db_user = asyncio.run(_load_user(user_id))
+    db_user: User | None = run_task_async(_load_user(user_id))
     if db_user is None:
         logger.warning(
             "User record not found — skipping trial expired email",
@@ -573,7 +574,7 @@ def send_trial_expired(self: object, user_id: str) -> None:
     try:
         _send_smtp_message(msg)
         logger.info("Trial expired email sent", extra={"user_id": user_id})
-        asyncio.run(_write_email_audit_log(user_id, "trial_expired"))
+        run_task_async(_write_email_audit_log(user_id, "trial_expired"))
     except (smtplib.SMTPException, OSError) as exc:
         logger.warning(
             "Failed to send trial expired email — will retry",
@@ -602,7 +603,7 @@ def scan_trial_expirations() -> None:
 
     No student PII is read or logged.
     """
-    asyncio.run(_do_scan_trial_expirations())
+    run_task_async(_do_scan_trial_expirations())
 
 
 async def _do_scan_trial_expirations() -> None:

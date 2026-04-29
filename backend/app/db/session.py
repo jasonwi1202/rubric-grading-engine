@@ -29,10 +29,12 @@ table without a prior ``SET app.current_teacher_id`` call will return zero
 rows silently.
 """
 
+import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
+from typing import TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio import (
@@ -40,6 +42,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,30 @@ engine: AsyncEngine = create_async_engine(
     # SQL echo is disabled in all environments: query output can contain
     # parameter values that include student PII.
     echo=False,
+)
+
+# ---------------------------------------------------------------------------
+# Task engine (NullPool — used by Celery tasks via run_task_async)
+# ---------------------------------------------------------------------------
+# Celery tasks call asyncio.run() which creates a fresh event loop per
+# invocation.  asyncpg connections are event-loop-bound, so a pooled engine
+# shared across multiple asyncio.run() calls accumulates stale connections
+# that raise "Future attached to a different loop" or "another operation is in
+# progress".  NullPool disables connection pooling entirely: each
+# AsyncSession gets a fresh connection that is closed immediately on exit,
+# eliminating the cross-loop reuse problem at the cost of one TCP connect per
+# task (acceptable — Celery tasks are not latency-critical).
+_task_engine: AsyncEngine = create_async_engine(
+    settings.database_url,
+    poolclass=__import__("sqlalchemy.pool", fromlist=["NullPool"]).NullPool,
+    echo=False,
+)
+
+_TaskSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
+    bind=_task_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
 )
 
 # ---------------------------------------------------------------------------
@@ -180,3 +208,30 @@ async def tenant_session(teacher_id: uuid.UUID) -> AsyncIterator[AsyncSession]:
                 await session.execute(_sa.text("SET app.current_teacher_id = ''"))
             except Exception:  # noqa: BLE001
                 logger.debug("RLS context reset failed in tenant_session", exc_info=True)
+
+
+def run_task_async[T](coro: Coroutine[object, object, T]) -> T:
+    """Run an async coroutine from a synchronous Celery task.
+
+    Uses ``asyncio.run()`` (fresh event loop per call).  The coroutine must
+    open database sessions via ``_TaskSessionLocal`` (NullPool engine) so that
+    connections are not shared across event loops.  Task helper functions
+    (``_load_user``, ``_load_inquiry``, etc.) use ``_TaskSessionLocal``
+    automatically when called through this wrapper.
+
+    Usage::
+
+        from app.db.session import run_task_async
+
+        @celery.task
+        def my_task(arg: str) -> None:
+            result = run_task_async(_my_async_helper(arg))
+            ...
+
+    Args:
+        coro: An async coroutine object to run to completion.
+
+    Returns:
+        The return value of the coroutine.
+    """
+    return asyncio.run(coro)

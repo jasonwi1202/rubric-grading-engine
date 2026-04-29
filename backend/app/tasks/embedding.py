@@ -27,16 +27,16 @@ Security invariants:
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401  # preserved for test patch compatibility
 import logging
 import uuid
 
-from app.db import session as session_module
+from app.db.session import _TaskSessionLocal, run_task_async
 from app.exceptions import ForbiddenError, LLMError, NotFoundError, ValidationError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
-AsyncSessionLocal = session_module.AsyncSessionLocal
+AsyncSessionLocal = _TaskSessionLocal
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def compute_essay_embedding(
             task as ``FAILURE``.
     """
     try:
-        return asyncio.run(
+        return run_task_async(
             _run_compute_essay_embedding(essay_version_id, assignment_id, teacher_id)
         )
     except (ForbiddenError, NotFoundError):

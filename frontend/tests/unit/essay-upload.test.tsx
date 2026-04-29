@@ -89,6 +89,7 @@ function makeStudent(overrides: Partial<EnrolledStudentResponse["student"]> = {}
       teacher_id: "tch-001",
       full_name: `Learner ${studentId.toUpperCase()}`,
       external_id: null,
+      teacher_notes: null,
       created_at: "2026-01-01T00:00:00Z",
       ...overrides,
     },

@@ -27,17 +27,17 @@ Security invariants:
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401  # preserved for test patch compatibility
 import logging
 import uuid
 from typing import cast
 
-from app.db import session as session_module
+from app.db.session import _TaskSessionLocal, run_task_async
 from app.exceptions import ForbiddenError, NotFoundError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
-AsyncSessionLocal = session_module.AsyncSessionLocal
+AsyncSessionLocal = _TaskSessionLocal
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ def update_skill_profile(
             as ``FAILURE``.
     """
     try:
-        asyncio.run(_run_update_skill_profile(grade_id, teacher_id))
+        run_task_async(_run_update_skill_profile(grade_id, teacher_id))
     except (NotFoundError, ForbiddenError) as exc:
         # Grade deleted or belongs to a different teacher — nothing to update.
         logger.warning(

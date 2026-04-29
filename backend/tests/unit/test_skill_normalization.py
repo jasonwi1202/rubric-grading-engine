@@ -137,9 +137,7 @@ class TestLoadSkillMappingCustomPath:
         # A string value instead of a list would silently iterate characters
         # without the type check — the validator must catch this early.
         bad_file = tmp_path / "bad_variants.json"
-        bad_file.write_text(
-            json.dumps({"thesis": "Thesis Statement"}), encoding="utf-8"
-        )
+        bad_file.write_text(json.dumps({"thesis": "Thesis Statement"}), encoding="utf-8")
         with pytest.raises(ValueError, match="list of variants"):
             load_skill_mapping(bad_file)
 
@@ -150,9 +148,7 @@ class TestLoadSkillMappingCustomPath:
 
 
 class TestLoadSkillMappingMutationSafety:
-    def test_mutating_returned_mapping_does_not_affect_cache(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mutating_returned_mapping_does_not_affect_cache(self, tmp_path: Path) -> None:
         """Callers that mutate the returned dict must not corrupt the cache."""
         config = {"thesis": ["Thesis Statement", "Central Claim"]}
         config_file = tmp_path / "mapping.json"
@@ -249,9 +245,7 @@ class TestNormalizeCriterionNameExactVariant:
             ("Word Choice", "voice"),
         ],
     )
-    def test_exact_variant_mapped_correctly(
-        self, criterion: str, expected_dimension: str
-    ) -> None:
+    def test_exact_variant_mapped_correctly(self, criterion: str, expected_dimension: str) -> None:
         result = normalize_criterion_name(criterion)
         assert result == expected_dimension, (
             f"Expected '{criterion}' → '{expected_dimension}', got '{result}'"
@@ -345,15 +339,11 @@ class TestNormalizeCriterionNameOtherFallback:
 
 
 class TestNormalizeCriterionNameConfigOverride:
-    def test_custom_mapping_overrides_default(
-        self, minimal_mapping: dict[str, list[str]]
-    ) -> None:
+    def test_custom_mapping_overrides_default(self, minimal_mapping: dict[str, list[str]]) -> None:
         """Custom mapping is used when supplied — default is not loaded."""
         # "Depth of Analysis" is only in the default config; minimal_mapping
         # does not include "analysis" at all, so it should fall back to "other".
-        result = normalize_criterion_name(
-            "Depth of Analysis", mapping=minimal_mapping
-        )
+        result = normalize_criterion_name("Depth of Analysis", mapping=minimal_mapping)
         assert result == OTHER_DIMENSION
 
     def test_custom_mapping_resolves_its_own_variants(
@@ -418,9 +408,7 @@ class TestNormalizeCriterionNameThresholdBoundary:
         self, minimal_mapping: dict[str, list[str]]
     ) -> None:
         """A threshold of 0.0 means even zero-scoring criteria are mapped."""
-        result = normalize_criterion_name(
-            "xyzzy_nomatch", mapping=minimal_mapping, threshold=0.0
-        )
+        result = normalize_criterion_name("xyzzy_nomatch", mapping=minimal_mapping, threshold=0.0)
         # With threshold=0, the first dimension wins (any score ≥ 0).
         assert result != OTHER_DIMENSION
 
@@ -444,17 +432,13 @@ class TestNormalizeCriterionNameThresholdBoundary:
     ) -> None:
         """A threshold of 1.0 accepts only perfect matches."""
         # "Grammar" is an exact variant of "mechanics" in the minimal mapping.
-        result = normalize_criterion_name(
-            "Grammar", mapping=minimal_mapping, threshold=1.0
-        )
+        result = normalize_criterion_name("Grammar", mapping=minimal_mapping, threshold=1.0)
         assert result == "mechanics"
 
     def test_custom_threshold_one_rejects_near_matches(
         self, minimal_mapping: dict[str, list[str]]
     ) -> None:
-        result = normalize_criterion_name(
-            "Grammer", mapping=minimal_mapping, threshold=1.0
-        )
+        result = normalize_criterion_name("Grammer", mapping=minimal_mapping, threshold=1.0)
         assert result == OTHER_DIMENSION
 
     def test_threshold_below_zero_raises_value_error(
@@ -473,18 +457,12 @@ class TestNormalizeCriterionNameThresholdBoundary:
         self, minimal_mapping: dict[str, list[str]]
     ) -> None:
         """Boundary: threshold=0.0 is a valid inclusive lower bound."""
-        result = normalize_criterion_name(
-            "Grammar", mapping=minimal_mapping, threshold=0.0
-        )
+        result = normalize_criterion_name("Grammar", mapping=minimal_mapping, threshold=0.0)
         assert isinstance(result, str)
 
-    def test_threshold_exactly_one_is_accepted(
-        self, minimal_mapping: dict[str, list[str]]
-    ) -> None:
+    def test_threshold_exactly_one_is_accepted(self, minimal_mapping: dict[str, list[str]]) -> None:
         """Boundary: threshold=1.0 is a valid inclusive upper bound."""
-        result = normalize_criterion_name(
-            "Grammar", mapping=minimal_mapping, threshold=1.0
-        )
+        result = normalize_criterion_name("Grammar", mapping=minimal_mapping, threshold=1.0)
         assert isinstance(result, str)
 
 

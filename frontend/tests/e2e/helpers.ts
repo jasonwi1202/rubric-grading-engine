@@ -16,6 +16,7 @@ export async function waitForEmail(
   subjectContains: string,
   timeoutMs = 10_000,
 ): Promise<{ subject: string; body: string; id: string }> {
+  const normalizedSubjectNeedle = subjectContains.toLowerCase();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const res = await fetch(`${MAILPIT_API}/api/v1/messages`);
@@ -30,7 +31,7 @@ export async function waitForEmail(
     const match = data.messages.find(
       (m) =>
         m.To.some((t) => t.Address === toAddress) &&
-        m.Subject.includes(subjectContains),
+        m.Subject.toLowerCase().includes(normalizedSubjectNeedle),
     );
     if (match) {
       const detail = await fetch(`${MAILPIT_API}/api/v1/message/${match.ID}`);
@@ -867,10 +868,9 @@ async function lockGradeForEssay(
  *
  * Creates a fresh verified teacher account, one class, one student, two rubrics,
  * two assignments; uploads one essay per assignment; triggers batch grading for
- * each; and locks both grades.  After the second lock, makes a best-effort 30 s
- * poll for the skill profile to reach assignment_count >= 2.  Callers must not
- * assume the profile is fully aggregated when this function returns — the
- * Celery task may still be in flight.
+ * each; and locks both grades.  After the second lock, blocks until the
+ * student profile reaches assignment_count >= 2 (or throws on timeout), so
+ * callers can rely on deterministic fixture readiness.
  *
  * The two assignments are created and locked sequentially so their locked_at
  * timestamps differ, making the chronological order deterministic:
@@ -950,12 +950,13 @@ export async function seedStudentProfileFixture(
     "seedStudentProfileFixture (essay2)",
   );
 
-  // Poll until the skill profile reflects both locked assignments.  The
+  // Poll until the skill profile reflects both locked assignments. The
   // update_skill_profile Celery task is enqueued on each grade lock, so there
-  // may be a short delay before assignment_count reaches 2.
+  // may be a delay before assignment_count reaches 2.
   {
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + 90_000;
     let profileReady = false;
+    let lastCount = 0;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 2_000));
       const profileRes = await fetch(
@@ -967,14 +968,17 @@ export async function seedStudentProfileFixture(
         data: { skill_profile: { assignment_count: number } | null };
       };
       const count = profileBody.data?.skill_profile?.assignment_count ?? 0;
+      lastCount = count;
       if (count >= 2) {
         profileReady = true;
         break;
       }
     }
     if (!profileReady) {
-      // Non-fatal: the Celery task may still be in flight when the tests start.
-      // The test itself will wait for the profile to render (with a longer timeout).
+      throw new Error(
+        `seedStudentProfileFixture: skill profile did not reach assignment_count >= 2 ` +
+          `within 90 s (last count: ${lastCount})`,
+      );
     }
   }
 

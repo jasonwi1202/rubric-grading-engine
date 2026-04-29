@@ -71,9 +71,7 @@ async def _assert_class_owned_by(
     Raises :exc:`NotFoundError` if the class does not exist.
     Raises :exc:`ForbiddenError` if the class belongs to a different teacher.
     """
-    result = await db.execute(
-        select(Class.id, Class.teacher_id).where(Class.id == class_id)
-    )
+    result = await db.execute(select(Class.id, Class.teacher_id).where(Class.id == class_id))
     row = result.one_or_none()
     if row is None:
         raise NotFoundError("Class not found.")
@@ -94,9 +92,7 @@ async def _assert_assignment_owned_by(
     """
     # First: check existence without tenant filter so we can distinguish
     # "not found" from "forbidden".
-    exists_result = await db.execute(
-        select(Assignment.id).where(Assignment.id == assignment_id)
-    )
+    exists_result = await db.execute(select(Assignment.id).where(Assignment.id == assignment_id))
     if exists_result.one_or_none() is None:
         raise NotFoundError("Assignment not found.")
 
@@ -450,8 +446,7 @@ async def get_assignment_analytics(
         for s in raw_scores:
             score_freq[s] += 1
         score_distribution = [
-            ScoreCount(score=score, count=cnt)
-            for score, cnt in sorted(score_freq.items())
+            ScoreCount(score=score, count=cnt) for score, cnt in sorted(score_freq.items())
         ]
 
         criterion_analytics.append(

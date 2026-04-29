@@ -175,6 +175,35 @@ Keep concurrent-index operations in a dedicated migration file.
 
 Migrations are run as part of the deployment pipeline — never manually in a production shell unless recovering from an incident.
 
+### M5 revision-id compatibility note
+
+Milestone M5 introduced two long revision identifiers that were later shortened
+to avoid `alembic_version.version_num` truncation on fresh databases:
+
+- `024_essay_versions_writing_snapshots` -> `024_essay_versions_snapshots`
+- `025_essay_versions_process_signals` -> `025_essay_versions_signals`
+
+Fresh databases are unaffected (they use the shortened IDs directly).
+For an environment that already recorded the long IDs, reconcile the
+`alembic_version` table once before running `alembic upgrade head`:
+
+```sql
+UPDATE alembic_version
+SET version_num = '024_essay_versions_snapshots'
+WHERE version_num = '024_essay_versions_writing_snapshots';
+
+UPDATE alembic_version
+SET version_num = '025_essay_versions_signals'
+WHERE version_num = '025_essay_versions_process_signals';
+```
+
+Validate after reconciliation:
+
+```bash
+alembic current --verbose
+alembic history
+```
+
 ### Normal deploy flow
 ```
 1. CI builds new Docker image

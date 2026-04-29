@@ -1275,10 +1275,7 @@ async def get_process_signals(
             cache_is_valid = False
             cached_snapshot_count = -1
 
-    needs_compute = (
-        not cache_is_valid
-        or cached_snapshot_count != current_snapshot_count
-    )
+    needs_compute = not cache_is_valid or cached_snapshot_count != current_snapshot_count
 
     if needs_compute:
         computed_at = datetime.now(UTC)
