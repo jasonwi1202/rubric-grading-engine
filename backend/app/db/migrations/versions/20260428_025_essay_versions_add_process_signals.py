@@ -1,6 +1,6 @@
 """essay_versions: add process_signals JSONB column
 
-Revision ID: 025_essay_versions_process_signals
+Revision ID: 025_essay_versions_signals
 Revises: 024_essay_versions_snapshots
 Create Date: 2026-04-28 00:00:00.000000
 

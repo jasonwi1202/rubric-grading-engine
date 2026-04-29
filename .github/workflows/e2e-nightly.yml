@@ -1,0 +1,111 @@
+name: E2E Nightly Stress
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e-nightly-journey5-stress:
+    name: Nightly Journey 5 Stress (Playwright)
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: http://localhost:3000
+      API_BASE_URL: http://localhost:8000
+      MAILPIT_API_URL: http://localhost:8025
+      E2E_SKIP_EMAIL_VERIFICATION: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browsers (Chromium only)
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create .env from .env.ci
+        run: cp .env.ci .env
+
+      - name: Start infrastructure services
+        run: docker compose up -d postgres redis minio minio-init mailpit
+
+      - name: Wait for infrastructure to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1 && \
+               docker compose exec -T redis redis-cli ping > /dev/null 2>&1; then
+              echo "Infrastructure ready"
+              break
+            fi
+            echo "Waiting for infrastructure... ($i/30)"
+            sleep 3
+          done
+
+      - name: Run database migrations
+        run: |
+          docker compose run --rm \
+            --no-deps \
+            -e PYTHONPATH=/app \
+            backend sh -c "cd /app && alembic upgrade head"
+
+      - name: Start application stack
+        run: docker compose up -d backend worker frontend
+
+      - name: Wait for services to be healthy
+        run: |
+          python scripts/smoke_test.py \
+            --api-url http://localhost:8000 \
+            --frontend-url http://localhost:3000 \
+            --mailpit-url http://localhost:8025 \
+            --retries 10 \
+            --retry-delay 3
+
+      - name: Wait for Celery worker to be ready
+        run: |
+          for i in $(seq 1 20); do
+            if docker compose exec -T worker celery -A app.tasks.celery_app inspect ping --timeout 3 > /dev/null 2>&1; then
+              echo "Celery worker is ready"
+              break
+            fi
+            echo "Waiting for worker... ($i/20)"
+            sleep 3
+          done
+
+      - name: Stress run Journey 5 spec five times
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "--- Journey 5 run $i/5 ---"
+            npx playwright test tests/e2e/mx3-journey5-student-profile.spec.ts --reporter=line
+          done
+        working-directory: frontend
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-nightly
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v
