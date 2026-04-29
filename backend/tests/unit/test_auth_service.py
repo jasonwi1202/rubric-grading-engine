@@ -400,7 +400,9 @@ class TestResendVerificationService:
         mock_result.scalar_one_or_none = AsyncMock(return_value=fake_user)
         db.execute = AsyncMock(return_value=mock_result)
 
-        result = await resend_verification(db, redis, "unverified-async@school.edu", submitter_ip=None)
+        result = await resend_verification(
+            db, redis, "unverified-async@school.edu", submitter_ip=None
+        )
 
         assert result is fake_user
         mock_result.scalar_one_or_none.assert_awaited_once()
