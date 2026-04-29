@@ -47,13 +47,13 @@ class TeacherWorklistItem(Base):
     )
     teacher_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE", name="fk_worklist_items_users"),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_teacher_worklist_items_users"),
         nullable=False,
         index=True,
     )
     student_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("students.id", ondelete="CASCADE", name="fk_worklist_items_students"),
+        ForeignKey("students.id", ondelete="CASCADE", name="fk_teacher_worklist_items_students"),
         nullable=False,
         index=True,
     )

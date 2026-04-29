@@ -67,14 +67,14 @@ def upgrade() -> None:
         sa.Column(
             "teacher_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="CASCADE", name="fk_worklist_items_users"),
+            sa.ForeignKey("users.id", ondelete="CASCADE", name="fk_teacher_worklist_items_users"),
             nullable=False,
         ),
         sa.Column(
             "student_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey(
-                "students.id", ondelete="CASCADE", name="fk_worklist_items_students"
+                "students.id", ondelete="CASCADE", name="fk_teacher_worklist_items_students"
             ),
             nullable=False,
         ),

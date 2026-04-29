@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import case, delete, insert, nulls_first, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assignment import Assignment
@@ -509,7 +509,7 @@ async def _load_per_assignment_skill_scores_for_all_students(
             Grade.locked_at.is_not(None),
             Essay.student_id.is_not(None),
         )
-        .order_by(Essay.student_id, Grade.locked_at.asc())
+        .order_by(Essay.student_id, Grade.locked_at.asc(), Grade.id.asc())
     )
     raw_rows = rows_result.all()
 
@@ -795,7 +795,13 @@ async def compute_and_persist_worklist(
     await db.execute(insert(TeacherWorklistItem), rows)
     await db.commit()
 
-    # Reload the inserted rows ordered by urgency descending.
+    # Reload inserted rows with the same deterministic ordering as _rank_items:
+    # urgency desc → trigger_type order → skill_key (NULLs first, then alpha) → student_id.
+    trigger_order_expr = case(
+        {v: k for k, v in enumerate(("regression", "non_responder", "persistent_gap", "high_inconsistency"))},
+        value=TeacherWorklistItem.trigger_type,
+        else_=99,
+    )
     result = await db.execute(
         select(TeacherWorklistItem)
         .where(
@@ -803,7 +809,12 @@ async def compute_and_persist_worklist(
             TeacherWorklistItem.status == "active",
             TeacherWorklistItem.generated_at == generated_at,
         )
-        .order_by(TeacherWorklistItem.urgency.desc())
+        .order_by(
+            TeacherWorklistItem.urgency.desc(),
+            trigger_order_expr,
+            nulls_first(TeacherWorklistItem.skill_key.asc()),
+            TeacherWorklistItem.student_id.asc(),
+        )
     )
     persisted = list(result.scalars().all())
 
