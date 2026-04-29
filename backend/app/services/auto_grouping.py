@@ -541,7 +541,8 @@ async def update_group_members(
 ) -> StudentGroupResponse:
     """Manually adjust the student membership of a skill-gap group.
 
-    Replaces the group's ``student_ids`` with the supplied list (deduplicated).
+    Replaces the group's ``student_ids`` with the supplied list (deduplicated
+    and filtered to only actively-enrolled students in ``class_id``).
     Updates ``student_count`` to match.  When the list is empty, the group's
     stability is set to ``'exited'`` to reflect that the gap is resolved.
     When previously exited and now receiving students, stability becomes
@@ -549,7 +550,9 @@ async def update_group_members(
 
     Tenant isolation: every query includes ``teacher_id``.  The group record
     is fetched by ``(group_id, class_id, teacher_id)`` in a single query so
-    ownership of both the class and the group are verified together.
+    ownership of both the class and the group are verified together.  The
+    UPDATE also includes ``teacher_id`` and ``class_id`` in its WHERE clause
+    and asserts a rowcount of 1 as a defence-in-depth safeguard.
 
     Args:
         db:          Async database session.
@@ -557,6 +560,8 @@ async def update_group_members(
         class_id:    UUID of the class the group belongs to.
         group_id:    UUID of the group to update.
         student_ids: New ordered list of student UUIDs to assign (may be empty).
+                     Students not actively enrolled in ``class_id`` are silently
+                     dropped.  The returned student list is sorted by full name.
 
     Returns:
         Updated :class:`StudentGroupResponse` with resolved student names.
@@ -580,11 +585,15 @@ async def update_group_members(
     if group is None:
         raise NotFoundError("Group not found.")
 
-    # Deduplicate while preserving order.
+    # Deduplicate while preserving order; then intersect with active enrollments
+    # to prevent adding a teacher-owned student from a different class.
+    enrolled_ids: set[uuid.UUID] = set(
+        await _load_enrolled_student_ids(db, class_id, teacher_id)
+    )
     seen: set[uuid.UUID] = set()
     unique_ids_uuid: list[uuid.UUID] = []
     for sid in student_ids:
-        if sid not in seen:
+        if sid not in seen and sid in enrolled_ids:
             seen.add(sid)
             unique_ids_uuid.append(sid)
 
@@ -603,15 +612,22 @@ async def update_group_members(
         # cast to satisfy static analysis.
         new_stability = group.stability  # type: ignore[assignment]
 
-    await db.execute(
+    update_result = await db.execute(
         update(StudentGroup)
-        .where(StudentGroup.id == group_id)
+        .where(
+            StudentGroup.id == group_id,
+            StudentGroup.teacher_id == teacher_id,
+            StudentGroup.class_id == group.class_id,
+        )
         .values(
             student_ids=unique_ids,
             student_count=new_count,
             stability=new_stability,
         )
     )
+    if update_result.rowcount != 1:
+        await db.rollback()
+        raise ForbiddenError("You do not have access to this student group.")
     await db.commit()
     # No db.refresh() needed — the updated values are already known from the
     # UPDATE statement above; avoid an extra round-trip to the database.
@@ -625,7 +641,7 @@ async def update_group_members(
                 Student.id.in_(unique_ids_uuid),
             )
         )
-        # Build map for ordering.
+        # Build map for name lookup.
         student_map: dict[str, StudentInGroupResponse] = {
             str(row.id): StudentInGroupResponse(
                 id=row.id,
@@ -634,11 +650,13 @@ async def update_group_members(
             )
             for row in students_result.all()
         }
-        # Preserve the caller-specified order; unknown IDs are silently skipped.
+        # Only include IDs that resolved (i.e., enrolled in this class).
         for sid_str in unique_ids:
             s = student_map.get(sid_str)
             if s is not None:
                 students_in_group.append(s)
+        # Sort by full_name to match list_class_groups() ordering.
+        students_in_group.sort(key=lambda s: s.full_name)
 
     return StudentGroupResponse(
         id=group.id,
