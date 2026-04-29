@@ -315,9 +315,15 @@ async def compute_and_persist_groups(
     )
 
     # Apply stability to the pre-computed clusters using the locked snapshot.
-    prev_keys = previous_active_skill_keys
     groups = [
-        {**cluster, "stability": "persistent" if cluster["skill_key"] in prev_keys else "new"}
+        {
+            **cluster,
+            "stability": (
+                "persistent"
+                if cluster["skill_key"] in previous_active_skill_keys
+                else "new"
+            ),
+        }
         for cluster in raw_clusters
     ]
 
@@ -464,7 +470,7 @@ async def list_class_groups(
             except ValueError:
                 logger.warning(
                     "Skipping malformed student_id in group record",
-                    extra={"class_id": str(class_id)},
+                    extra={"class_id": str(class_id), "id_length": len(s)},
                 )
 
         if student_uuids:
