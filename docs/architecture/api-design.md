@@ -175,6 +175,7 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | POST | `/classes/{classId}/archive` | Archive the class (soft) |
 | GET | `/classes/{classId}/insights` | Class-level skill averages, score distributions, and common issues |
 | GET | `/classes/{classId}/groups` | Current auto-generated skill-gap student groups for a class |
+| PATCH | `/classes/{classId}/groups/{groupId}` | Manually adjust the student membership of a skill-gap group |
 
 **GET /classes query params:** `?academic_year=2025-26&is_archived=false`
 
@@ -262,6 +263,45 @@ Returns the current auto-generated skill-gap student groups for the class, compu
 - **`computed_at`** — ISO-8601 timestamp of the computation run that produced this group.
 
 Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
+
+---
+
+**PATCH /classes/{classId}/groups/{groupId}** (requires JWT)
+
+Manually replaces the student membership of a skill-gap group. The supplied `student_ids` list becomes the new membership in full. Duplicate student IDs are removed while preserving the submitted order of the resulting membership list. The returned `students` array is sorted by `full_name` for deterministic UI ordering and therefore does not necessarily match the submitted order. An empty list transitions the group to `stability='exited'`.
+
+**Request body:**
+```json
+{
+  "student_ids": ["uuid", "uuid"]
+}
+```
+
+**Response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "skill_key": "evidence",
+    "label": "Evidence",
+    "student_count": 2,
+    "students": [
+      { "id": "uuid", "full_name": "Student Name", "external_id": null }
+    ],
+    "stability": "persistent",
+    "computed_at": "2026-01-01T00:00:00Z"
+  }
+}
+```
+
+Stability transitions on update:
+- Empty list → `exited`
+- Previously `exited` + non-empty list → `persistent`
+- Otherwise, the existing stability value is preserved.
+
+Note: This endpoint adjusts only the group record; it does not modify the underlying `StudentSkillProfile` data.
+
+Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class or group does not exist), `422 UNPROCESSABLE_ENTITY` (invalid request body).
 
 ---
 

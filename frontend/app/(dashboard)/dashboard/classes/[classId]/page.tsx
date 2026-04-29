@@ -6,6 +6,8 @@
  * Tabs:
  *   Overview   — assignment list and student roster management
  *   Skill Heatmap — per-student skill score grid (M5.7)
+ *   Insights   — class-level skill averages and distributions (M5.6)
+ *   Groups     — auto-generated skill-gap groups (M6.3)
  *
  * All server state via React Query. No useEffect+fetch.
  * Security: no student PII in logs or query keys beyond entity IDs.
@@ -21,6 +23,7 @@ import type { AssignmentStatus } from "@/lib/api/assignments";
 import { RosterList } from "@/components/classes/RosterList";
 import { SkillHeatmap } from "@/components/classes/SkillHeatmap";
 import { ClassInsightsPanel } from "@/components/classes/ClassInsightsPanel";
+import { SkillGroupsPanel } from "@/components/classes/SkillGroupsPanel";
 
 const STATUS_COLORS: Record<AssignmentStatus, string> = {
   draft: "bg-gray-100 text-gray-600",
@@ -31,7 +34,7 @@ const STATUS_COLORS: Record<AssignmentStatus, string> = {
   returned: "bg-purple-100 text-purple-700",
 };
 
-type Tab = "overview" | "heatmap" | "insights";
+type Tab = "overview" | "heatmap" | "insights" | "groups";
 
 export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
@@ -42,7 +45,7 @@ export default function ClassDetailPage() {
     e: React.KeyboardEvent<HTMLButtonElement>,
     currentTab: Tab,
   ) => {
-    const tabs: Tab[] = ["overview", "heatmap", "insights"];
+    const tabs: Tab[] = ["overview", "heatmap", "insights", "groups"];
     const currentIndex = tabs.indexOf(currentTab);
     let nextIndex = currentIndex;
 
@@ -181,6 +184,23 @@ export default function ClassDetailPage() {
         >
           Insights
         </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={activeTab === "groups"}
+          aria-controls="tab-panel-groups"
+          id="tab-groups"
+          tabIndex={activeTab === "groups" ? 0 : -1}
+          onClick={() => setActiveTab("groups")}
+          onKeyDown={(e) => handleTabKeyDown(e, "groups")}
+          className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
+            activeTab === "groups"
+              ? "border-b-2 border-blue-600 text-blue-700"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Groups
+        </button>
       </div>
 
       {/* Overview tab: assignments + roster */}
@@ -316,6 +336,29 @@ export default function ClassDetailPage() {
             <ClassInsightsPanel
               classId={classId}
               assignments={assignments ?? []}
+            />
+          )}
+        </section>
+      </div>
+
+      {/* Groups tab */}
+      <div
+        role="tabpanel"
+        id="tab-panel-groups"
+        aria-labelledby="tab-groups"
+        hidden={activeTab !== "groups"}
+      >
+        <section aria-labelledby="groups-heading" className="mb-8">
+          <h2
+            id="groups-heading"
+            className="mb-4 text-base font-semibold text-gray-900"
+          >
+            Skill-Gap Groups
+          </h2>
+          {classId && activeTab === "groups" && (
+            <SkillGroupsPanel
+              classId={classId}
+              onNavigateToHeatmap={() => setActiveTab("heatmap")}
             />
           )}
         </section>

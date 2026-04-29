@@ -1,4 +1,4 @@
-"""Pydantic schemas for the auto-grouping API (M6-02).
+"""Pydantic schemas for the auto-grouping API (M6-02 / M6-03).
 
 No student PII is logged.  Student names appear in ``StudentInGroupResponse``
 only in the response body, never in log lines.
@@ -59,3 +59,24 @@ class ClassGroupsResponse(BaseModel):
 
     class_id: uuid.UUID
     groups: list[StudentGroupResponse]
+
+
+class PatchGroupMembersRequest(BaseModel):
+    """Request body for PATCH /classes/{classId}/groups/{groupId}.
+
+    Allows the teacher to manually adjust the student membership of a group.
+    The ``student_ids`` list replaces the current membership in full.
+
+    Constraints:
+    - All UUIDs must be valid UUID strings.
+    - Duplicate student IDs within the list are deduplicated by the service.
+    - An empty list removes all students from the group and sets
+      ``stability='exited'``.
+    """
+
+    student_ids: list[uuid.UUID] = Field(
+        description=(
+            "Ordered list of student UUIDs that should be members of this group "
+            "after the update.  Replaces the current membership entirely."
+        )
+    )

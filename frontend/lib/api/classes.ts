@@ -313,3 +313,75 @@ export async function getClassInsights(
 ): Promise<ClassInsightsResponse> {
   return apiGet<ClassInsightsResponse>(`/classes/${classId}/insights`);
 }
+
+// ---------------------------------------------------------------------------
+// Types — Auto-Grouping (M6-02 / M6-03)
+// ---------------------------------------------------------------------------
+
+/** Minimal student record embedded in a group response. Matches backend StudentInGroupResponse. */
+export interface StudentInGroupResponse {
+  id: string;
+  full_name: string;
+  external_id: string | null;
+}
+
+/** Stability status of a skill-gap group. */
+export type GroupStability = "new" | "persistent" | "exited";
+
+/** A single skill-gap group with its student list and stability status. Matches backend StudentGroupResponse. */
+export interface StudentGroupResponse {
+  id: string;
+  skill_key: string;
+  label: string;
+  student_count: number;
+  students: StudentInGroupResponse[];
+  stability: GroupStability;
+  computed_at: string;
+}
+
+/** Response from GET /classes/{classId}/groups. Matches backend ClassGroupsResponse. */
+export interface ClassGroupsResponse {
+  class_id: string;
+  groups: StudentGroupResponse[];
+}
+
+/** Request body for PATCH /classes/{classId}/groups/{groupId}. */
+export interface PatchGroupMembersRequest {
+  /** Full replacement list of student UUIDs. An empty list marks the group exited. */
+  student_ids: string[];
+}
+
+// ---------------------------------------------------------------------------
+// API functions — Auto-Grouping (M6-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Get current auto-generated skill-gap groups for a class.
+ * Calls GET /api/v1/classes/{classId}/groups.
+ *
+ * Returns all current groups including exited ones.
+ * Groups are ordered: active (new/persistent) first, exited last.
+ */
+export async function getClassGroups(
+  classId: string,
+): Promise<ClassGroupsResponse> {
+  return apiGet<ClassGroupsResponse>(`/classes/${classId}/groups`);
+}
+
+/**
+ * Manually adjust student membership of a skill-gap group.
+ * Calls PATCH /api/v1/classes/{classId}/groups/{groupId}.
+ *
+ * The supplied student_ids list fully replaces the current membership.
+ * An empty list transitions the group to stability='exited'.
+ */
+export async function updateGroupMembers(
+  classId: string,
+  groupId: string,
+  data: PatchGroupMembersRequest,
+): Promise<StudentGroupResponse> {
+  return apiPatch<StudentGroupResponse>(
+    `/classes/${classId}/groups/${groupId}`,
+    data,
+  );
+}

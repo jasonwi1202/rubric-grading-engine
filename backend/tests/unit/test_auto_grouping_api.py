@@ -1,4 +1,5 @@
-"""Unit tests for GET /api/v1/classes/{classId}/groups.
+"""Unit tests for GET /api/v1/classes/{classId}/groups
+and PATCH /api/v1/classes/{classId}/groups/{groupId}.
 
 Tests cover:
 - Happy path: returns groups with correct shape and envelope.
@@ -8,6 +9,11 @@ Tests cover:
 - Authentication required: returns 401 when no credentials.
 - Router passes teacher_id to service correctly.
 - Stability values are included in the response (new / persistent / exited).
+- PATCH: returns updated group with data envelope.
+- PATCH: returns 404 when group does not exist.
+- PATCH: returns 403 when class belongs to another teacher.
+- PATCH: requires authentication.
+- PATCH: passes all args to service correctly.
 
 No real database.  All service calls are mocked.  No student PII.
 """
@@ -396,3 +402,136 @@ class TestBuildGroupsStabilityTracking:
         )
         assert len(groups) == 1
         assert groups[0]["stability"] == "new"
+
+
+# ---------------------------------------------------------------------------
+# Tests — PATCH /api/v1/classes/{classId}/groups/{groupId}
+# ---------------------------------------------------------------------------
+
+
+class TestPatchClassGroup:
+    def test_returns_updated_group_with_data_envelope(self) -> None:
+        teacher = _make_teacher()
+        class_id = uuid.uuid4()
+        group_id = uuid.uuid4()
+        sid = uuid.uuid4()
+        updated_group = StudentGroupResponse(
+            id=group_id,
+            skill_key="evidence",
+            label="Evidence",
+            student_count=1,
+            students=[StudentInGroupResponse(id=sid, full_name="Student A", external_id=None)],
+            stability="persistent",
+            computed_at=datetime.now(UTC),
+        )
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.classes.update_group_members",
+                new_callable=AsyncMock,
+                return_value=updated_group,
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/classes/{class_id}/groups/{group_id}",
+                json={"student_ids": [str(sid)]},
+            )
+
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()
+        assert "data" in payload
+        data = payload["data"]
+        assert data["id"] == str(group_id)
+        assert data["skill_key"] == "evidence"
+        assert data["student_count"] == 1
+        assert len(data["students"]) == 1
+
+    def test_returns_404_when_group_not_found(self) -> None:
+        teacher = _make_teacher()
+        class_id = uuid.uuid4()
+        group_id = uuid.uuid4()
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.classes.update_group_members",
+                new_callable=AsyncMock,
+                side_effect=NotFoundError("Group not found."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/classes/{class_id}/groups/{group_id}",
+                json={"student_ids": []},
+            )
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_returns_403_for_other_teachers_class(self) -> None:
+        teacher = _make_teacher()
+        class_id = uuid.uuid4()
+        group_id = uuid.uuid4()
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.classes.update_group_members",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("You do not have access to this class."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/classes/{class_id}/groups/{group_id}",
+                json={"student_ids": []},
+            )
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_requires_authentication(self) -> None:
+        app = create_app()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.patch(
+                f"/api/v1/classes/{uuid.uuid4()}/groups/{uuid.uuid4()}",
+                json={"student_ids": []},
+            )
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+    def test_passes_correct_args_to_service(self) -> None:
+        teacher = _make_teacher()
+        class_id = uuid.uuid4()
+        group_id = uuid.uuid4()
+        sid = uuid.uuid4()
+        updated_group = StudentGroupResponse(
+            id=group_id,
+            skill_key="thesis",
+            label="Thesis",
+            student_count=1,
+            students=[StudentInGroupResponse(id=sid, full_name="Student B", external_id=None)],
+            stability="new",
+            computed_at=datetime.now(UTC),
+        )
+        app = _app_with_teacher(teacher)
+        mock_service = AsyncMock(return_value=updated_group)
+        with (
+            patch("app.routers.classes.update_group_members", mock_service),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            client.patch(
+                f"/api/v1/classes/{class_id}/groups/{group_id}",
+                json={"student_ids": [str(sid)]},
+            )
+
+        mock_service.assert_awaited_once()
+        call_args = mock_service.call_args
+        # Verify positional args: db, teacher.id, class_id, group_id, student_ids
+        assert teacher.id in call_args.args
+        assert class_id in call_args.args
+        assert group_id in call_args.args
+        # student_ids is the last positional arg — a list of UUIDs
+        assert any(
+            isinstance(arg, list) and sid in arg
+            for arg in call_args.args
+        ), f"Expected student UUID {sid} in one of the positional list args"
