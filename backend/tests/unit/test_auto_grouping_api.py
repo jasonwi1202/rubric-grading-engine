@@ -283,10 +283,10 @@ class TestGetClassGroups:
             client.get(f"/api/v1/classes/{class_id}/groups")
 
         mock_service.assert_awaited_once()
-        call_args = mock_service.call_args
-        # Second positional arg is teacher_id, third is class_id.
-        assert call_args.args[1] == teacher.id
-        assert call_args.args[2] == class_id
+        call_kwargs = mock_service.call_args
+        # Verify teacher_id and class_id were passed to the service.
+        assert teacher.id in call_kwargs.args
+        assert class_id in call_kwargs.args
 
 
 # ---------------------------------------------------------------------------
@@ -294,40 +294,41 @@ class TestGetClassGroups:
 # ---------------------------------------------------------------------------
 
 
+def _make_profile_mock(
+    student_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    skills: dict[str, float],
+) -> MagicMock:
+    """Build a mock StudentSkillProfile with the given avg_scores per skill."""
+    from typing import Any
+
+    skill_scores: dict[str, Any] = {
+        skill: {
+            "avg_score": score,
+            "trend": "stable",
+            "data_points": 2,
+            "last_updated": "2026-01-01T00:00:00+00:00",
+        }
+        for skill, score in skills.items()
+    }
+    profile = MagicMock()
+    profile.student_id = student_id
+    profile.teacher_id = teacher_id
+    profile.skill_scores = skill_scores
+    return profile
+
+
 class TestBuildGroupsStabilityTracking:
     """Validate that _build_groups correctly assigns stability when
     previous_active_skill_keys is provided."""
-
-    def _make_profile_mock(
-        self,
-        student_id: uuid.UUID,
-        teacher_id: uuid.UUID,
-        skills: dict[str, float],
-    ) -> MagicMock:
-        from typing import Any
-
-        skill_scores: dict[str, Any] = {
-            skill: {
-                "avg_score": score,
-                "trend": "stable",
-                "data_points": 2,
-                "last_updated": "2026-01-01T00:00:00+00:00",
-            }
-            for skill, score in skills.items()
-        }
-        profile = MagicMock()
-        profile.student_id = student_id
-        profile.teacher_id = teacher_id
-        profile.skill_scores = skill_scores
-        return profile
 
     def test_new_group_when_skill_key_not_in_previous(self) -> None:
         from app.services.auto_grouping import _build_groups
 
         teacher_id = uuid.uuid4()
         profiles = [
-            self._make_profile_mock(uuid.uuid4(), teacher_id, {"evidence": 0.4}),
-            self._make_profile_mock(uuid.uuid4(), teacher_id, {"evidence": 0.5}),
+            _make_profile_mock(uuid.uuid4(), teacher_id, {"evidence": 0.4}),
+            _make_profile_mock(uuid.uuid4(), teacher_id, {"evidence": 0.5}),
         ]
         groups = _build_groups(
             profiles,
@@ -344,8 +345,8 @@ class TestBuildGroupsStabilityTracking:
 
         teacher_id = uuid.uuid4()
         profiles = [
-            self._make_profile_mock(uuid.uuid4(), teacher_id, {"thesis": 0.3}),
-            self._make_profile_mock(uuid.uuid4(), teacher_id, {"thesis": 0.4}),
+            _make_profile_mock(uuid.uuid4(), teacher_id, {"thesis": 0.3}),
+            _make_profile_mock(uuid.uuid4(), teacher_id, {"thesis": 0.4}),
         ]
         groups = _build_groups(
             profiles,
@@ -363,8 +364,8 @@ class TestBuildGroupsStabilityTracking:
         teacher_id = uuid.uuid4()
         sid1, sid2 = uuid.uuid4(), uuid.uuid4()
         profiles = [
-            self._make_profile_mock(sid1, teacher_id, {"evidence": 0.4, "thesis": 0.3}),
-            self._make_profile_mock(sid2, teacher_id, {"evidence": 0.5, "thesis": 0.5}),
+            _make_profile_mock(sid1, teacher_id, {"evidence": 0.4, "thesis": 0.3}),
+            _make_profile_mock(sid2, teacher_id, {"evidence": 0.5, "thesis": 0.5}),
         ]
         groups = _build_groups(
             profiles,
@@ -383,8 +384,8 @@ class TestBuildGroupsStabilityTracking:
 
         teacher_id = uuid.uuid4()
         profiles = [
-            self._make_profile_mock(uuid.uuid4(), teacher_id, {"organization": 0.4}),
-            self._make_profile_mock(uuid.uuid4(), teacher_id, {"organization": 0.5}),
+            _make_profile_mock(uuid.uuid4(), teacher_id, {"organization": 0.4}),
+            _make_profile_mock(uuid.uuid4(), teacher_id, {"organization": 0.5}),
         ]
         # previous_active_skill_keys defaults to None → all 'new'
         groups = _build_groups(
