@@ -5,9 +5,8 @@ This guide walks you through spinning up the full GradeWise stack locally in a s
 **No API keys are required to explore the UI and backend.**  
 You only need an OpenAI key if you want to run actual AI grading jobs.
 
-The demo stack now seeds a ready-to-login teacher account and sample grading data automatically.
+The demo stack now seeds a ready-to-login teacher account and sample M4 + M5 data automatically.
 
----
 
 ## Prerequisites
 
@@ -18,7 +17,6 @@ The demo stack now seeds a ready-to-login teacher account and sample grading dat
 
 That's it. Node.js and Python virtual environments are **not** required for the demo.
 
----
 
 ## Quick Start (3 steps)
 
@@ -49,7 +47,7 @@ The first run downloads ~1 GB of images and builds the backend and frontend imag
 python scripts/smoke_test_demo.py
 ```
 
-The script automatically waits up to 120 seconds for the backend to become healthy, then runs 22 checks across all services. Example output:
+The script automatically waits up to 120 seconds for the backend to become healthy, then runs baseline plus authenticated M5 checks across all services. Example output:
 
 ```
 GradeWise demo smoke test
@@ -60,7 +58,7 @@ GradeWise demo smoke test
 ⏳ Waiting for backend to be ready (up to 120s)...
 ✓ Backend ready after ~45s
 
-Running 22 checks...
+Running 28 checks...
 
   ✓  Backend: health endpoint                        HTTP 200   38ms
   ✓  Backend: OpenAPI schema reachable               HTTP 200   12ms
@@ -71,7 +69,7 @@ Running 22 checks...
   ✓  Mailpit: web UI reachable                       HTTP 200   2ms
   ✓  Mailpit: API messages endpoint                  HTTP 200   1ms
 
-Results: 22 passed, 0 failed / 22 total
+Results: 28 passed, 0 failed / 28 total
 
 ✓ Demo stack is healthy.
   Open the app:       http://localhost:3000
@@ -96,16 +94,19 @@ Use the pre-seeded teacher account:
 - **Email:** `demo@gradewise.app`
 - **Password:** `DemoPass123!`
 
+
 Seeded data includes:
 
 - 1 class (`Demo English 8`)
 - 2 enrolled students
 - 1 rubric with 2 criteria
-- 1 assignment in review state
-- 2 essays with locked grades
+- 2 assignments in review state
+- 4 essays with locked grades
+- Student skill profiles seeded with `assignment_count=2`
+- 1 browser-written essay with writing snapshots + process signals
 - 1 integrity report and 1 open regrade request
 
----
+
 
 ## Using the App
 
@@ -159,6 +160,36 @@ To use a third-party integrity provider instead of the built-in similarity check
 6. On any other essay, click **Add from Bank** to apply a saved comment in one click
 7. Media comments appear as links or QR codes in the PDF batch export
 
+### M5 feature walkthrough
+
+After login, run this deterministic Student Intelligence walkthrough from the
+pre-seeded data.
+
+#### Student profile and longitudinal growth
+
+1. Go to **Classes** and open `Demo English 8`
+2. Click `Student Alpha` in the roster
+3. In the student profile, confirm:
+  - skill profile is populated
+  - assignment history contains two assignments
+  - strengths/gaps callouts and growth indicators are present
+
+#### Class insights and heatmap data
+
+1. Return to `Demo English 8`
+2. Open the class **Insights** section
+3. Confirm class-level insight data is populated:
+  - skill averages
+  - score distributions
+  - common issues
+
+#### Writing process visibility
+
+1. Open assignment `Demo Persuasive Essay B`
+2. Open `Student Beta` in the review interface
+3. Open the writing-process panel
+4. Confirm session timeline/process signal metrics are present
+
 ### AI grading (optional — requires OpenAI API key)
 
 If you want to test AI grading, set `OPENAI_API_KEY` before starting the stack:
@@ -174,16 +205,18 @@ docker compose -f docker-compose.demo.yml up -d
 
 Without a key the app starts normally; grading tasks will fail with an API error when submitted.
 
----
 
 ## Smoke Test Options
 
 ```bash
-# Default: wait up to 120s, retry each check 3 times
+# Default: wait up to 120s, retry each check 3 times (includes M5 checks)
 python scripts/smoke_test_demo.py
 
 # Skip the readiness wait (useful if you know the stack is already up)
 python scripts/smoke_test_demo.py --no-wait
+
+# Connectivity-only smoke (skip authenticated M5 checks)
+python scripts/smoke_test_demo.py --no-m5
 
 # Increase wait time for slow machines
 python scripts/smoke_test_demo.py --max-wait 180
@@ -195,7 +228,6 @@ python scripts/smoke_test_demo.py \
   --mailpit-url http://localhost:8025
 ```
 
----
 
 ## Stopping and Resetting
 
@@ -213,7 +245,6 @@ docker compose -f docker-compose.demo.yml logs -f
 docker compose -f docker-compose.demo.yml logs -f backend
 ```
 
----
 
 ## Troubleshooting
 
@@ -263,7 +294,6 @@ docker compose -f docker-compose.demo.yml build
 docker compose -f docker-compose.demo.yml up -d
 ```
 
----
 
 ## What's Included in the Demo Stack
 

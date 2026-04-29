@@ -5,6 +5,11 @@
 # This is NOT for development or production.  Everything here runs on a single
 # machine with no external dependencies.
 #
+# Seeded data includes M4 + M5 walkthrough artifacts:
+# - 2 assignments with locked grades
+# - student skill profiles with assignment_count=2
+# - browser writing snapshots + process signals on one essay
+#
 # Usage:
 #   cp .env.demo .env.demo.local   # copy template (first time only)
 #   docker compose -f docker-compose.demo.yml up -d

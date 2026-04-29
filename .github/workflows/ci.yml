@@ -168,12 +168,13 @@ jobs:
 
       - name: Assert migration head revision
         run: |
-          current=$(docker compose run --rm --no-deps \
-            -e PYTHONPATH=/app \
-            -e DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/migration_smoke \
-            backend sh -c "cd /app && alembic current" | tr -d '\\r')
-          echo "$current"
-          echo "$current" | grep -q "025_essay_versions_signals"
+          current=$(docker compose exec -T postgres psql -U postgres -d migration_smoke -t -c \
+            "SELECT version_num FROM alembic_version;" | tr -d '[:space:]')
+          echo "Alembic version in DB: $current"
+          if [ "$current" != "025_essay_versions_signals" ]; then
+            echo "ERROR: expected '025_essay_versions_signals' but got '$current'"
+            exit 1
+          fi
 
       - name: Tear down services
         if: always()
