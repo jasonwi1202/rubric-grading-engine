@@ -384,6 +384,9 @@ def _rank_items(items: list[_WorklistItemData]) -> list[_WorklistItemData]:
     2. ``skill_key`` alphabetically; ``None`` maps to ``''`` and sorts before
        any non-empty skill key, so student-level triggers (non_responder)
        appear first among items sharing the same urgency tier.
+    3. ``student_id`` as a final tiebreaker so that items with identical
+       urgency, trigger type, and skill key are sorted in a stable, repeatable
+       order regardless of the order that DB rows were returned.
 
     Args:
         items: Unordered list of computed worklist items.
@@ -397,6 +400,7 @@ def _rank_items(items: list[_WorklistItemData]) -> list[_WorklistItemData]:
             -item.urgency,
             _TRIGGER_ORDER.get(item.trigger_type, 99),
             item.skill_key or "",
+            str(item.student_id),
         ),
     )
 
@@ -665,7 +669,7 @@ async def generate_teacher_worklist(
 
     Loads all student skill profiles, persistent group memberships,
     per-assignment score sequences, and resubmission pairs for the teacher
-    in parallel queries, then applies the four trigger checks to each student
+    in sequential queries, then applies the four trigger checks to each student
     and returns a deterministically ranked list.
 
     No database writes are performed.  Call :func:`compute_and_persist_worklist`

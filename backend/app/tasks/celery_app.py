@@ -57,6 +57,7 @@ celery = Celery(
         "app.tasks.embedding",
         "app.tasks.skill_profile",
         "app.tasks.auto_grouping",
+        "app.tasks.worklist",
     ],
 )
 
@@ -155,11 +156,13 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
     import app.tasks.embedding as _embedding_module  # noqa: PLC0415
     import app.tasks.grading as _grading_module  # noqa: PLC0415
     import app.tasks.skill_profile as _skill_profile_module  # noqa: PLC0415
+    import app.tasks.worklist as _worklist_module  # noqa: PLC0415
 
     _grading_module.AsyncSessionLocal = new_session_factory
     _embedding_module.AsyncSessionLocal = new_session_factory
     _skill_profile_module.AsyncSessionLocal = new_session_factory
     _auto_grouping_module.AsyncSessionLocal = new_session_factory
+    _worklist_module.AsyncSessionLocal = new_session_factory
 
 
 @before_task_publish.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete

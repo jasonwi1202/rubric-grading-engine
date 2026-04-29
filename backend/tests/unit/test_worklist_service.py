@@ -479,10 +479,8 @@ class TestCheckNonResponder:
 
     def test_improvement_below_threshold_fires(self) -> None:
         student_id = uuid.uuid4()
-        # improvement = 0.60 - 0.55 = 0.05 → at threshold (not below) → no fire
-        # improvement = 0.60 - 0.56 = 0.04 → below threshold → fires
+        # improvement = 0.64 - 0.60 = 0.04 < 0.05 (_NON_RESPONDER_IMPROVEMENT_THRESHOLD) → fires
         items = _check_non_responder(student_id, [(0.60, 0.64)])
-        # 0.64 - 0.60 = 0.04 < 0.05 → fires
         assert len(items) == 1
         assert items[0].trigger_type == "non_responder"
         assert items[0].skill_key is None
@@ -602,15 +600,32 @@ class TestRankItems:
         ranked = _rank_items([item])
         assert ranked == [item]
 
-    def test_deterministic_for_identical_items(self) -> None:
-        """Same-urgency, same-type, same-skill_key items have a stable order."""
-        items = [
-            self._item(3, "persistent_gap", "evidence"),
-            self._item(3, "persistent_gap", "evidence"),
-        ]
-        ranked1 = _rank_items(items)
-        ranked2 = _rank_items(list(reversed(items)))
-        assert [i.urgency for i in ranked1] == [i.urgency for i in ranked2]
+    def test_deterministic_for_same_urgency_type_skill(self) -> None:
+        """Items with identical urgency, trigger_type, and skill_key are ordered by student_id."""
+        student_a = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        student_b = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        item_a = _WorklistItemData(
+            student_id=student_a,
+            trigger_type="persistent_gap",
+            skill_key="evidence",
+            urgency=3,
+            suggested_action="action",
+            details={},
+        )
+        item_b = _WorklistItemData(
+            student_id=student_b,
+            trigger_type="persistent_gap",
+            skill_key="evidence",
+            urgency=3,
+            suggested_action="action",
+            details={},
+        )
+        # Order should be stable: student_a before student_b (UUID string sort)
+        ranked1 = _rank_items([item_a, item_b])
+        ranked2 = _rank_items([item_b, item_a])
+        assert [str(i.student_id) for i in ranked1] == [str(i.student_id) for i in ranked2]
+        assert ranked1[0].student_id == student_a
+        assert ranked1[1].student_id == student_b
 
 
 # ---------------------------------------------------------------------------
@@ -702,6 +717,10 @@ class TestUrgencyConstants:
 class TestRefreshTeacherWorklistTaskRegistration:
     def test_task_is_registered_in_celery(self) -> None:
         assert "tasks.worklist.refresh_teacher_worklist" in celery.tasks
+
+    def test_worklist_module_in_celery_include(self) -> None:
+        """Worker will import this module on startup and register the task."""
+        assert "app.tasks.worklist" in celery.conf.include
 
     def test_task_has_correct_max_retries(self) -> None:
         assert refresh_teacher_worklist.max_retries == 3

@@ -14,8 +14,6 @@ Behaviour:
   :func:`~app.services.worklist.compute_and_persist_worklist`.
 - Safe to rerun: the service function performs a DELETE → INSERT in a single
   transaction, so retries converge to the current state without duplicates.
-- Skips gracefully if the grade or teacher cannot be found or if the teacher
-  does not own the grade.
 
 Security invariants:
 - Task accepts only UUID strings — no full entity objects.
@@ -39,7 +37,6 @@ import logging
 import uuid
 
 from app.db.session import _TaskSessionLocal, run_task_async, set_tenant_context
-from app.exceptions import ForbiddenError, NotFoundError
 from app.tasks.celery_app import celery
 
 logger = logging.getLogger(__name__)
@@ -114,12 +111,6 @@ def refresh_teacher_worklist(
     """
     try:
         run_task_async(_run_refresh_teacher_worklist(grade_id, teacher_id))
-    except (NotFoundError, ForbiddenError) as exc:
-        logger.warning(
-            "Worklist refresh task skipped — grade not found or access denied",
-            extra={"grade_id": grade_id, "error_type": type(exc).__name__},
-        )
-        # Do not retry: there is no correct state to converge to.
     except Exception as exc:
         attempt = self.request.retries  # type: ignore[attr-defined]
         if attempt < self.max_retries:  # type: ignore[attr-defined]

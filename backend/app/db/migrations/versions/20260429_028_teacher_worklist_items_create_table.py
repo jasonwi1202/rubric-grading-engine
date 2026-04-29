@@ -136,20 +136,23 @@ def upgrade() -> None:
 
     # ------------------------------------------------------------------
     # 2. Indexes — teacher_id and student_id for fast tenant-scoped reads.
-    #    Created concurrently so the table is not locked during the migration.
+    #    Created concurrently outside a transaction so the table is not
+    #    locked during the migration.  autocommit_block() is required by
+    #    CREATE INDEX CONCURRENTLY.
     # ------------------------------------------------------------------
-    op.create_index(
-        "ix_teacher_worklist_items_teacher_id",
-        "teacher_worklist_items",
-        ["teacher_id"],
-        postgresql_concurrently=True,
-    )
-    op.create_index(
-        "ix_teacher_worklist_items_student_id",
-        "teacher_worklist_items",
-        ["student_id"],
-        postgresql_concurrently=True,
-    )
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "ix_teacher_worklist_items_teacher_id",
+            "teacher_worklist_items",
+            ["teacher_id"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_teacher_worklist_items_student_id",
+            "teacher_worklist_items",
+            ["student_id"],
+            postgresql_concurrently=True,
+        )
 
     # ------------------------------------------------------------------
     # 3. Enable RLS — FORCE so the policy applies to the table owner too
@@ -178,10 +181,15 @@ def downgrade() -> None:
         sa.text("ALTER TABLE teacher_worklist_items DISABLE ROW LEVEL SECURITY")
     )
 
-    op.drop_index(
-        "ix_teacher_worklist_items_student_id", table_name="teacher_worklist_items"
-    )
-    op.drop_index(
-        "ix_teacher_worklist_items_teacher_id", table_name="teacher_worklist_items"
-    )
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "ix_teacher_worklist_items_student_id",
+            table_name="teacher_worklist_items",
+            postgresql_concurrently=True,
+        )
+        op.drop_index(
+            "ix_teacher_worklist_items_teacher_id",
+            table_name="teacher_worklist_items",
+            postgresql_concurrently=True,
+        )
     op.drop_table("teacher_worklist_items")
