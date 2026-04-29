@@ -74,3 +74,17 @@ class TeacherWorklistResponse(BaseModel):
     items: list[WorklistItemResponse]
     total_count: int
     generated_at: datetime
+
+
+class SnoozeWorklistItemRequest(BaseModel):
+    """Request body for POST /worklist/{itemId}/snooze.
+
+    ``snoozed_until`` is optional; when omitted the server defaults to
+    7 days from now (next-week deferral per the API spec).
+    """
+
+    snoozed_until: datetime | None = Field(
+        default=None,
+        description="ISO-8601 datetime until which the item should be hidden. "
+        "Defaults to 7 days from now when omitted.",
+    )

@@ -51,10 +51,10 @@ import math
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import case, delete, insert, nulls_first, select
+from sqlalchemy import case, delete, insert, nulls_first, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assignment import Assignment
@@ -841,3 +841,235 @@ async def compute_and_persist_worklist(
         },
     )
     return persisted
+
+
+# ---------------------------------------------------------------------------
+# Worklist item management (M6-05 — API actions)
+# ---------------------------------------------------------------------------
+
+#: Default snooze duration when no ``snoozed_until`` is provided.
+_DEFAULT_SNOOZE_DAYS: int = 7
+
+
+async def get_worklist_for_teacher(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+) -> list[TeacherWorklistItem]:
+    """Return the ranked active (and currently-active snoozed) worklist items.
+
+    Returns ``active`` items and ``snoozed`` items whose ``snoozed_until`` is in
+    the past (i.e. have been un-snoozed by the passage of time).  Items with
+    ``status`` of ``'completed'`` or ``'dismissed'`` are excluded.
+
+    Items are ordered identically to :func:`compute_and_persist_worklist`:
+    urgency descending, then trigger type, then skill_key, then student_id.
+
+    Tenant isolation: query is scoped to ``teacher_id``.
+
+    Args:
+        db:         Async database session.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        Ordered list of :class:`TeacherWorklistItem` ORM rows.
+    """
+    now = datetime.now(UTC)
+    trigger_order_expr = case(
+        {v: k for k, v in enumerate(("regression", "non_responder", "persistent_gap", "high_inconsistency"))},
+        value=TeacherWorklistItem.trigger_type,
+        else_=99,
+    )
+    result = await db.execute(
+        select(TeacherWorklistItem)
+        .where(
+            TeacherWorklistItem.teacher_id == teacher_id,
+            TeacherWorklistItem.status.in_(["active", "snoozed"]),
+            # Exclude snoozed items that haven't expired yet.
+            (
+                (TeacherWorklistItem.status == "active")
+                | (
+                    (TeacherWorklistItem.status == "snoozed")
+                    & (TeacherWorklistItem.snoozed_until <= now)
+                )
+            ),
+        )
+        .order_by(
+            TeacherWorklistItem.urgency.desc(),
+            trigger_order_expr,
+            nulls_first(TeacherWorklistItem.skill_key.asc()),
+            TeacherWorklistItem.student_id.asc(),
+        )
+    )
+    items = list(result.scalars().all())
+    logger.info(
+        "Worklist fetched",
+        extra={"teacher_id": str(teacher_id), "item_count": len(items)},
+    )
+    return items
+
+
+async def _load_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> TeacherWorklistItem:
+    """Load a single worklist item, enforcing tenant isolation.
+
+    Args:
+        db:         Async database session.
+        item_id:    UUID of the worklist item.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        The :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`: Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+    """
+    from app.exceptions import ForbiddenError, NotFoundError  # noqa: PLC0415
+
+    result = await db.execute(
+        select(TeacherWorklistItem).where(TeacherWorklistItem.id == item_id)
+    )
+    item = result.scalar_one_or_none()
+    if item is None:
+        raise NotFoundError(f"Worklist item {item_id} not found.")
+    if item.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this worklist item.")
+    return item
+
+
+async def complete_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> TeacherWorklistItem:
+    """Mark a worklist item as completed.
+
+    Sets ``status='completed'`` and ``completed_at=now()``.  Idempotent: if the
+    item is already ``'completed'`` it is returned unchanged.
+
+    Tenant isolation: ``teacher_id`` is checked against the item's owner.
+
+    Args:
+        db:         Async database session.
+        item_id:    UUID of the worklist item.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        Updated :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`:  Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+    """
+    item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status != "completed":
+        now = datetime.now(UTC)
+        await db.execute(
+            update(TeacherWorklistItem)
+            .where(
+                TeacherWorklistItem.id == item_id,
+                TeacherWorklistItem.teacher_id == teacher_id,
+            )
+            .values(status="completed", completed_at=now)
+        )
+        await db.commit()
+        await db.refresh(item)
+    logger.info(
+        "Worklist item completed",
+        extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
+    )
+    return item
+
+
+async def snooze_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    snoozed_until: datetime | None = None,
+) -> TeacherWorklistItem:
+    """Snooze a worklist item until a specified datetime.
+
+    Sets ``status='snoozed'`` and persists ``snoozed_until``.  When
+    ``snoozed_until`` is ``None``, defaults to
+    :data:`_DEFAULT_SNOOZE_DAYS` days from now.
+
+    Tenant isolation: ``teacher_id`` is checked against the item's owner.
+
+    Args:
+        db:           Async database session.
+        item_id:      UUID of the worklist item.
+        teacher_id:   UUID of the authenticated teacher.
+        snoozed_until: Datetime until which the item should be hidden.
+                       Defaults to 7 days from now.
+
+    Returns:
+        Updated :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`:  Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+    """
+    item = await _load_worklist_item(db, item_id, teacher_id)
+    if snoozed_until is None:
+        snoozed_until = datetime.now(UTC) + timedelta(days=_DEFAULT_SNOOZE_DAYS)
+    await db.execute(
+        update(TeacherWorklistItem)
+        .where(
+            TeacherWorklistItem.id == item_id,
+            TeacherWorklistItem.teacher_id == teacher_id,
+        )
+        .values(status="snoozed", snoozed_until=snoozed_until)
+    )
+    await db.commit()
+    await db.refresh(item)
+    logger.info(
+        "Worklist item snoozed",
+        extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
+    )
+    return item
+
+
+async def dismiss_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> TeacherWorklistItem:
+    """Dismiss a worklist item permanently.
+
+    Sets ``status='dismissed'``.  Idempotent: already-dismissed items are
+    returned unchanged.
+
+    Tenant isolation: ``teacher_id`` is checked against the item's owner.
+
+    Args:
+        db:         Async database session.
+        item_id:    UUID of the worklist item.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        Updated :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`:  Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+    """
+    item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status != "dismissed":
+        await db.execute(
+            update(TeacherWorklistItem)
+            .where(
+                TeacherWorklistItem.id == item_id,
+                TeacherWorklistItem.teacher_id == teacher_id,
+            )
+            .values(status="dismissed")
+        )
+        await db.commit()
+        await db.refresh(item)
+    logger.info(
+        "Worklist item dismissed",
+        extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
+    )
+    return item
