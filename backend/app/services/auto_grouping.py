@@ -26,6 +26,8 @@ Grouping algorithm:
 Tenant isolation:
   - ``teacher_id`` is passed explicitly to every query.
   - Class ownership is verified in every query via a WHERE clause on teacher_id.
+  - The RLS tenant context (``app.current_teacher_id``) is set by the Celery
+    task before opening the database session; see ``app.tasks.auto_grouping``.
   - No student PII (names, essay content, raw scores) is written to log
     statements — only entity IDs.
 
@@ -42,11 +44,11 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import delete, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.student_group import StudentGroup
@@ -155,7 +157,7 @@ def _build_groups(
     now_iso = datetime.now(UTC).isoformat()
 
     groups: list[dict[str, Any]] = []
-    for skill_key, student_id_strs in skill_students.items():
+    for skill_key, student_id_strs in sorted(skill_students.items()):
         if len(student_id_strs) < min_group_size:
             continue
         label = skill_key.replace("_", " ").title()
@@ -163,7 +165,7 @@ def _build_groups(
             {
                 "skill_key": skill_key,
                 "label": label,
-                "student_ids": student_id_strs,
+                "student_ids": sorted(student_id_strs),
                 "student_count": len(student_id_strs),
                 "computed_at": now_iso,
             }
@@ -191,10 +193,13 @@ async def compute_and_persist_groups(
     shared underperforming skill dimensions, enforces *min_group_size*, and
     replaces the class's ``StudentGroup`` rows within a single transaction.
 
-    The DELETE → INSERT pair is fully idempotent: re-running with the same
-    inputs (same profiles) produces the same rows.  Concurrent executions for
-    the same class are safe because the DELETE is scoped to (teacher_id,
-    class_id) and the whole operation runs inside one database transaction.
+    Concurrency safety: a ``SELECT … FOR UPDATE`` on the ``Class`` row
+    serialises concurrent invocations for the same ``class_id``.  Without this
+    lock, two simultaneous tasks would each DELETE all existing groups and then
+    both INSERT the same set of rows, causing the second transaction to hit the
+    unique constraint on ``(teacher_id, class_id, skill_key)``.  If that race
+    still occurs (e.g. during a retry after lock acquisition fails), the commit
+    raises :exc:`~app.exceptions.ConflictError` so the task can retry safely.
 
     Args:
         db:                         Async database session.
@@ -210,6 +215,7 @@ async def compute_and_persist_groups(
     Raises:
         NotFoundError:  Class does not exist.
         ForbiddenError: Class belongs to a different teacher.
+        ConflictError:  Concurrent task conflict — caller should retry.
     """
     await _assert_class_owned_by(db, class_id, teacher_id)
 
@@ -220,8 +226,20 @@ async def compute_and_persist_groups(
     groups = _build_groups(profiles, underperformance_threshold, min_group_size)
 
     # ------------------------------------------------------------------
-    # Atomically replace this class's groups: delete old, insert new.
+    # Acquire a row-level lock on the Class to serialise concurrent task
+    # executions for the same class.  Without this, two tasks racing on
+    # the same (teacher_id, class_id) can both DELETE all existing rows
+    # and then both INSERT identical rows, causing the second transaction
+    # to hit the unique constraint on (teacher_id, class_id, skill_key).
+    # The lock is released automatically when the transaction commits.
     # ------------------------------------------------------------------
+    await db.execute(
+        select(Class.id).where(
+            Class.id == class_id,
+            Class.teacher_id == teacher_id,
+        ).with_for_update()
+    )
+
     await db.execute(
         delete(StudentGroup).where(
             StudentGroup.teacher_id == teacher_id,
@@ -231,11 +249,11 @@ async def compute_and_persist_groups(
 
     persisted: list[StudentGroup] = []
     for group in groups:
-        # The DELETE above removed all existing rows for this (teacher_id, class_id)
-        # pair, so no conflict on uq_student_groups_class_skill is possible here.
-        # A plain INSERT is both correct and more efficient than an upsert.
+        # Standard SQLAlchemy insert (not pg_insert / ON CONFLICT) is sufficient
+        # here because the FOR UPDATE lock above guarantees the DELETE cleared all
+        # prior rows before we reach this point, eliminating the need for upsert.
         stmt = (
-            pg_insert(StudentGroup)
+            insert(StudentGroup)
             .values(
                 id=uuid.uuid4(),
                 teacher_id=teacher_id,
@@ -252,7 +270,17 @@ async def compute_and_persist_groups(
         row = result.scalar_one()
         persisted.append(row)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        # Two concurrent tasks for the same class can both DELETE and then
+        # both INSERT the same (teacher_id, class_id, skill_key) rows.  The
+        # FOR UPDATE lock above serialises the common case, but this guard
+        # catches any residual races (e.g., a retry that overlaps a first run).
+        raise ConflictError(
+            "Unique constraint conflict — concurrent task already inserted these groups."
+        ) from None
 
     logger.info(
         "Auto-grouping complete",

@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.services.auto_grouping import _build_groups
 from app.tasks.auto_grouping import (
     _run_compute_class_groups,
@@ -203,6 +203,35 @@ class TestBuildGroups:
         assert len(groups) == 1
         datetime.fromisoformat(groups[0]["computed_at"])
 
+    def test_student_ids_are_sorted_within_each_group(self) -> None:
+        """student_ids list is sorted so that repeated runs produce identical JSONB."""
+        teacher_id = uuid.uuid4()
+        # Use fixed UUIDs so sort order is deterministic.
+        sid_a = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001")
+        sid_b = uuid.UUID("bbbbbbbb-0000-0000-0000-000000000002")
+        profiles = [
+            _make_profile(sid_b, teacher_id, {"evidence": 0.5}),
+            _make_profile(sid_a, teacher_id, {"evidence": 0.4}),
+        ]
+        groups = _build_groups(profiles, underperformance_threshold=0.7, min_group_size=2)
+        assert len(groups) == 1
+        assert groups[0]["student_ids"] == sorted(groups[0]["student_ids"]), (
+            "student_ids must be sorted to guarantee stable JSONB across runs"
+        )
+
+    def test_groups_are_sorted_by_skill_key(self) -> None:
+        """Groups are emitted in alphabetical skill_key order for stable results."""
+        teacher_id = uuid.uuid4()
+        sid1, sid2 = uuid.uuid4(), uuid.uuid4()
+        profiles = [
+            _make_profile(sid1, teacher_id, {"zebra": 0.3, "apple": 0.4}),
+            _make_profile(sid2, teacher_id, {"zebra": 0.2, "apple": 0.3}),
+        ]
+        groups = _build_groups(profiles, underperformance_threshold=0.7, min_group_size=2)
+        assert len(groups) == 2
+        assert groups[0]["skill_key"] == "apple"
+        assert groups[1]["skill_key"] == "zebra"
+
 
 # ---------------------------------------------------------------------------
 # Tests — _run_compute_class_groups async helper
@@ -241,6 +270,7 @@ class TestRunComputeClassGroups:
                 new=AsyncMock(return_value=class_id),
             ),
             patch("app.tasks.auto_grouping.AsyncSessionLocal", return_value=cm),
+            patch("app.tasks.auto_grouping.set_tenant_context", new=AsyncMock()) as mock_stc,
             patch(
                 "app.services.auto_grouping.compute_and_persist_groups",
                 side_effect=_fake_service,
@@ -249,6 +279,7 @@ class TestRunComputeClassGroups:
             await _run_compute_class_groups(grade_id, teacher_id)
 
         assert len(service_calls) == 1
+        mock_stc.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_not_found_error_propagates(self) -> None:
@@ -338,6 +369,19 @@ class TestComputeClassGroupsTask:
 
         assert r1 is None
         assert r2 is None
+
+    def test_conflict_error_triggers_retry(self) -> None:
+        """ConflictError (concurrent task race) is treated as a transient error and retried."""
+        grade_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+
+        with patch(
+            "app.tasks.auto_grouping._run_compute_class_groups",
+            new=AsyncMock(side_effect=ConflictError("Concurrent conflict.")),
+        ):
+            result = compute_class_groups.apply(args=[grade_id, teacher_id])
+
+        assert result.failed(), "ConflictError should exhaust retries and mark the task as FAILURE"
 
 
 # ---------------------------------------------------------------------------

@@ -42,7 +42,7 @@ import logging
 import uuid
 from typing import cast
 
-from app.db.session import _TaskSessionLocal, run_task_async
+from app.db.session import _TaskSessionLocal, run_task_async, set_tenant_context
 from app.exceptions import ForbiddenError, NotFoundError
 from app.tasks.celery_app import celery
 
@@ -76,6 +76,7 @@ async def _get_class_id_for_grade(
     from app.models.grade import Grade  # noqa: PLC0415
 
     async with AsyncSessionLocal() as db:
+        await set_tenant_context(db, teacher_id)
         row = await db.execute(
             select(Class.id.label("class_id"))
             .select_from(Grade)
@@ -115,6 +116,7 @@ async def _run_compute_class_groups(
     class_id = await _get_class_id_for_grade(grade_uuid, teacher_uuid)
 
     async with AsyncSessionLocal() as db:
+        await set_tenant_context(db, teacher_uuid)
         await compute_and_persist_groups(
             db=db,
             teacher_id=teacher_uuid,
