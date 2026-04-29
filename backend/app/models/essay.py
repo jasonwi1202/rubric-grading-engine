@@ -8,10 +8,11 @@ which track the original submission and any resubmissions.
 import enum
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -101,3 +102,15 @@ class EssayVersion(Base):
     # text extraction.  Stores a 1 536-dimension OpenAI embedding vector used
     # for internal cosine-similarity plagiarism detection.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # Nullable — present only for essays composed in the browser writing
+    # interface (M5-09).  Stores an ordered list of snapshot dicts:
+    # [{"seq": int, "ts": str, "word_count": int, "html_content": str}, ...]
+    # NULL for file-upload essays (no writing-process data captured).
+    writing_snapshots: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True, default=None)
+    # Nullable — populated lazily by GET /essays/{id}/process-signals (M5-10).
+    # Stores the derived composition timeline signals as a single JSONB object
+    # so subsequent requests can return the cached result without re-computing.
+    # NULL until first requested; re-computed if writing_snapshots is updated.
+    process_signals: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, default=None
+    )

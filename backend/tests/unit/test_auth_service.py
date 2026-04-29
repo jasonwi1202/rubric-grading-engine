@@ -217,6 +217,31 @@ class TestCreateUser:
         expected_key = _signup_rate_limit_key("10.0.0.1")
         redis.incr.assert_awaited_once_with(expected_key)
 
+    @pytest.mark.asyncio
+    async def test_duplicate_email_detected_when_scalar_accessor_is_asyncmock(self) -> None:
+        """Regression: scalar_one_or_none may be an AsyncMock awaitable in tests."""
+        db, _ = _make_mock_db()
+        redis = _make_mock_redis(incr_return=1)
+
+        existing_id = uuid.uuid4()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = AsyncMock(return_value=existing_id)
+        db.execute = AsyncMock(return_value=mock_result)
+
+        with pytest.raises(ConflictError):
+            await create_user(
+                db,
+                redis,
+                email="taken-async@school.edu",
+                password="Pass1234",
+                first_name="Alex",
+                last_name="Smith",
+                school_name="Test School",
+                submitter_ip=None,
+            )
+
+        mock_result.scalar_one_or_none.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # verify_email
@@ -361,3 +386,23 @@ class TestResendVerificationService:
         key = _resend_rate_limit_key(email)
         assert email not in key  # email must be hashed, not stored in key
         redis.incr.assert_awaited_once_with(key)
+
+    @pytest.mark.asyncio
+    async def test_returns_user_when_scalar_accessor_is_asyncmock(self) -> None:
+        """Regression: resend_verification must handle awaitable scalar accessors."""
+        db, _ = _make_mock_db()
+        redis = _make_mock_redis(incr_return=1)
+
+        fake_user = MagicMock()
+        fake_user.id = uuid.uuid4()
+        fake_user.email_verified = False
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = AsyncMock(return_value=fake_user)
+        db.execute = AsyncMock(return_value=mock_result)
+
+        result = await resend_verification(
+            db, redis, "unverified-async@school.edu", submitter_ip=None
+        )
+
+        assert result is fake_user
+        mock_result.scalar_one_or_none.assert_awaited_once()

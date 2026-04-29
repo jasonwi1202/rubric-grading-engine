@@ -15,6 +15,7 @@ Exit codes:
 """
 
 import argparse
+import json
 import sys
 import time
 from dataclasses import dataclass
@@ -112,6 +113,166 @@ def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
     ]
 
 
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    timeout: int = 10,
+    token: str | None = None,
+    body: dict[str, object] | None = None,
+) -> tuple[int, dict[str, object]]:
+    """Send an HTTP request and return (status_code, parsed_json_body)."""
+    headers: dict[str, str] = {"Accept": "application/json"}
+    payload: bytes | None = None
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+        payload = json.dumps(body).encode("utf-8")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(url, data=payload, method=method, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        status = resp.status
+        raw = resp.read().decode("utf-8", errors="replace")
+    parsed: dict[str, object] = json.loads(raw)
+    return status, parsed
+
+
+def run_m5_checks(api: str) -> list[Result]:
+    """Run authenticated M5 demo checks using the seeded demo teacher account."""
+    checks: list[Result] = []
+
+    def _record(name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0) -> None:
+        checks.append(
+            Result(
+                check=Check(name=name, url="(dynamic)", expected_status=200),
+                passed=passed,
+                error=error,
+                elapsed_ms=elapsed_ms,
+            )
+        )
+
+    # 1) Authenticate with the seeded demo account.
+    start = time.monotonic()
+    try:
+        status, body = _request_json(
+            f"{api}/api/v1/auth/login",
+            method="POST",
+            body={"email": "demo@gradewise.app", "password": "DemoPass123!"},
+        )
+        token = str(((body.get("data") or {}).get("access_token")))
+        ok = status == 200 and token and token != "None"
+        _record(
+            "M5: demo login and token retrieval",
+            ok,
+            error=None if ok else f"unexpected login response: status={status}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+        if not ok:
+            return checks
+    except Exception as exc:
+        _record(
+            "M5: demo login and token retrieval",
+            False,
+            error=str(exc),
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+        return checks
+
+    # 2) Resolve Demo English 8 class + Student Alpha for profile check.
+    try:
+        status, classes_body = _request_json(f"{api}/api/v1/classes", token=token)
+        classes_data = list(classes_body.get("data", []))
+        demo_class = next((c for c in classes_data if c.get("name") == "Demo English 8"), None)
+        class_id = str((demo_class or {}).get("id"))
+        if status != 200 or demo_class is None or not class_id:
+            raise RuntimeError("unable to resolve Demo English 8 class")
+
+        status, students_body = _request_json(f"{api}/api/v1/classes/{class_id}/students", token=token)
+        students_data = list(students_body.get("data", []))
+        alpha = next((s for s in students_data if (s.get("student") or {}).get("full_name") == "Student Alpha"), None)
+        alpha_id = str(((alpha or {}).get("student") or {}).get("id"))
+        if status != 200 or alpha is None or not alpha_id:
+            raise RuntimeError("unable to resolve Student Alpha enrollment")
+
+        status, student_body = _request_json(f"{api}/api/v1/students/{alpha_id}", token=token)
+        profile = ((student_body.get("data") or {}).get("skill_profile") or {})
+        assignment_count = int(profile.get("assignment_count", 0))
+        score_count = len(dict(profile.get("skill_scores", {})))
+        ok = status == 200 and assignment_count >= 2 and score_count >= 1
+        _record(
+            "M5: student profile seeded (assignment_count >= 2)",
+            ok,
+            error=None
+            if ok
+            else (
+                f"status={status}, assignment_count={assignment_count}, skill_dimensions={score_count}"
+            ),
+        )
+
+        status, insights_body = _request_json(f"{api}/api/v1/classes/{class_id}/insights", token=token)
+        insights = dict(insights_body.get("data", {}))
+        assignment_count = int(insights.get("assignment_count", 0))
+        graded_count = int(insights.get("graded_essay_count", 0))
+        skill_averages = dict(insights.get("skill_averages", {}))
+        ok = status == 200 and assignment_count >= 2 and graded_count >= 4 and len(skill_averages) >= 1
+        _record(
+            "M5: class insights seeded (2 assignments, >=4 graded essays)",
+            ok,
+            error=None
+            if ok
+            else (
+                f"status={status}, assignment_count={assignment_count}, "
+                f"graded_essay_count={graded_count}, skill_averages={len(skill_averages)}"
+            ),
+        )
+
+        status, assignments_body = _request_json(
+            f"{api}/api/v1/classes/{class_id}/assignments",
+            token=token,
+        )
+        assignments_data = list(assignments_body.get("data", []))
+        assignment_b = next((a for a in assignments_data if a.get("title") == "Demo Persuasive Essay B"), None)
+        assignment_b_id = str((assignment_b or {}).get("id"))
+        if status != 200 or assignment_b is None or not assignment_b_id:
+            raise RuntimeError("unable to resolve Demo Persuasive Essay B")
+
+        status, essays_body = _request_json(
+            f"{api}/api/v1/assignments/{assignment_b_id}/essays",
+            token=token,
+        )
+        essays_data = list(essays_body.get("data", []))
+        beta_essay = next((e for e in essays_data if e.get("student_name") == "Student Beta"), None)
+        beta_essay_id = str((beta_essay or {}).get("essay_id"))
+        if status != 200 or beta_essay is None or not beta_essay_id:
+            raise RuntimeError("unable to resolve Student Beta essay for assignment B")
+
+        status, signals_body = _request_json(
+            f"{api}/api/v1/essays/{beta_essay_id}/process-signals",
+            token=token,
+        )
+        signals = dict(signals_body.get("data", {}))
+        ok = (
+            status == 200
+            and bool(signals.get("has_process_data"))
+            and int(signals.get("session_count", 0)) >= 1
+        )
+        _record(
+            "M5: process signals available for browser-written demo essay",
+            ok,
+            error=None
+            if ok
+            else (
+                f"status={status}, has_process_data={signals.get('has_process_data')}, "
+                f"session_count={signals.get('session_count')}"
+            ),
+        )
+    except Exception as exc:
+        _record("M5: API walkthrough checks", False, error=str(exc))
+
+    return checks
+
+
 def wait_for_stack(api: str, max_wait: int, retry_delay: float) -> bool:
     """Poll the backend health endpoint until it responds or max_wait is exceeded."""
     health_url = f"{api}/api/v1/health"
@@ -145,6 +306,8 @@ def main() -> int:
                         help="Seconds between retries (default: 3)")
     parser.add_argument("--no-wait",      action="store_true",
                         help="Skip the readiness wait loop and run checks immediately")
+    parser.add_argument("--no-m5",        action="store_true",
+                        help="Skip authenticated M5 demo checks")
     args = parser.parse_args()
 
     print(f"\n{BOLD}GradeWise demo smoke test{RESET}")
@@ -159,7 +322,8 @@ def main() -> int:
             return 1
 
     checks = build_checks(args.api_url, args.frontend_url, args.mailpit_url)
-    print(f"{BOLD}Running {len(checks)} checks...{RESET}\n")
+    total_checks = len(checks) + (0 if args.no_m5 else 4)
+    print(f"{BOLD}Running {total_checks} checks...{RESET}\n")
 
     results: list[Result] = []
     for check in checks:
@@ -179,6 +343,18 @@ def main() -> int:
 
     passed = sum(1 for r in results if r.passed)
     failed = len(results) - passed
+
+    if not args.no_m5:
+        print(f"\n{BOLD}Running M5 authenticated checks...{RESET}\n")
+        m5_results = run_m5_checks(args.api_url)
+        for result in m5_results:
+            icon = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
+            elapsed = f"{result.elapsed_ms:.0f}ms" if result.elapsed_ms else ""
+            extra = f"  {YELLOW}{result.error}{RESET}" if result.error and not result.passed else ""
+            print(f"  {icon}  {result.check.name:<52} {elapsed}{extra}")
+        results.extend(m5_results)
+        passed = sum(1 for r in results if r.passed)
+        failed = len(results) - passed
 
     print(f"\n{BOLD}Results: {GREEN}{passed} passed{RESET}{BOLD}, "
           f"{RED if failed else ''}{failed} failed{RESET}{BOLD} / {len(results)} total{RESET}")

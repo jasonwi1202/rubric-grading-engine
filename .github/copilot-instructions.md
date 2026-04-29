@@ -183,6 +183,12 @@ These rules are not suggestions. Do not deviate from them for any reason, includ
 - **No student PII in test fixtures.** Use `Faker` or factory helpers for all student-like data. No hardcoded names, essay excerpts, or realistic-looking grades.
 - **No credential-format strings in test fixtures.** Values like `"sk-test"` or `"AKIATEST"` trigger secret scanners even when fake. Use clearly synthetic strings like `"test-openai-key"`.
 - **Tenant isolation is explicitly tested.** Every new API endpoint that returns teacher-scoped data must have a test that verifies a second teacher cannot access the first teacher's resource.
+- **Local Docker Compose E2E validation follows this order:** infrastructure up -> migrations -> backend/worker/frontend up -> smoke test -> Playwright. Do not debug signup, auth, or seeded E2E failures against an unmigrated database.
+- **Before treating local Playwright results as authoritative for CI, run with CI-equivalent settings and env.** Use `.env.ci`, run migrations first, and set `CI=true` so worker count and retry behavior match `playwright.config.ts`.
+
+### Docker & CI Hygiene
+
+- **Every Python Docker build context must have a `.dockerignore` that excludes `__pycache__/`, `*.pyc`, and tool caches** (`.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`, etc.). Stale bytecode and cache directories in the build context can create hard-to-reproduce CI drift.
 
 ---
 

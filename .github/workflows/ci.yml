@@ -132,6 +132,54 @@ jobs:
           fi
         working-directory: backend
 
+  # ─── Backend: Migration chain smoke test ───────────────────────────────────
+  backend-migration-chain:
+    name: Backend Migration Chain
+    runs-on: ubuntu-latest
+    needs: [backend-ruff]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from .env.ci
+        run: cp .env.ci .env
+
+      - name: Start postgres
+        run: docker compose up -d postgres
+
+      - name: Wait for postgres
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
+              echo "Postgres ready"
+              break
+            fi
+            echo "Waiting for postgres... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run migrations on fresh database
+        run: |
+          docker compose exec -T postgres psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS migration_smoke"
+          docker compose exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE migration_smoke"
+          docker compose run --rm --no-deps \
+            -e PYTHONPATH=/app \
+            -e DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/migration_smoke \
+            backend sh -c "cd /app && alembic upgrade head"
+
+      - name: Assert migration head revision
+        run: |
+          current=$(docker compose exec -T postgres psql -U postgres -d migration_smoke -t -c \
+            "SELECT version_num FROM alembic_version;" | tr -d '[:space:]')
+          echo "Alembic version in DB: $current"
+          if [ "$current" != "025_essay_versions_signals" ]; then
+            echo "ERROR: expected '025_essay_versions_signals' but got '$current'"
+            exit 1
+          fi
+
+      - name: Tear down services
+        if: always()
+        run: docker compose down -v
+
   # ─── Backend: Security audit ─────────────────────────────────────────────────
   backend-audit:
     name: Backend pip-audit

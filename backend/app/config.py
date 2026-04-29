@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     integrity_ai_likelihood_threshold: float = 0.7
 
     # -------------------------------------------------------------------------
+    # Skill Normalization
+    # -------------------------------------------------------------------------
+    # Optional path to a custom JSON skill-normalization mapping file.
+    # When not set, the bundled ``app/skill_normalization_config.json`` is used.
+    # Override this in non-English subjects or custom deployments to supply a
+    # subject-specific criterion → dimension mapping without code changes.
+    skill_normalization_config_path: str | None = None
+
+    # -------------------------------------------------------------------------
     # Regrade Requests
     # -------------------------------------------------------------------------
     # Number of days after a grade is created within which regrade requests may

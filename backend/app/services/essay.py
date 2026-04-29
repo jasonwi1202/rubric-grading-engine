@@ -22,25 +22,46 @@ No student PII is logged at any point — only entity IDs appear in log output.
 from __future__ import annotations
 
 import asyncio
+import html as _html_module
 import io
 import logging
 import os
 import re
 import unicodedata
 import uuid
+from datetime import UTC, datetime
+from html.parser import HTMLParser as _HtmlParser
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
+from app.exceptions import (
+    FileTooLargeError,
+    FileTypeNotAllowedError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 from app.models.assignment import Assignment
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.student import Student
 from app.schemas.essay import AutoAssignStatus as AutoAssignStatusType
-from app.schemas.essay import EssayListItemResponse
+from app.schemas.essay import (
+    ComposeEssayResponse,
+    EssayListItemResponse,
+    GetSnapshotsResponse,
+    PasteEventResponse,
+    ProcessSignalsResponse,
+    RapidCompletionEventResponse,
+    SessionSegmentResponse,
+    SnapshotItem,
+    WriteSnapshotResponse,
+)
+from app.services.composition_timeline import analyze_writing_process
 from app.services.student_matching import HEADER_CHAR_LIMIT, AutoAssignResult, match_student
 from app.storage.s3 import delete_file, upload_file
 
@@ -767,4 +788,606 @@ async def assign_essay_to_student(
         word_count=version.word_count,
         submitted_at=version.submitted_at,
         auto_assign_status="assigned",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Browser composition — M5-09
+# ---------------------------------------------------------------------------
+
+
+def _strip_html_tags(html_content: str) -> str:
+    """Return plain text by stripping all HTML tags and decoding entities.
+
+    Used to derive a grading-compatible plain-text ``content`` value from the
+    browser editor's innerHTML.  The result is never executed — it is stored
+    and used only as plain-text input to the LLM grading pipeline.
+    """
+    # Replace block-level tags with newlines to preserve paragraph structure.
+    html_content = re.sub(r"<(br|p|div|li|h[1-6])[^>]*>", "\n", html_content, flags=re.IGNORECASE)
+    # Strip all remaining tags.
+    text = re.sub(r"<[^>]+>", "", html_content)
+    # Decode HTML entities (e.g. &amp; → &, &nbsp; → space).
+    text = _html_module.unescape(text)
+    return normalize_text(text)
+
+
+class _SafeHtmlFilter(_HtmlParser):
+    """Whitelist-based HTML sanitizer for browser-composed essay content.
+
+    Retains only a safe subset of formatting tags (bold, italic, underline,
+    paragraph, div, span, br) with **no attributes**.  All other tags are
+    removed; their text content is preserved but HTML-escaped to prevent
+    injection if the tag itself is disallowed.
+
+    This is a defence-in-depth measure: the frontend already sanitises before
+    sending, but the server should not trust client-supplied HTML unconditionally.
+    """
+
+    _ALLOWED_TAGS: frozenset[str] = frozenset(
+        {"p", "b", "i", "u", "em", "strong", "br", "span", "div"}
+    )
+    # Void elements that have no closing tag.
+    _VOID_TAGS: frozenset[str] = frozenset({"br"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._ALLOWED_TAGS:
+            self._buf.append(f"<{tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._ALLOWED_TAGS and tag not in self._VOID_TAGS:
+            self._buf.append(f"</{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # Self-closing tags (e.g. <br/>).
+        if tag in self._ALLOWED_TAGS:
+            self._buf.append(f"<{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        # Escape all text data to prevent injection of disallowed markup.
+        self._buf.append(_html_module.escape(data))
+
+    def get_output(self) -> str:
+        return "".join(self._buf)
+
+
+def _sanitize_html_content(html_content: str) -> str:
+    """Strip disallowed tags and attributes from HTML before persisting.
+
+    Only the tags in ``_SafeHtmlFilter._ALLOWED_TAGS`` are preserved, with no
+    attributes.  This prevents stored-XSS when the sanitised HTML is later
+    re-injected into the teacher's editor via ``innerHTML``.
+    """
+    filt = _SafeHtmlFilter()
+    try:
+        filt.feed(html_content)
+    finally:
+        # close() must be called in a finally block so the parser is finalised
+        # even if feed() raises (e.g. on deeply malformed HTML).  Without close(),
+        # any content buffered by HTMLParser's internal state machine is never
+        # flushed to _buf, producing truncated output.
+        filt.close()
+    return filt.get_output()
+
+
+async def create_composed_essay(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    student_id: uuid.UUID | None = None,
+) -> ComposeEssayResponse:
+    """Create an empty essay version for in-browser composition.
+
+    Equivalent to starting a blank document — no file upload or text extraction
+    is performed.  The essay version is created with empty ``content`` and an
+    empty ``writing_snapshots`` list so subsequent snapshot saves can append
+    to it.
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        assignment_id: Target assignment UUID.
+        student_id: Optional — if provided, the essay is immediately assigned
+            to this student.  The student must be owned by *teacher_id* and
+            actively enrolled in the assignment's class.
+
+    Returns:
+        A :class:`~app.schemas.essay.ComposeEssayResponse` with the new essay
+        and version IDs.
+
+    Raises:
+        NotFoundError:  Assignment does not exist, or *student_id* is provided
+            but the student is not found for this teacher.
+        ForbiddenError: Assignment belongs to a different teacher, or
+            *student_id* is provided but the student is not enrolled.
+
+    No student PII appears in any log output.
+    """
+    assignment = await _get_assignment_for_teacher(db, assignment_id, teacher_id)
+
+    if student_id is not None:
+        await _validate_student_for_assignment(db, student_id, teacher_id, assignment.class_id)
+
+    essay = Essay(
+        assignment_id=assignment.id,
+        student_id=student_id,
+        status=EssayStatus.unassigned if student_id is None else EssayStatus.queued,
+    )
+    db.add(essay)
+    await db.flush()  # populate essay.id
+
+    version = EssayVersion(
+        essay_id=essay.id,
+        version_number=1,
+        content="",
+        file_storage_key=None,
+        word_count=0,
+        writing_snapshots=[],  # empty list signals browser-composed essay
+    )
+    db.add(version)
+
+    await db.commit()
+    await db.refresh(essay)
+    await db.refresh(version)
+
+    logger.info(
+        "Browser-composed essay created",
+        extra={
+            "essay_id": str(essay.id),
+            "essay_version_id": str(version.id),
+            "assignment_id": str(assignment.id),
+        },
+    )
+
+    return ComposeEssayResponse(
+        essay_id=essay.id,
+        essay_version_id=version.id,
+        assignment_id=essay.assignment_id,
+        student_id=essay.student_id,
+        status=essay.status,
+        current_content="",
+        word_count=0,
+    )
+
+
+async def save_writing_snapshot(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+    html_content: str,
+    word_count: int,
+) -> WriteSnapshotResponse:
+    """Append a writing-process snapshot to the essay version and update content.
+
+    Called by the browser autosave on each debounce tick.  Each call:
+    1. Verifies the essay belongs to *teacher_id* (tenant isolation).
+    2. Loads the latest essay version.
+    3. Strips HTML tags → derives plain-text ``content`` for the LLM pipeline.
+    4. Appends a snapshot record (seq, ts, word_count, html_content) to the
+       version's ``writing_snapshots`` JSONB array.
+    5. Updates ``EssayVersion.content`` and ``word_count``.
+    6. Commits.
+
+    The function is idempotent to duplicate payloads — identical content sent
+    twice simply adds a second snapshot entry (no deduplication is performed
+    at this layer; the timeline consumer in M5-10 is responsible for
+    coalescing identical snapshots).
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: Target essay UUID.
+        html_content: Raw innerHTML string from the browser editor (sanitized
+            server-side before persisting).
+        word_count: Pre-computed word count (HTML tags stripped, split on whitespace).
+
+    Returns:
+        A :class:`~app.schemas.essay.WriteSnapshotResponse`.
+
+    Raises:
+        NotFoundError:   Essay or its latest version is not found.
+        ForbiddenError:  Essay belongs to a different teacher.
+        ValidationError: Essay was created via file upload (``writing_snapshots``
+            is ``NULL``); only browser-composed essays accept snapshots.
+
+    No student PII appears in any log output.
+    """
+    # Load the latest essay version with teacher ownership enforced in the
+    # same JOIN query (Essay → Assignment → Class.teacher_id).  The FOR UPDATE
+    # lock prevents concurrent snapshot writes from computing the same seq
+    # number and losing data.
+    version_result = await db.execute(
+        select(EssayVersion)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            EssayVersion.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+        .with_for_update(of=EssayVersion)
+    )
+    version = version_result.scalar_one_or_none()
+    if version is None:
+        # Distinguish 403 (cross-teacher) from 404 (no version) by calling
+        # the ownership helper, which raises the appropriate domain error.
+        await _get_essay_for_teacher(db, essay_id, teacher_id)
+        raise NotFoundError("Essay version not found.")
+
+    # Reject snapshot saves against file-upload essays.  writing_snapshots is
+    # NULL for essays ingested via file upload; only browser-composed essays
+    # (created by POST .../essays/compose) have an initialised [] array.
+    if version.writing_snapshots is None:
+        raise ValidationError(
+            "Writing snapshots are not supported for file-upload essays.",
+            field="essay_id",
+        )
+
+    # Sanitize the HTML before persisting to prevent stored XSS.
+    safe_html = _sanitize_html_content(html_content)
+
+    # Derive plain-text content from the sanitized HTML (for LLM grading
+    # compatibility) and compute word count server-side.  The client-supplied
+    # word_count is accepted in the request body for schema compatibility but
+    # is ignored for storage — using the server-derived value prevents
+    # inconsistent or forged counts from reaching the database.
+    plain_text = _strip_html_tags(safe_html)
+    server_word_count = len(plain_text.split()) if plain_text.strip() else 0
+
+    # Build the new snapshot entry.
+    existing: list[dict[str, Any]] = list(version.writing_snapshots)
+    seq = len(existing) + 1
+    ts = datetime.now(UTC).isoformat()
+    snapshot = {
+        "seq": seq,
+        "ts": ts,
+        "word_count": server_word_count,
+        "html_content": safe_html,
+    }
+    existing.append(snapshot)
+
+    # Update the version in-place.  The JSONB column requires a full
+    # replacement (SQLAlchemy does not track list mutations automatically).
+    version.writing_snapshots = existing
+    version.content = plain_text
+    version.word_count = server_word_count
+
+    # Update the version's submitted_at so the essay list reflects recency.
+    version.submitted_at = datetime.now(UTC)
+
+    await db.commit()
+    await db.refresh(version)
+
+    logger.info(
+        "Writing snapshot saved",
+        extra={
+            "essay_id": str(essay_id),
+            "essay_version_id": str(version.id),
+            "snapshot_seq": seq,
+        },
+    )
+
+    return WriteSnapshotResponse(
+        essay_id=essay_id,
+        essay_version_id=version.id,
+        snapshot_count=seq,
+        word_count=server_word_count,
+        saved_at=datetime.now(UTC),
+    )
+
+
+async def get_writing_snapshots(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+) -> GetSnapshotsResponse:
+    """Return current content and snapshot metadata for a browser-composed essay.
+
+    Used by the browser writing interface to recover editor state after a
+    page refresh or navigation.
+
+    The response includes the current ``html_content`` (from the latest
+    snapshot) and lightweight snapshot metadata (seq, ts, word_count) for
+    the full history.  The individual ``html_content`` values of earlier
+    snapshots are not returned here to keep the response size manageable;
+    they will be used by the writing-process timeline (M5-10, M5-11).
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: Target essay UUID.
+
+    Returns:
+        A :class:`~app.schemas.essay.GetSnapshotsResponse`.
+
+    Raises:
+        NotFoundError:  Essay or its latest version is not found.
+        ForbiddenError: Essay belongs to a different teacher.
+
+    No student PII appears in any log output.
+    """
+    # Load the latest essay version with tenant isolation enforced in the
+    # JOIN (Essay → Assignment → Class.teacher_id — avoids the check-then-fetch
+    # two-query pattern).
+    version_result = await db.execute(
+        select(EssayVersion)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            EssayVersion.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    version = version_result.scalar_one_or_none()
+    if version is None:
+        # Distinguish 403 (cross-teacher) from 404 (no version) by calling
+        # the ownership helper, which raises the appropriate domain error.
+        await _get_essay_for_teacher(db, essay_id, teacher_id)
+        raise NotFoundError("Essay version not found.")
+
+    # Reject file-upload essays (writing_snapshots IS NULL) — they have no
+    # snapshot-backed editor state to recover.  Consistent with save_writing_snapshot()
+    # which also rejects NULL essays with ValidationError.
+    if version.writing_snapshots is None:
+        raise ValidationError(
+            "This essay was created via file upload and has no writing snapshots."
+        )
+
+    raw_snapshots: list[dict[str, Any]] = list(version.writing_snapshots)
+
+    # Recover the latest HTML content from the most recent snapshot for
+    # editor restoration.  Falls back to empty string for newly created essays.
+    latest_html = raw_snapshots[-1]["html_content"] if raw_snapshots else ""
+
+    snapshot_items = [
+        SnapshotItem(
+            seq=s["seq"],
+            ts=s["ts"],
+            word_count=s["word_count"],
+        )
+        for s in raw_snapshots
+    ]
+
+    return GetSnapshotsResponse(
+        essay_id=essay_id,
+        essay_version_id=version.id,
+        current_content=latest_html,
+        word_count=version.word_count,
+        snapshots=snapshot_items,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Composition timeline / process signals — M5-10
+# ---------------------------------------------------------------------------
+
+
+async def get_process_signals(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+) -> ProcessSignalsResponse:
+    """Return composition timeline signals for a browser-composed essay.
+
+    Signals are computed lazily on first request and cached in
+    ``EssayVersion.process_signals``.  If the version's ``writing_snapshots``
+    column has changed since the last computation (detected by comparing
+    snapshot counts), the signals are re-computed and the cached value is
+    updated.
+
+    If no usable writing-process snapshot data is available, the response has
+    ``has_process_data=False`` and all list fields are empty.  This includes
+    file-upload essays (``writing_snapshots IS NULL``) as well as browser-
+    composed essays with empty or otherwise unusable snapshot data.  This is
+    not an error — the caller can surface a plain-language explanation to the
+    teacher.
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: Target essay UUID.
+
+    Returns:
+        A :class:`~app.schemas.essay.ProcessSignalsResponse`.
+
+    Raises:
+        NotFoundError:  Essay or its latest version is not found.
+        ForbiddenError: Essay belongs to a different teacher.
+
+    No student PII appears in any log output.
+    """
+    version_result = await db.execute(
+        select(EssayVersion)
+        .join(Essay, EssayVersion.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            EssayVersion.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
+        .order_by(EssayVersion.version_number.desc())
+        .limit(1)
+    )
+    version = version_result.scalar_one_or_none()
+    if version is None:
+        await _get_essay_for_teacher(db, essay_id, teacher_id)
+        raise NotFoundError("Essay version not found.")
+
+    raw_snapshots: list[dict[str, Any]] = (
+        version.writing_snapshots if version.writing_snapshots is not None else []
+    )
+
+    # Determine whether the cached signals are still valid.  We compare the
+    # snapshot count stored in the cache with the current length of
+    # writing_snapshots.  A mismatch means new snapshots were added and the
+    # cache must be invalidated. Because process_signals is stored in JSONB,
+    # treat any parse/validation failure as a cache miss and recompute.
+    cached: dict[str, Any] | None = version.process_signals
+    current_snapshot_count = len(raw_snapshots)
+
+    _REQUIRED_CACHE_KEYS = {
+        "snapshot_count",
+        "computed_at",
+        "has_process_data",
+        "session_count",
+        "active_writing_seconds",
+        "total_elapsed_seconds",
+        "inter_session_gaps_seconds",
+        "sessions",
+        "paste_events",
+        "rapid_completion_events",
+    }
+
+    cached_snapshot_count = -1
+    cache_is_valid = False
+    if cached is not None:
+        try:
+            # Guard against non-dict JSONB values (list, string, etc.) that
+            # would raise AttributeError on .get() / .issubset() calls.
+            cache_is_valid = (
+                isinstance(cached, dict)
+                and _REQUIRED_CACHE_KEYS.issubset(cached)
+                and isinstance(cached.get("sessions"), list)
+                and isinstance(cached.get("paste_events"), list)
+                and isinstance(cached.get("rapid_completion_events"), list)
+            )
+            if cache_is_valid:
+                cached_snapshot_count = int(cached["snapshot_count"])
+                # Validate that timestamp strings are parseable so that corrupt
+                # or schema-evolved caches are caught here (not during response
+                # construction), and treated as a cache miss rather than a 500.
+                datetime.fromisoformat(cached["computed_at"])
+                for s in cached["sessions"]:
+                    datetime.fromisoformat(s["started_at"])
+                    datetime.fromisoformat(s["ended_at"])
+                for e in cached["paste_events"]:
+                    datetime.fromisoformat(e["occurred_at"])
+        except (TypeError, ValueError, KeyError, AttributeError):
+            cache_is_valid = False
+            cached_snapshot_count = -1
+
+    needs_compute = not cache_is_valid or cached_snapshot_count != current_snapshot_count
+
+    if needs_compute:
+        computed_at = datetime.now(UTC)
+        timeline = analyze_writing_process(raw_snapshots)
+
+        # Serialise the timeline to a plain dict for JSONB storage.
+        payload: dict[str, Any] = {
+            "snapshot_count": current_snapshot_count,
+            "computed_at": computed_at.isoformat(),
+            "has_process_data": timeline.has_process_data,
+            "session_count": timeline.session_count,
+            "active_writing_seconds": timeline.active_writing_seconds,
+            "total_elapsed_seconds": timeline.total_elapsed_seconds,
+            "inter_session_gaps_seconds": timeline.inter_session_gaps_seconds,
+            "sessions": [
+                {
+                    "session_index": s.session_index,
+                    "started_at": s.started_at.isoformat(),
+                    "ended_at": s.ended_at.isoformat(),
+                    "duration_seconds": s.duration_seconds,
+                    "snapshot_count": s.snapshot_count,
+                    "word_count_start": s.word_count_start,
+                    "word_count_end": s.word_count_end,
+                    "words_added": s.words_added,
+                }
+                for s in timeline.sessions
+            ],
+            "paste_events": [
+                {
+                    "snapshot_seq": e.snapshot_seq,
+                    "occurred_at": e.occurred_at.isoformat(),
+                    "words_before": e.words_before,
+                    "words_after": e.words_after,
+                    "words_added": e.words_added,
+                    "session_index": e.session_index,
+                }
+                for e in timeline.paste_events
+            ],
+            "rapid_completion_events": [
+                {
+                    "session_index": e.session_index,
+                    "duration_seconds": e.duration_seconds,
+                    "words_at_start": e.words_at_start,
+                    "words_at_end": e.words_at_end,
+                    "completion_fraction": e.completion_fraction,
+                }
+                for e in timeline.rapid_completion_events
+            ],
+        }
+
+        version.process_signals = payload
+        await db.commit()
+        await db.refresh(version)
+
+        logger.info(
+            "Process signals computed and cached",
+            extra={
+                "essay_id": str(essay_id),
+                "essay_version_id": str(version.id),
+                "session_count": timeline.session_count,
+            },
+        )
+        cached = payload
+
+    # Build the response from the cached (or freshly computed) payload.
+    # At this point `cached` is guaranteed non-None: either it was already set
+    # before the branch, or `needs_compute` ran and set `cached = payload`.
+    assert cached is not None  # narrowing for mypy
+    computed_at_str: str = cached["computed_at"]
+    computed_at_dt = datetime.fromisoformat(computed_at_str)
+
+    return ProcessSignalsResponse(
+        essay_id=essay_id,
+        essay_version_id=version.id,
+        has_process_data=cached["has_process_data"],
+        session_count=cached["session_count"],
+        sessions=[
+            SessionSegmentResponse(
+                session_index=s["session_index"],
+                started_at=datetime.fromisoformat(s["started_at"]),
+                ended_at=datetime.fromisoformat(s["ended_at"]),
+                duration_seconds=s["duration_seconds"],
+                snapshot_count=s["snapshot_count"],
+                word_count_start=s["word_count_start"],
+                word_count_end=s["word_count_end"],
+                words_added=s["words_added"],
+            )
+            for s in cached["sessions"]
+        ],
+        inter_session_gaps_seconds=cached["inter_session_gaps_seconds"],
+        active_writing_seconds=cached["active_writing_seconds"],
+        total_elapsed_seconds=cached["total_elapsed_seconds"],
+        paste_events=[
+            PasteEventResponse(
+                snapshot_seq=e["snapshot_seq"],
+                occurred_at=datetime.fromisoformat(e["occurred_at"]),
+                words_before=e["words_before"],
+                words_after=e["words_after"],
+                words_added=e["words_added"],
+                session_index=e["session_index"],
+            )
+            for e in cached["paste_events"]
+        ],
+        rapid_completion_events=[
+            RapidCompletionEventResponse(
+                session_index=e["session_index"],
+                duration_seconds=e["duration_seconds"],
+                words_at_start=e["words_at_start"],
+                words_at_end=e["words_at_end"],
+                completion_fraction=e["completion_fraction"],
+            )
+            for e in cached["rapid_completion_events"]
+        ],
+        computed_at=computed_at_dt,
     )

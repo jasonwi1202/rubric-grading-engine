@@ -173,8 +173,50 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | GET | `/classes/{classId}` | Get class detail + enrollment summary |
 | PATCH | `/classes/{classId}` | Update class name, subject, grade level |
 | POST | `/classes/{classId}/archive` | Archive the class (soft) |
+| GET | `/classes/{classId}/insights` | Class-level skill averages, score distributions, and common issues |
 
 **GET /classes query params:** `?academic_year=2025-26&is_archived=false`
+
+**GET /classes/{classId}/insights response (200):**
+```json
+{
+  "data": {
+    "class_id": "uuid",
+    "assignment_count": 3,
+    "student_count": 28,
+    "graded_essay_count": 25,
+    "skill_averages": {
+      "evidence": { "avg_score": 0.55, "student_count": 25, "data_points": 75 },
+      "thesis":   { "avg_score": 0.78, "student_count": 25, "data_points": 75 }
+    },
+    "score_distributions": {
+      "evidence": [
+        { "label": "0-20%",   "count": 3 },
+        { "label": "20-40%",  "count": 7 },
+        { "label": "40-60%",  "count": 9 },
+        { "label": "60-80%",  "count": 5 },
+        { "label": "80-100%", "count": 1 }
+      ],
+      "thesis": [
+        { "label": "0-20%",   "count": 0 },
+        { "label": "20-40%",  "count": 2 },
+        { "label": "40-60%",  "count": 5 },
+        { "label": "60-80%",  "count": 12 },
+        { "label": "80-100%", "count": 6 }
+      ]
+    },
+    "common_issues": [
+      { "skill_dimension": "evidence", "avg_score": 0.55, "affected_student_count": 14 }
+    ]
+  }
+}
+```
+- `skill_averages` — keyed by canonical skill dimension (`thesis`, `evidence`, `organization`, `analysis`, `mechanics`, `voice`, `other`); `avg_score` is normalised to [0.0, 1.0].
+- `score_distributions` — five 20-percentage-point buckets per skill, present for every dimension in `skill_averages`.
+- `common_issues` — skill dimensions where the class average normalised score is below 0.60, sorted ascending by `avg_score` (worst first).
+- Only **locked** grades contribute; unlocked grades are excluded.
+
+Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
 
 ---
 
@@ -189,7 +231,7 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | DELETE | `/classes/{classId}/students/{studentId}` | Remove student from class (soft) |
 | GET | `/students/{studentId}` | Get student detail + skill profile |
 | GET | `/students/{studentId}/history` | Get all graded assignments for a student |
-| PATCH | `/students/{studentId}` | Update student name or external ID |
+| PATCH | `/students/{studentId}` | Update student name, external ID, or private teacher notes |
 
 #### CSV Roster Import Flow
 
@@ -462,13 +504,47 @@ Criterion columns are ordered by `display_order` from the immutable rubric snaps
 
 Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
 
----
+**GET /assignments/{assignmentId}/analytics response (200):**
+```json
+{
+  "data": {
+    "assignment_id": "uuid",
+    "class_id": "uuid",
+    "total_essay_count": 28,
+    "locked_essay_count": 25,
+    "overall_avg_normalized_score": 0.72,
+    "criterion_analytics": [
+      {
+        "criterion_id": "uuid",
+        "criterion_name": "Thesis Statement",
+        "skill_dimension": "thesis",
+        "min_score_possible": 0,
+        "max_score_possible": 5,
+        "avg_score": 3.6,
+        "avg_normalized_score": 0.72,
+        "score_distribution": [
+          { "score": 3, "count": 10 },
+          { "score": 4, "count": 8 },
+          { "score": 5, "count": 7 }
+        ]
+      }
+    ]
+  }
+}
+```
+- `overall_avg_normalized_score` — mean normalised score across all criteria and all locked essays; `null` when no grades are locked.
+- `criterion_analytics` — one entry per rubric criterion, ordered by `display_order` from the immutable rubric snapshot.
+- `score_distribution` — count of essays per raw score value, ordered by ascending score.
+- Only **locked** grades contribute.
 
-### Essays
+Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND` (assignment does not exist).
+
+---
 
 | Method | Path | Description |
 |---|---|---|
 | POST | `/assignments/{assignmentId}/essays` | Upload one or more essays |
+| POST | `/assignments/{assignmentId}/essays/compose` | Create a blank essay for in-browser composition (M5-09) |
 | GET | `/assignments/{assignmentId}/essays` | List essays with status and student assignment |
 | GET | `/essays/{essayId}` | Get essay detail with current grade |
 | PATCH | `/essays/{essayId}` | Assign to student (manual assignment) |
@@ -478,6 +554,9 @@ Errors: `403 FORBIDDEN` (assignment belongs to another teacher), `404 NOT_FOUND`
 | PATCH | `/integrity-reports/{reportId}/status` | Update teacher review status (`reviewed_clear` or `flagged`) |
 | GET | `/assignments/{assignmentId}/integrity/summary` | Class-level integrity signal counts (flagged / clear / pending) |
 | POST | `/essays/{essayId}/grade/retry` | Re-enqueue a single failed essay for grading |
+| POST | `/essays/{essayId}/snapshots` | Save a writing-process snapshot (autosave, M5-09) |
+| GET | `/essays/{essayId}/snapshots` | Retrieve writing snapshots for editor state recovery (M5-09) |
+| GET | `/essays/{essayId}/process-signals` | Composition timeline and process signals (M5-10) |
 
 **POST /assignments/{id}/essays** — multipart form:
 - `files`: one or more files (PDF, DOCX, TXT); send each as a separate `files` part in the multipart body
@@ -518,6 +597,120 @@ Errors: `404 NOT_FOUND` (assignment not found, or student not found for this tea
 Re-enqueues a single essay for grading. Only available when the essay has `status=queued` (essays fail and are reverted to `queued` after exhausting retries). Returns `202` immediately.
 
 Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (essay not found), `409 CONFLICT` (essay is currently being graded or has already been completed).
+
+**POST /assignments/{id}/essays/compose** — JSON body (M5-09):
+```json
+{
+  "student_id": null
+}
+```
+- `student_id`: optional — if provided, the new essay is immediately assigned to this student (must be enrolled in the assignment's class)
+
+Creates a blank `Essay` and `EssayVersion` (empty content, `writing_snapshots: []`) without a file upload. The client then drives composition via the snapshot endpoints below.
+
+**POST /assignments/{id}/essays/compose response (201):**
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "assignment_id": "uuid",
+    "student_id": null,
+    "status": "unassigned",
+    "current_content": "",
+    "word_count": 0
+  }
+}
+```
+
+Errors: `403 FORBIDDEN` (assignment belongs to another teacher, or student not enrolled), `404 NOT_FOUND` (assignment or student not found).
+
+**POST /essays/{essayId}/snapshots** — JSON body (M5-09):
+```json
+{
+  "html_content": "<p>Essay text…</p>",
+  "word_count": 150
+}
+```
+- `html_content`: raw innerHTML from the browser editor (max 500 000 characters); stored in `writing_snapshots` JSONB and also stripped to plain text for the LLM pipeline
+- `word_count`: pre-computed by the client (HTML tags stripped, split on whitespace)
+
+Each call appends a snapshot entry `{seq, ts, word_count, html_content}` to the version's `writing_snapshots` array and updates `EssayVersion.content` (plain text) and `word_count`. Called by the browser autosave every 10–15 seconds of user activity.
+
+**POST /essays/{essayId}/snapshots response (200):**
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "snapshot_count": 3,
+    "word_count": 150,
+    "saved_at": "2026-04-28T10:00:12+00:00"
+  }
+}
+```
+
+Errors: `403 FORBIDDEN` (essay belongs to another teacher), `404 NOT_FOUND` (essay or version not found), `422 VALIDATION_ERROR` (`html_content` missing or exceeds 500 000 characters).
+
+**GET /essays/{essayId}/snapshots response (200)** (M5-09):
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "current_content": "<p>Essay text…</p>",
+    "word_count": 150,
+    "snapshots": [
+      {"seq": 1, "ts": "2026-04-28T10:00:00+00:00", "word_count": 50},
+      {"seq": 2, "ts": "2026-04-28T10:00:12+00:00", "word_count": 100},
+      {"seq": 3, "ts": "2026-04-28T10:00:24+00:00", "word_count": 150}
+    ]
+  }
+}
+```
+
+`current_content` is the `html_content` of the most recent snapshot — ready to inject directly into the browser editor for state recovery after a page refresh. Individual `html_content` values of earlier snapshots are not returned here; they are used by the writing-process timeline (M5-10/11). This endpoint is only valid for browser-composed essays. File-upload essays (where `writing_snapshots` is `NULL`) return `422 VALIDATION_ERROR` because there is no snapshot-backed editor state to recover. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`, `422 VALIDATION_ERROR` (essay has no writing snapshots — was created via file upload).
+
+**GET /essays/{essayId}/process-signals response (200)** (M5-10):
+```json
+{
+  "data": {
+    "essay_id": "uuid",
+    "essay_version_id": "uuid",
+    "has_process_data": true,
+    "session_count": 2,
+    "active_writing_seconds": 1800.0,
+    "total_elapsed_seconds": 90000.0,
+    "inter_session_gaps_seconds": [88200.0],
+    "sessions": [
+      {
+        "session_index": 0,
+        "started_at": "2026-04-28T09:00:00+00:00",
+        "ended_at": "2026-04-28T09:15:00+00:00",
+        "duration_seconds": 900.0,
+        "snapshot_count": 12,
+        "word_count_start": 0,
+        "word_count_end": 250,
+        "words_added": 250
+      }
+    ],
+    "paste_events": [
+      {
+        "snapshot_seq": 4,
+        "occurred_at": "2026-04-28T09:05:00+00:00",
+        "words_before": 50,
+        "words_after": 250,
+        "words_added": 200,
+        "session_index": 0
+      }
+    ],
+    "rapid_completion_events": [],
+    "computed_at": "2026-04-28T10:30:00+00:00"
+  }
+}
+```
+
+Signals are computed lazily on first request and cached in `EssayVersion.process_signals`. The cache is automatically invalidated when new snapshots are added (detected by comparing snapshot counts). When `has_process_data` is `false`, no usable writing-process data was available for that essay version — for example, the essay may have been submitted via file upload, the snapshot list may be empty, or the stored snapshots may be entirely unparseable. In that case, all list fields are empty and numeric metrics are zero. `paste_events` and `rapid_completion_events` are informational signals for teacher review, not definitive findings — they should always be presented with appropriate context. Errors: `403 FORBIDDEN`, `404 NOT_FOUND`.
 
 ---
 

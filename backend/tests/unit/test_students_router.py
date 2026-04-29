@@ -1,11 +1,12 @@
 """Unit tests for student and enrollment endpoints.
 
 Tests cover:
-- GET  /api/v1/classes/{id}/students       — list enrolled, 404, 403, auth
-- POST /api/v1/classes/{id}/students       — enroll new, enroll existing, 409, 404, 403, auth
-- DELETE /api/v1/classes/{id}/students/{id} — soft-remove, 404, 403, auth
-- GET  /api/v1/students/{id}               — get, 404, 403, auth
-- PATCH /api/v1/students/{id}              — update, 404, 403, auth
+- GET  /api/v1/classes/{id}/students         — list enrolled, 404, 403, auth
+- POST /api/v1/classes/{id}/students         — enroll new, enroll existing, 409, 404, 403, auth
+- DELETE /api/v1/classes/{id}/students/{id}  — soft-remove, 404, 403, auth
+- GET  /api/v1/students/{id}                 — get with skill profile, 404, 403, auth
+- GET  /api/v1/students/{id}/history         — history, 404, 403, auth
+- PATCH /api/v1/students/{id}                — update name, update teacher_notes, clear teacher_notes, 404, 403, auth
 - Cross-teacher access returns 403 (tenant isolation)
 
 No real PostgreSQL.  All DB / service calls are mocked.  No student PII.
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -41,12 +42,14 @@ def _make_student_orm(
     student_id: uuid.UUID | None = None,
     full_name: str = "Student One",
     external_id: str | None = None,
+    teacher_notes: str | None = None,
 ) -> MagicMock:
     student = MagicMock()
     student.id = student_id or uuid.uuid4()
     student.teacher_id = teacher_id or uuid.uuid4()
     student.full_name = full_name
     student.external_id = external_id
+    student.teacher_notes = teacher_notes
     student.created_at = datetime.now(UTC)
     return student
 
@@ -64,6 +67,45 @@ def _make_enrollment_orm(
     enrollment.enrolled_at = datetime.now(UTC)
     enrollment.removed_at = removed_at
     return enrollment
+
+
+def _make_skill_profile_orm(
+    teacher_id: uuid.UUID | None = None,
+    student_id: uuid.UUID | None = None,
+) -> MagicMock:
+    profile = MagicMock()
+    profile.id = uuid.uuid4()
+    profile.teacher_id = teacher_id or uuid.uuid4()
+    profile.student_id = student_id or uuid.uuid4()
+    profile.skill_scores = {
+        "thesis": {
+            "avg_score": 0.75,
+            "trend": "improving",
+            "data_points": 3,
+            "last_updated": datetime.now(UTC).isoformat(),
+        }
+    }
+    profile.assignment_count = 2
+    profile.last_updated_at = datetime.now(UTC)
+    return profile
+
+
+def _make_history_row(
+    assignment_id: uuid.UUID | None = None,
+    class_id: uuid.UUID | None = None,
+    grade_id: uuid.UUID | None = None,
+    essay_id: uuid.UUID | None = None,
+) -> MagicMock:
+    row = MagicMock()
+    row.assignment_id = assignment_id or uuid.uuid4()
+    row.assignment_title = "Essay Assignment"
+    row.class_id = class_id or uuid.uuid4()
+    row.grade_id = grade_id or uuid.uuid4()
+    row.essay_id = essay_id or uuid.uuid4()
+    row.total_score = 85
+    row.max_possible_score = 100
+    row.locked_at = datetime.now(UTC)
+    return row
 
 
 def _app_with_teacher(teacher: MagicMock | None = None) -> object:
@@ -376,29 +418,53 @@ class TestRemoveEnrollment:
 
 
 class TestGetStudent:
-    def test_returns_student(self) -> None:
+    def test_returns_student_without_profile(self) -> None:
         teacher = _make_teacher()
         student = _make_student_orm(teacher_id=teacher.id)
         app = _app_with_teacher(teacher)
         with (
             patch(
-                "app.routers.students.get_student",
+                "app.routers.students.get_student_with_profile",
                 new_callable=AsyncMock,
-                return_value=student,
+                return_value=(student, None),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.get(f"/api/v1/students/{student.id}")
 
         assert resp.status_code == 200, resp.text
-        assert resp.json()["data"]["id"] == str(student.id)
+        data = resp.json()["data"]
+        assert data["id"] == str(student.id)
+        assert data["skill_profile"] is None
+
+    def test_returns_student_with_profile(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(teacher_id=teacher.id)
+        profile = _make_skill_profile_orm(teacher_id=teacher.id, student_id=student.id)
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.get_student_with_profile",
+                new_callable=AsyncMock,
+                return_value=(student, profile),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{student.id}")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["id"] == str(student.id)
+        assert data["skill_profile"] is not None
+        assert data["skill_profile"]["assignment_count"] == 2
+        assert "thesis" in data["skill_profile"]["skill_scores"]
 
     def test_returns_404_when_not_found(self) -> None:
         teacher = _make_teacher()
         app = _app_with_teacher(teacher)
         with (
             patch(
-                "app.routers.students.get_student",
+                "app.routers.students.get_student_with_profile",
                 new_callable=AsyncMock,
                 side_effect=NotFoundError("Student not found."),
             ),
@@ -414,7 +480,7 @@ class TestGetStudent:
         app = _app_with_teacher(teacher)
         with (
             patch(
-                "app.routers.students.get_student",
+                "app.routers.students.get_student_with_profile",
                 new_callable=AsyncMock,
                 side_effect=ForbiddenError("You do not have access to this student."),
             ),
@@ -429,6 +495,91 @@ class TestGetStudent:
         app = create_app()
         with TestClient(app, raise_server_exceptions=False) as client:
             resp = client.get(f"/api/v1/students/{uuid.uuid4()}")
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/students/{studentId}/history
+# ---------------------------------------------------------------------------
+
+
+class TestGetStudentHistory:
+    def test_returns_empty_history(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(teacher_id=teacher.id)
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.get_student_history",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{student.id}/history")
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"] == []
+
+    def test_returns_history_items(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(teacher_id=teacher.id)
+        row = _make_history_row()
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.get_student_history",
+                new_callable=AsyncMock,
+                return_value=[row],
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{student.id}/history")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert len(data) == 1
+        assert data[0]["assignment_id"] == str(row.assignment_id)
+        assert data[0]["grade_id"] == str(row.grade_id)
+        assert data[0]["essay_id"] == str(row.essay_id)
+
+    def test_returns_404_when_student_not_found(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.get_student_history",
+                new_callable=AsyncMock,
+                side_effect=NotFoundError("Student not found."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{uuid.uuid4()}/history")
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_returns_403_for_other_teachers_student(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.get_student_history",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("You do not have access to this student."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{uuid.uuid4()}/history")
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_requires_authentication(self) -> None:
+        app = create_app()
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get(f"/api/v1/students/{uuid.uuid4()}/history")
         assert resp.status_code == 401
         assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
@@ -458,6 +609,68 @@ class TestPatchStudent:
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"]["full_name"] == "Updated Name"
+
+    def test_updates_teacher_notes(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(
+            teacher_id=teacher.id, teacher_notes="Watch evidence integration."
+        )
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.update_student",
+                new_callable=AsyncMock,
+                return_value=student,
+            ) as mock_update,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/students/{student.id}",
+                json={"teacher_notes": "Watch evidence integration."},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["teacher_notes"] == "Watch evidence integration."
+        mock_update.assert_called_once_with(
+            ANY,
+            teacher.id,
+            student.id,
+            full_name=None,
+            external_id=None,
+            clear_external_id=False,
+            teacher_notes="Watch evidence integration.",
+            clear_teacher_notes=False,
+        )
+
+    def test_clears_teacher_notes_with_null(self) -> None:
+        teacher = _make_teacher()
+        student = _make_student_orm(teacher_id=teacher.id, teacher_notes=None)
+        app = _app_with_teacher(teacher)
+        with (
+            patch(
+                "app.routers.students.update_student",
+                new_callable=AsyncMock,
+                return_value=student,
+            ) as mock_update,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/students/{student.id}",
+                json={"teacher_notes": None},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["teacher_notes"] is None
+        mock_update.assert_called_once_with(
+            ANY,
+            teacher.id,
+            student.id,
+            full_name=None,
+            external_id=None,
+            clear_external_id=False,
+            teacher_notes=None,
+            clear_teacher_notes=True,
+        )
 
     def test_returns_404_when_not_found(self) -> None:
         teacher = _make_teacher()
@@ -520,13 +733,30 @@ class TestStudentTenantIsolation:
         app = _app_with_teacher(teacher_b)
         with (
             patch(
-                "app.routers.students.get_student",
+                "app.routers.students.get_student_with_profile",
                 new_callable=AsyncMock,
                 side_effect=ForbiddenError("You do not have access to this student."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.get(f"/api/v1/students/{uuid.uuid4()}")
+
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_get_history_other_teacher_student_returns_403(self) -> None:
+        """Attempting to GET history for another teacher's student returns 403."""
+        teacher_b = _make_teacher()
+        app = _app_with_teacher(teacher_b)
+        with (
+            patch(
+                "app.routers.students.get_student_history",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("You do not have access to this student."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/students/{uuid.uuid4()}/history")
 
         assert resp.status_code == 403, resp.text
         assert resp.json()["error"]["code"] == "FORBIDDEN"

@@ -7,7 +7,7 @@ Tests cover:
   ValidationError when full_name missing
 - remove_enrollment: success, not-found enrollment, forbidden class/student
 - get_student: success, not-found, cross-teacher
-- update_student: success full-name change, success clear_external_id, cross-teacher
+- update_student: success full-name change, success clear_external_id, success set_teacher_notes, success clear_teacher_notes, cross-teacher
 
 No real PostgreSQL. All DB calls are mocked. No student PII in fixtures.
 """
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -25,6 +26,8 @@ from app.exceptions import ConflictError, ForbiddenError, NotFoundError, Validat
 from app.services.student import (
     enroll_student,
     get_student,
+    get_student_history,
+    get_student_with_profile,
     list_enrolled_students,
     remove_enrollment,
     update_student,
@@ -92,6 +95,22 @@ def _not_found_result() -> MagicMock:
 def _scalar_result(value: object) -> MagicMock:
     r = MagicMock()
     r.scalar_one_or_none.return_value = value
+    return r
+
+
+def _make_profile_orm(teacher_id: uuid.UUID, student_id: uuid.UUID) -> MagicMock:
+    obj = MagicMock()
+    obj.teacher_id = teacher_id
+    obj.student_id = student_id
+    obj.assignment_count = 2
+    obj.skill_scores = {}
+    obj.last_updated_at = datetime.now(UTC)
+    return obj
+
+
+def _all_result(rows: list[object]) -> MagicMock:
+    r = MagicMock()
+    r.all.return_value = rows
     return r
 
 
@@ -414,6 +433,40 @@ class TestUpdateStudent:
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_sets_teacher_notes(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        student_orm = _make_student_orm(teacher_id, student_id)
+        student_orm.teacher_notes = None
+
+        db = _make_db()
+        student_res = _scalar_result(student_orm)
+        db.execute = AsyncMock(side_effect=[student_res])
+
+        result = await update_student(
+            db, teacher_id, student_id, teacher_notes="Watch evidence integration."
+        )
+
+        assert result.teacher_notes == "Watch evidence integration."
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clears_teacher_notes(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        student_orm = _make_student_orm(teacher_id, student_id)
+        student_orm.teacher_notes = "Some existing note."
+
+        db = _make_db()
+        student_res = _scalar_result(student_orm)
+        db.execute = AsyncMock(side_effect=[student_res])
+
+        result = await update_student(db, teacher_id, student_id, clear_teacher_notes=True)
+
+        assert result.teacher_notes is None
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_raises_forbidden_for_wrong_teacher(self) -> None:
         teacher_id = uuid.uuid4()
         other_teacher_id = uuid.uuid4()
@@ -436,3 +489,170 @@ class TestUpdateStudent:
             await update_student(db, uuid.uuid4(), uuid.uuid4(), full_name="New Name")
 
         db.commit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_student_with_profile
+# ---------------------------------------------------------------------------
+
+
+class TestGetStudentWithProfile:
+    @pytest.mark.asyncio
+    async def test_returns_student_with_profile(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        student_orm = _make_student_orm(teacher_id, student_id)
+        profile_orm = _make_profile_orm(teacher_id, student_id)
+
+        db = _make_db()
+        # 1st execute: _get_student_owned_by (scalar_one_or_none)
+        # 2nd execute: StudentSkillProfile query (scalar_one_or_none)
+        db.execute = AsyncMock(
+            side_effect=[_scalar_result(student_orm), _scalar_result(profile_orm)]
+        )
+
+        result_student, result_profile = await get_student_with_profile(db, teacher_id, student_id)
+
+        assert result_student is student_orm
+        assert result_profile is profile_orm
+
+    @pytest.mark.asyncio
+    async def test_returns_none_profile_when_no_skill_data(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        student_orm = _make_student_orm(teacher_id, student_id)
+
+        db = _make_db()
+        db.execute = AsyncMock(side_effect=[_scalar_result(student_orm), _scalar_result(None)])
+
+        result_student, result_profile = await get_student_with_profile(db, teacher_id, student_id)
+
+        assert result_student is student_orm
+        assert result_profile is None
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_missing_student(self) -> None:
+        db = _make_db()
+        db.execute = AsyncMock(return_value=_scalar_result(None))
+
+        with pytest.raises(NotFoundError):
+            await get_student_with_profile(db, uuid.uuid4(), uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_raises_forbidden_for_wrong_teacher(self) -> None:
+        teacher_id = uuid.uuid4()
+        other_teacher_id = uuid.uuid4()
+        student_orm = _make_student_orm(other_teacher_id)
+        db = _make_db()
+        db.execute = AsyncMock(return_value=_scalar_result(student_orm))
+
+        with pytest.raises(ForbiddenError):
+            await get_student_with_profile(db, teacher_id, uuid.uuid4())
+
+
+# ---------------------------------------------------------------------------
+# get_student_history
+# ---------------------------------------------------------------------------
+
+
+class TestGetStudentHistory:
+    def _make_history_row(
+        self,
+        locked_at: datetime,
+        assignment_id: uuid.UUID | None = None,
+    ) -> MagicMock:
+        row = MagicMock()
+        row.assignment_id = assignment_id or uuid.uuid4()
+        row.assignment_title = "Assignment"
+        row.class_id = uuid.uuid4()
+        row.grade_id = uuid.uuid4()
+        row.essay_id = uuid.uuid4()
+        row.total_score = Decimal("8.0")
+        row.max_possible_score = Decimal("10.0")
+        row.locked_at = locked_at
+        return row
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_locked_grades(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+
+        db = _make_db()
+        # _assert_student_owned_by: narrow ownership check (one_or_none)
+        ownership_res = _ownership_result(teacher_id)
+        # history query: no rows
+        history_res = _all_result([])
+        db.execute = AsyncMock(side_effect=[ownership_res, history_res])
+
+        result = await get_student_history(db, teacher_id, student_id)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_rows_newest_first(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        now = datetime.now(UTC)
+        older = datetime(2024, 1, 1, tzinfo=UTC)
+
+        row_new = self._make_history_row(locked_at=now)
+        row_old = self._make_history_row(locked_at=older)
+
+        db = _make_db()
+        ownership_res = _ownership_result(teacher_id)
+        # Mock returns rows already in newest-first order (as the DB ORDER BY would)
+        history_res = _all_result([row_new, row_old])
+        db.execute = AsyncMock(side_effect=[ownership_res, history_res])
+
+        result = await get_student_history(db, teacher_id, student_id)
+
+        assert len(result) == 2
+        assert result[0].locked_at == now
+        assert result[1].locked_at == older
+
+    @pytest.mark.asyncio
+    async def test_result_contains_only_locked_grade_fields(self) -> None:
+        teacher_id = uuid.uuid4()
+        student_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        locked_at = datetime.now(UTC)
+
+        row = self._make_history_row(locked_at=locked_at, assignment_id=assignment_id)
+        row.total_score = Decimal("7.5")
+        row.max_possible_score = Decimal("10.0")
+
+        db = _make_db()
+        ownership_res = _ownership_result(teacher_id)
+        history_res = _all_result([row])
+        db.execute = AsyncMock(side_effect=[ownership_res, history_res])
+
+        result = await get_student_history(db, teacher_id, student_id)
+
+        assert len(result) == 1
+        item = result[0]
+        assert item.assignment_id == assignment_id
+        assert item.total_score == Decimal("7.5")
+        assert item.max_possible_score == Decimal("10.0")
+        assert item.locked_at == locked_at
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_missing_student(self) -> None:
+        db = _make_db()
+        db.execute = AsyncMock(return_value=_not_found_result())
+
+        with pytest.raises(NotFoundError):
+            await get_student_history(db, uuid.uuid4(), uuid.uuid4())
+
+    @pytest.mark.asyncio
+    async def test_raises_forbidden_for_wrong_teacher(self) -> None:
+        teacher_id = uuid.uuid4()
+        other_teacher_id = uuid.uuid4()
+        row = MagicMock()
+        row.teacher_id = other_teacher_id
+        res = MagicMock()
+        res.one_or_none.return_value = row
+        db = _make_db()
+        db.execute = AsyncMock(return_value=res)
+
+        with pytest.raises(ForbiddenError):
+            await get_student_history(db, teacher_id, uuid.uuid4())

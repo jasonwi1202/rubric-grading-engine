@@ -77,6 +77,7 @@ A persistent student record, independent of any class. Identity survives class t
 | teacher_id | UUID | FK → User (owning teacher) |
 | full_name | VARCHAR(255) | |
 | external_id | VARCHAR(255) | Nullable — LMS student ID for sync |
+| teacher_notes | TEXT | Nullable — private instructional notes; visible only to the owning teacher |
 | created_at | TIMESTAMPTZ | |
 
 **Note:** Students are owned by a teacher at creation. Cross-teacher sharing is deferred (see Open Questions in class-roster-student-management.md).
@@ -172,10 +173,12 @@ A specific version of an essay (original submission or resubmission).
 | id | UUID | Primary key |
 | essay_id | UUID | FK → Essay |
 | version_number | INTEGER | 1 = original, 2+ = resubmissions |
-| content | TEXT | Full essay text |
-| file_storage_key | VARCHAR(500) | Nullable — S3 key for original uploaded file |
+| content | TEXT | Full essay text (plain text; for browser-composed essays, derived by stripping HTML from the latest snapshot) |
+| file_storage_key | VARCHAR(500) | Nullable — S3 key for original uploaded file; `NULL` for browser-composed essays |
 | word_count | INTEGER | |
 | submitted_at | TIMESTAMPTZ | |
+| writing_snapshots | JSONB | Nullable — `NULL` for file-upload essays; `[]` for browser-composed essays, populated with snapshot entries `{seq, ts, word_count, html_content}` by the autosave endpoint (M5-09) |
+| process_signals | JSONB | Nullable — `NULL` until first requested. Cached composition timeline analysis (M5-10): session segments, paste events, rapid-completion events, and summary metrics. Automatically invalidated when `snapshot_count` in the cache differs from the current length of `writing_snapshots`. |
 
 ---
 

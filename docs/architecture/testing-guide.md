@@ -234,3 +234,27 @@ Tests run in GitHub Actions (or equivalent) on every push and PR:
 5. PR blocked from merge if coverage drops below targets
 
 **Test isolation:** Each CI run uses a fresh database. No shared test state between runs.
+
+---
+
+## Local Environment Gotchas
+
+Some shell-level environment variables can make local backend tests fail in
+ways that do not reproduce in CI.
+
+Common examples:
+
+- `RATE_LIMIT_ENABLED=false` can invalidate rate-limit middleware assertions.
+- `ALLOW_UNVERIFIED_LOGIN_IN_TEST=true` can bypass unverified-auth checks.
+- `DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, `S3_ENDPOINT_URL` can break
+    tests that assert config defaults.
+
+Before running backend unit tests locally, clear these overrides in your shell:
+
+```powershell
+Remove-Item Env:RATE_LIMIT_ENABLED -ErrorAction SilentlyContinue
+Remove-Item Env:ALLOW_UNVERIFIED_LOGIN_IN_TEST -ErrorAction SilentlyContinue
+Remove-Item Env:DATABASE_POOL_SIZE -ErrorAction SilentlyContinue
+Remove-Item Env:DATABASE_MAX_OVERFLOW -ErrorAction SilentlyContinue
+Remove-Item Env:S3_ENDPOINT_URL -ErrorAction SilentlyContinue
+```

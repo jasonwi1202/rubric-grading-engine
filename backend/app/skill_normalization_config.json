@@ -1,0 +1,80 @@
+{
+  "thesis": [
+    "Thesis Statement",
+    "Main Argument",
+    "Central Claim",
+    "Claim",
+    "Focus",
+    "Thesis",
+    "Argument",
+    "Position",
+    "Central Idea",
+    "Controlling Idea",
+    "Main Claim"
+  ],
+  "evidence": [
+    "Evidence Use",
+    "Support",
+    "Use of Textual Evidence",
+    "Supporting Details",
+    "Evidence",
+    "Textual Evidence",
+    "Sources",
+    "Citations",
+    "Examples",
+    "Evidence and Support",
+    "Use of Evidence",
+    "Supporting Evidence"
+  ],
+  "organization": [
+    "Organization",
+    "Structure",
+    "Essay Structure",
+    "Flow",
+    "Coherence",
+    "Transitions",
+    "Paragraph Structure",
+    "Logical Flow",
+    "Text Structure",
+    "Essay Organization"
+  ],
+  "analysis": [
+    "Analysis",
+    "Critical Thinking",
+    "Depth of Analysis",
+    "Commentary",
+    "Analytical Thinking",
+    "Interpretation",
+    "Reasoning",
+    "Insight",
+    "Analytical Depth",
+    "Critical Analysis",
+    "Depth of Thinking"
+  ],
+  "mechanics": [
+    "Grammar",
+    "Mechanics",
+    "Conventions",
+    "Spelling and Grammar",
+    "Spelling",
+    "Punctuation",
+    "Language Conventions",
+    "Writing Mechanics",
+    "Grammar and Mechanics",
+    "Sentence Mechanics",
+    "Grammar and Conventions",
+    "Writing Conventions"
+  ],
+  "voice": [
+    "Voice",
+    "Style",
+    "Tone",
+    "Word Choice",
+    "Diction",
+    "Author Voice",
+    "Writing Style",
+    "Author's Voice",
+    "Tone and Voice",
+    "Style and Tone"
+  ]
+}
