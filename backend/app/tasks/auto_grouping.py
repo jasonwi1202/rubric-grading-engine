@@ -13,9 +13,10 @@ Behaviour:
   does not own them.
 - Delegates all grouping logic to
   :func:`~app.services.auto_grouping.compute_and_persist_groups`.
-- Idempotent: re-running with the same arguments recomputes from the current
-  skill profiles and overwrites the stored groups, always converging to the
-  same result for a given set of inputs.
+- Safe to rerun: re-running with the same arguments recomputes from the
+  current skill profiles and overwrites the stored groups, always converging
+  to the same group membership.  Note that row identity (UUID primary keys)
+  and timestamps (``computed_at``) may change between runs.
 - Retry-safe: the DELETE → INSERT inside the service runs in a single
   transaction, so a crash mid-execution leaves the database in the pre-task
   state and the retry can proceed safely.

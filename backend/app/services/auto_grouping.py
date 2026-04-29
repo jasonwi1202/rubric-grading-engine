@@ -20,8 +20,10 @@ Grouping algorithm:
   5. Discard skill dimensions whose student_count is below ``min_group_size``.
   6. Within a single transaction, DELETE all existing ``StudentGroup`` rows for
      the (teacher_id, class_id) pair, then INSERT the freshly-computed groups.
-     This DELETE → INSERT pattern is fully idempotent: re-running the task with
-     the same inputs produces the same database state.
+     This DELETE → INSERT pattern is safe to re-run: repeated executions with
+     the same inputs converge on the same group membership, but persisted row
+     identity and timestamps (UUID primary keys and ``computed_at``) may
+     change between runs.
 
 Tenant isolation:
   - ``teacher_id`` is passed explicitly to every query.
@@ -249,29 +251,37 @@ async def compute_and_persist_groups(
     )
 
     persisted: list[StudentGroup] = []
-    for group in groups:
-        # Standard SQLAlchemy insert (not pg_insert / ON CONFLICT) is sufficient
-        # here because the FOR UPDATE lock above guarantees the DELETE cleared all
-        # prior rows before we reach this point, eliminating the need for upsert.
-        stmt = (
-            insert(StudentGroup)
-            .values(
-                id=uuid.uuid4(),
-                teacher_id=teacher_id,
-                class_id=class_id,
-                skill_key=group["skill_key"],
-                label=group["label"],
-                student_ids=group["student_ids"],
-                student_count=group["student_count"],
-                computed_at=datetime.now(UTC),
-            )
-            .returning(StudentGroup)
-        )
-        result = await db.execute(stmt)
-        row = result.scalar_one()
-        persisted.append(row)
-
+    computed_at = datetime.now(UTC)
     try:
+        await db.execute(
+            delete(StudentGroup).where(
+                StudentGroup.teacher_id == teacher_id,
+                StudentGroup.class_id == class_id,
+            )
+        )
+
+        for group in groups:
+            # Standard SQLAlchemy insert (not pg_insert / ON CONFLICT) is sufficient
+            # here because the FOR UPDATE lock above guarantees the DELETE cleared all
+            # prior rows before we reach this point, eliminating the need for upsert.
+            stmt = (
+                insert(StudentGroup)
+                .values(
+                    id=uuid.uuid4(),
+                    teacher_id=teacher_id,
+                    class_id=class_id,
+                    skill_key=group["skill_key"],
+                    label=group["label"],
+                    student_ids=group["student_ids"],
+                    student_count=group["student_count"],
+                    computed_at=computed_at,
+                )
+                .returning(StudentGroup)
+            )
+            result = await db.execute(stmt)
+            row = result.scalar_one()
+            persisted.append(row)
+
         await db.commit()
     except IntegrityError:
         await db.rollback()

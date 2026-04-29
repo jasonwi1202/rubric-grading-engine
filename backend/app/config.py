@@ -195,6 +195,22 @@ class Settings(BaseSettings):
             raise ValueError("INTEGRITY_SIMILARITY_THRESHOLD must be between 0.0 and 1.0")
         return v
 
+    @field_validator("auto_grouping_min_group_size")
+    @classmethod
+    def auto_grouping_min_group_size_at_least_one(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("auto_grouping_min_group_size must be greater than or equal to 1")
+        return v
+
+    @field_validator("auto_grouping_underperformance_threshold")
+    @classmethod
+    def auto_grouping_underperformance_threshold_in_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError(
+                "auto_grouping_underperformance_threshold must be between 0.0 and 1.0 inclusive"
+            )
+        return v
+
     @field_validator("jwt_secret_key")
     @classmethod
     def jwt_secret_key_min_length(cls, v: str) -> str:
