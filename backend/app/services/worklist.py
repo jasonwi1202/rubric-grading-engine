@@ -453,7 +453,7 @@ async def _load_persistent_group_memberships(
     for row in rows:
         for student_id_str in row.student_ids:
             try:
-                sid = uuid.UUID(str(student_id_str))
+                sid = uuid.UUID(student_id_str)
             except ValueError:
                 continue
             memberships[sid].add(row.skill_key)
@@ -481,6 +481,9 @@ async def _load_per_assignment_skill_scores_for_all_students(
     No student PII appears in this function or its log output.
     """
     from app.services.skill_normalization import normalize_criterion_name  # noqa: PLC0415
+    # Deferred to avoid circular-import issues during module initialisation.
+    # Python caches the module after the first import so the repeated calls
+    # inside the loop incur no additional overhead.
 
     rows_result = await db.execute(
         select(
@@ -547,6 +550,9 @@ async def _load_per_assignment_skill_scores_for_all_students(
                 min_s = int(crit.get("min_score", 0))
                 score_range = max_s - min_s
                 if score_range <= 0:
+                    # A zero-range criterion has min_score == max_score, meaning
+                    # all possible scores are equivalent.  Treat as fully achieved
+                    # so the criterion contributes no variance to the skill average.
                     normalised = 1.0
                 else:
                     normalised = max(0.0, min(1.0, (final_score - min_s) / score_range))
@@ -738,8 +744,13 @@ async def compute_and_persist_worklist(
         The newly persisted :class:`TeacherWorklistItem` ORM rows, ordered by
         urgency descending.
     """
-    computed_items = await generate_teacher_worklist(db, teacher_id)
+    # Capture the generation timestamp before the computation so all items
+    # carry a timestamp that reflects when the worklist run was initiated,
+    # not when the INSERT executes (which may be seconds later for large
+    # teacher rosters).  The same value is reused for created_at so both
+    # columns are identical and unambiguous.
     generated_at = datetime.now(UTC)
+    computed_items = await generate_teacher_worklist(db, teacher_id)
 
     # Delete all currently active items for this teacher.
     # Non-active items (snoozed, completed, dismissed) are preserved.
@@ -758,7 +769,6 @@ async def compute_and_persist_worklist(
         )
         return []
 
-    now = datetime.now(UTC)
     rows = [
         {
             "id": uuid.uuid4(),
@@ -773,7 +783,7 @@ async def compute_and_persist_worklist(
             "snoozed_until": None,
             "completed_at": None,
             "generated_at": generated_at,
-            "created_at": now,
+            "created_at": generated_at,
         }
         for item in computed_items
     ]

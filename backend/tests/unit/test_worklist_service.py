@@ -436,21 +436,22 @@ class TestCheckHighInconsistency:
         items = _check_high_inconsistency(student_id, {"evidence": [0.0]})
         assert items == []
 
-    def test_std_dev_threshold_boundary(self) -> None:
-        """A std dev exactly at the threshold does NOT fire (strictly greater required)."""
+    def test_std_dev_clearly_below_threshold_does_not_fire(self) -> None:
+        """A std dev well below the threshold does not trigger."""
         student_id = uuid.uuid4()
-        # Construct scores with std dev exactly equal to threshold.
-        # For 3 scores: 0, d, 2d where d = sqrt(2/3) * threshold_std
-        # Simpler: use binary scores and calculate exact threshold.
-        # For scores [m-s, m, m+s] std dev = s*sqrt(2/3).
-        # We want std = 0.20 → s = 0.20/sqrt(2/3) ≈ 0.245
-        # Let's just use scores [0.25, 0.50, 0.75] → mean=0.5, var=1/12≈0.0833, std≈0.289
-        # That's above threshold (0.20) so it fires.
-        # Use scores [0.40, 0.50, 0.60] → mean=0.5, var=1/75≈0.0133, std≈0.116
-        # That's below threshold so it doesn't fire.
+        # Scores [0.40, 0.50, 0.60]: mean=0.5, population std≈0.082,
+        # which is well below the 0.20 threshold.
         below_threshold_scores = [0.40, 0.50, 0.60]
         items = _check_high_inconsistency(student_id, {"evidence": below_threshold_scores})
-        assert items == []  # std ≈ 0.082, below 0.20
+        assert items == []
+
+    def test_std_dev_clearly_above_threshold_fires(self) -> None:
+        """A std dev well above the threshold triggers the signal."""
+        student_id = uuid.uuid4()
+        # Scores [0.1, 0.5, 0.9, 0.1]: population std ≈ 0.316, well above 0.20.
+        above_threshold_scores = [0.1, 0.5, 0.9, 0.1]
+        items = _check_high_inconsistency(student_id, {"evidence": above_threshold_scores})
+        assert len(items) == 1
 
     def test_details_contain_std_dev_and_assignment_count(self) -> None:
         student_id = uuid.uuid4()
