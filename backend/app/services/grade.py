@@ -487,6 +487,23 @@ async def lock_grade(
                 },
             )
 
+        # Enqueue worklist refresh asynchronously.  Non-fatal — a broker outage
+        # must not prevent the grade lock response from returning.
+        try:
+            from app.tasks.worklist import (  # noqa: PLC0415
+                refresh_teacher_worklist,
+            )
+
+            refresh_teacher_worklist.delay(str(grade_id), str(teacher_id))
+        except Exception as task_exc:
+            logger.warning(
+                "Failed to enqueue worklist refresh task after grade lock",
+                extra={
+                    "grade_id": str(grade_id),
+                    "error_type": type(task_exc).__name__,
+                },
+            )
+
     criterion_scores = await _load_criterion_scores(db, grade.id)
     return _build_grade_response(grade, criterion_scores)
 

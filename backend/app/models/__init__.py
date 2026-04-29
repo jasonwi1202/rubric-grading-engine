@@ -45,6 +45,7 @@ from app.models import (
     student_skill_profile as student_skill_profile,  # noqa: F401 — registers mapped class
 )
 from app.models import user as user  # noqa: F401 ΓÇö registers mapped class
+from app.models import worklist as worklist  # noqa: F401 — registers mapped class
 
 __all__ = [
     "assignment",
@@ -64,4 +65,5 @@ __all__ = [
     "student_group",
     "student_skill_profile",
     "user",
+    "worklist",
 ]
