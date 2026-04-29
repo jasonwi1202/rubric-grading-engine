@@ -24,6 +24,15 @@ Security invariants:
 - Task accepts only UUID strings — no full entity objects.
 - Data access is tenant-scoped through ``teacher_id`` in every query.
 - No student PII is logged — only entity IDs.
+
+Test note — ``asyncio`` import
+-------------------------------
+``asyncio`` is imported at module level so that tests can patch
+``app.tasks.auto_grouping.asyncio.run``.  This patches the ``run`` attribute
+on the shared ``asyncio`` module object, which also affects the
+``run_task_async()`` helper (defined in ``app.db.session``) because both
+references point to the same module singleton.  This is the same pattern used
+by ``app.tasks.skill_profile``.
 """
 
 from __future__ import annotations

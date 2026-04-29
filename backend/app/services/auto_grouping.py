@@ -231,6 +231,9 @@ async def compute_and_persist_groups(
 
     persisted: list[StudentGroup] = []
     for group in groups:
+        # The DELETE above removed all existing rows for this (teacher_id, class_id)
+        # pair, so no conflict on uq_student_groups_class_skill is possible here.
+        # A plain INSERT is both correct and more efficient than an upsert.
         stmt = (
             pg_insert(StudentGroup)
             .values(
@@ -242,15 +245,6 @@ async def compute_and_persist_groups(
                 student_ids=group["student_ids"],
                 student_count=group["student_count"],
                 computed_at=datetime.now(UTC),
-            )
-            .on_conflict_do_update(
-                constraint="uq_student_groups_class_skill",
-                set_={
-                    "label": group["label"],
-                    "student_ids": group["student_ids"],
-                    "student_count": group["student_count"],
-                    "computed_at": datetime.now(UTC),
-                },
             )
             .returning(StudentGroup)
         )
