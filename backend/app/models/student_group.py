@@ -14,6 +14,9 @@ Design decisions:
   COUNT-style queries without expanding the JSONB array.
 - ``computed_at`` records when this group was last recomputed so the M6-02 API
   can surface group freshness information.
+- ``stability`` tracks whether this group is newly formed ('new'), has
+  persisted across multiple computations ('persistent'), or previously existed
+  but no longer meets the minimum size threshold ('exited').
 """
 
 import uuid
@@ -81,4 +84,12 @@ class StudentGroup(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+    # Stability status: 'new' (first time this skill group appears),
+    # 'persistent' (group existed in the previous computation),
+    # 'exited' (was a group before but no longer meets the minimum size threshold).
+    stability: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="new",
     )

@@ -17,6 +17,7 @@ Endpoints:
   POST   /classes/{classId}/students/import/confirm     — commit a previously reviewed import
   DELETE /classes/{classId}/students/{studentId}        — soft-remove a student from the class
   GET    /classes/{classId}/insights                    — class-level skill averages, distributions, and common issues
+  GET    /classes/{classId}/groups                      — current auto-generated skill-gap groups with student lists and stability status
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ from app.services.class_ import (
     update_class,
 )
 from app.services.class_insights import get_class_insights
+from app.services.auto_grouping import list_class_groups
 from app.services.roster_import import (
     CsvParseResult,
     ParsedRow,
@@ -564,4 +566,48 @@ async def get_class_insights_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": insights.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /classes/{classId}/groups
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{class_id}/groups",
+    summary="Get current auto-generated skill-gap groups for a class",
+)
+async def get_class_groups_endpoint(
+    class_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return the current auto-generated skill-gap student groups for a class.
+
+    Groups are computed by the auto-grouping Celery task (M6-01) and updated
+    each time a grade is locked.  The response includes:
+
+    - **students** — the list of students sharing the skill gap, with names
+      and optional external IDs.  The ``students`` list is empty for 'exited'
+      groups (skill gap was present in the last run but is no longer active).
+    - **label** — human-readable description of the shared skill gap.
+    - **stability** — one of:
+        - ``'new'`` — first time this group appears for the class.
+        - ``'persistent'`` — group existed in the previous computation.
+        - ``'exited'`` — previously existed but no longer meets the minimum
+          size threshold (students improved or the class is too small).
+
+    Active groups (new/persistent) are returned first, sorted by label.
+    Exited groups follow, also sorted by label.
+
+    Returns an empty ``groups`` list when no groups have been computed yet.
+
+    Returns 403 if the class belongs to a different teacher.
+    Returns 404 if the class does not exist.
+    """
+    response = await list_class_groups(db, teacher.id, class_id)
+    return JSONResponse(
+        status_code=200,
+        content={"data": response.model_dump(mode="json")},
     )
