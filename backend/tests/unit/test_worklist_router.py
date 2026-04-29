@@ -14,10 +14,9 @@ Endpoints under test:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
@@ -297,11 +296,12 @@ class TestSnoozeWorklistItemEndpoint:
         """An empty body (or omitted snoozed_until) is valid — service applies default."""
         teacher = _make_teacher()
         item_id = uuid.uuid4()
+        _fixed_snooze = datetime(2026, 5, 7, 0, 0, 0, tzinfo=UTC)  # fixed 7-day deferral
         item = _make_worklist_item(
             item_id=item_id,
             teacher_id=teacher.id,
             status="snoozed",
-            snoozed_until=datetime.now(UTC) + timedelta(days=7),
+            snoozed_until=_fixed_snooze,
         )
         client = _client(teacher)
         captured_snooze_until: list[object] = []

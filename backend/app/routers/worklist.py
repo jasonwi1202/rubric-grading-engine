@@ -47,7 +47,7 @@ def _item_response(item: TeacherWorklistItem) -> WorklistItemResponse:
     return WorklistItemResponse(
         id=item.id,
         student_id=item.student_id,
-        trigger_type=item.trigger_type,  # type: ignore[arg-type]
+        trigger_type=item.trigger_type,  # type: ignore[arg-type]  # ORM stores str; schema expects TriggerType StrEnum (compatible at runtime)
         skill_key=item.skill_key,
         urgency=item.urgency,
         suggested_action=item.suggested_action,

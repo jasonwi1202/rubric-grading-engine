@@ -112,6 +112,21 @@ _TRIGGER_ORDER: dict[str, int] = {
 }
 
 
+def _trigger_order_case_expr() -> object:
+    """Return a SQLAlchemy CASE expression for deterministic trigger-type ordering.
+
+    Produces the same ordering used by :func:`_rank_items` so that DB queries
+    return rows in the identical sequence to the in-memory sort.  Both
+    :func:`compute_and_persist_worklist` and :func:`get_worklist_for_teacher`
+    use this helper to avoid duplicating the mapping.
+    """
+    return case(
+        {v: k for k, v in _TRIGGER_ORDER.items()},
+        value=TeacherWorklistItem.trigger_type,
+        else_=99,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Internal data structure
 # ---------------------------------------------------------------------------
@@ -812,11 +827,6 @@ async def compute_and_persist_worklist(
 
     # Reload inserted rows with the same deterministic ordering as _rank_items:
     # urgency desc → trigger_type order → skill_key (NULLs first, then alpha) → student_id.
-    trigger_order_expr = case(
-        {v: k for k, v in enumerate(("regression", "non_responder", "persistent_gap", "high_inconsistency"))},
-        value=TeacherWorklistItem.trigger_type,
-        else_=99,
-    )
     result = await db.execute(
         select(TeacherWorklistItem)
         .where(
@@ -826,7 +836,7 @@ async def compute_and_persist_worklist(
         )
         .order_by(
             TeacherWorklistItem.urgency.desc(),
-            trigger_order_expr,
+            _trigger_order_case_expr(),
             nulls_first(TeacherWorklistItem.skill_key.asc()),
             TeacherWorklistItem.student_id.asc(),
         )
@@ -874,11 +884,6 @@ async def get_worklist_for_teacher(
         Ordered list of :class:`TeacherWorklistItem` ORM rows.
     """
     now = datetime.now(UTC)
-    trigger_order_expr = case(
-        {v: k for k, v in enumerate(("regression", "non_responder", "persistent_gap", "high_inconsistency"))},
-        value=TeacherWorklistItem.trigger_type,
-        else_=99,
-    )
     result = await db.execute(
         select(TeacherWorklistItem)
         .where(
@@ -895,7 +900,7 @@ async def get_worklist_for_teacher(
         )
         .order_by(
             TeacherWorklistItem.urgency.desc(),
-            trigger_order_expr,
+            _trigger_order_case_expr(),
             nulls_first(TeacherWorklistItem.skill_key.asc()),
             TeacherWorklistItem.student_id.asc(),
         )
