@@ -49,6 +49,7 @@ from app.services.assignment import (
     create_assignment,
     list_assignments,
 )
+from app.services.auto_grouping import list_class_groups
 from app.services.class_ import (
     archive_class,
     create_class,
@@ -57,7 +58,6 @@ from app.services.class_ import (
     update_class,
 )
 from app.services.class_insights import get_class_insights
-from app.services.auto_grouping import list_class_groups
 from app.services.roster_import import (
     CsvParseResult,
     ParsedRow,

@@ -480,7 +480,7 @@ async def list_class_groups(
             label=group.label,
             student_count=group.student_count,
             students=students_in_group,
-            stability=group.stability,  # type: ignore[arg-type]
+            stability=group.stability,
             computed_at=group.computed_at,
         )
 
