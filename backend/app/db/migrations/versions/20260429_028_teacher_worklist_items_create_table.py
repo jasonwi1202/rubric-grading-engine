@@ -135,17 +135,20 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 2. Indexes — teacher_id and student_id for fast tenant-scoped reads
+    # 2. Indexes — teacher_id and student_id for fast tenant-scoped reads.
+    #    Created concurrently so the table is not locked during the migration.
     # ------------------------------------------------------------------
     op.create_index(
         "ix_teacher_worklist_items_teacher_id",
         "teacher_worklist_items",
         ["teacher_id"],
+        postgresql_concurrently=True,
     )
     op.create_index(
         "ix_teacher_worklist_items_student_id",
         "teacher_worklist_items",
         ["student_id"],
+        postgresql_concurrently=True,
     )
 
     # ------------------------------------------------------------------

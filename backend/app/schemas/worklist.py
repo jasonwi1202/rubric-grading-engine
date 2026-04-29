@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class TriggerType(str, Enum):
+class TriggerType(StrEnum):
     """Worklist signal types.
 
     Ordered from most to least urgent for documentation purposes.
@@ -27,7 +27,7 @@ class TriggerType(str, Enum):
     high_inconsistency = "high_inconsistency"
 
 
-class WorklistItemStatus(str, Enum):
+class WorklistItemStatus(StrEnum):
     """Lifecycle status of a worklist item."""
 
     active = "active"

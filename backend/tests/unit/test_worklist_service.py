@@ -66,8 +66,6 @@ import uuid
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.services.worklist import (
     _GAP_MIN_ASSIGNMENTS,
     _GAP_SCORE_THRESHOLD,
@@ -78,17 +76,16 @@ from app.services.worklist import (
     _URGENCY_NON_RESPONDER,
     _URGENCY_PERSISTENT_GAP,
     _URGENCY_REGRESSION,
-    _WorklistItemData,
     _check_high_inconsistency,
     _check_non_responder,
     _check_persistent_gap,
     _check_regression,
     _rank_items,
     _suggested_action,
+    _WorklistItemData,
 )
-from app.tasks.worklist import refresh_teacher_worklist
 from app.tasks.celery_app import celery
-
+from app.tasks.worklist import refresh_teacher_worklist
 
 # ---------------------------------------------------------------------------
 # Helpers

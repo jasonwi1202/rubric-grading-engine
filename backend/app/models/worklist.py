@@ -25,6 +25,7 @@ Design decisions:
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -65,7 +66,7 @@ class TeacherWorklistItem(Base):
     # Concrete action suggestion for the teacher.
     suggested_action: Mapped[str] = mapped_column(Text, nullable=False)
     # Signal-specific context: std_dev, avg_score, improvement, etc.
-    details: Mapped[dict] = mapped_column(
+    details: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         server_default="'{}'::jsonb",
