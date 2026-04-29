@@ -35,6 +35,13 @@ RLS:
   Enables FORCE ROW LEVEL SECURITY and a "tenant_isolation" PERMISSIVE
   policy matching the pattern used by all other tenant-scoped tables.
 
+Zero-downtime: Two ``CREATE INDEX CONCURRENTLY`` calls build the
+  ``teacher_id`` and ``student_id`` indexes without holding a table-level
+  lock.  Each runs inside ``autocommit_block()`` so PostgreSQL sees them
+  outside a transaction, which is required for ``CONCURRENTLY`` index
+  builds.  Alembic's per-migration transaction is therefore disabled via
+  ``transaction_per_migration = False``.
+
 Downgrade:
   Drops the policy, disables RLS, then drops the table.
 """
@@ -50,6 +57,11 @@ revision: str = "028_teacher_worklist_items"
 down_revision: str | None = "027_student_groups_add_stability"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+# Setting this to False tells Alembic to run this migration outside the
+# default per-migration transaction so the concurrent index builds succeed.
+transaction_per_migration = False
 
 
 def upgrade() -> None:

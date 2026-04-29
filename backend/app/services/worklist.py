@@ -63,6 +63,7 @@ from app.models.essay import Essay, EssayVersion
 from app.models.grade import CriterionScore, Grade
 from app.models.student_group import StudentGroup
 from app.models.student_skill_profile import StudentSkillProfile
+from app.models.user import User
 from app.models.worklist import TeacherWorklistItem
 
 logger = logging.getLogger(__name__)
@@ -727,10 +728,15 @@ async def compute_and_persist_worklist(
     Generates the ranked worklist via :func:`generate_teacher_worklist`, then
     within a single transaction:
 
-    1. Deletes all existing ``active`` items for the teacher (preserving
+    1. Acquires a ``SELECT … FOR UPDATE`` row lock on the ``users`` row for
+       this teacher to serialise concurrent invocations (e.g. two Celery
+       tasks triggered by rapid grade locks).  Without this lock both tasks
+       would DELETE before either INSERT commits, leaving duplicated
+       ``active`` rows after both transactions commit.
+    2. Deletes all existing ``active`` items for the teacher (preserving
        ``snoozed``, ``completed``, and ``dismissed`` items for audit purposes
        and so that lifecycle transitions survive a recomputation).
-    2. Inserts the freshly computed items with ``status='active'``.
+    3. Inserts the freshly computed items with ``status='active'``.
 
     Idempotency: Running this function twice with the same DB state produces
     the same set of active items (item UUIDs differ between runs, which is
@@ -755,6 +761,15 @@ async def compute_and_persist_worklist(
     # columns are identical and unambiguous.
     generated_at = datetime.now(UTC)
     computed_items = await generate_teacher_worklist(db, teacher_id)
+
+    # Acquire a row-level lock on the users row to serialise concurrent
+    # refresh tasks for the same teacher.  Without this lock, two tasks
+    # triggered by rapid grade locks can both DELETE before either INSERT
+    # commits, causing both to INSERT the full item set and leaving
+    # duplicated active rows.  The lock is released at transaction commit.
+    await db.execute(
+        select(User.id).where(User.id == teacher_id).with_for_update()
+    )
 
     # Delete all currently active items for this teacher.
     # Non-active items (snoozed, completed, dismissed) are preserved.
