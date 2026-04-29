@@ -56,6 +56,7 @@ celery = Celery(
         "app.tasks.export",
         "app.tasks.embedding",
         "app.tasks.skill_profile",
+        "app.tasks.auto_grouping",
     ],
 )
 
@@ -150,6 +151,7 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
     # the new session factory rather than the parent's captured binding.  Task
     # modules do `from app.db.session import AsyncSessionLocal` at import time,
     # so replacing session_module.AsyncSessionLocal alone is not enough.
+    import app.tasks.auto_grouping as _auto_grouping_module  # noqa: PLC0415
     import app.tasks.embedding as _embedding_module  # noqa: PLC0415
     import app.tasks.grading as _grading_module  # noqa: PLC0415
     import app.tasks.skill_profile as _skill_profile_module  # noqa: PLC0415
@@ -157,6 +159,7 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
     _grading_module.AsyncSessionLocal = new_session_factory
     _embedding_module.AsyncSessionLocal = new_session_factory
     _skill_profile_module.AsyncSessionLocal = new_session_factory
+    _auto_grouping_module.AsyncSessionLocal = new_session_factory
 
 
 @before_task_publish.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
