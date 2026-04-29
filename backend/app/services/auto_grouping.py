@@ -625,9 +625,9 @@ async def update_group_members(
             stability=new_stability,
         )
     )
-    if update_result.rowcount != 1:
+    if update_result.rowcount == 0:
         await db.rollback()
-        raise ForbiddenError("You do not have access to this student group.")
+        raise NotFoundError("Group not found.")
     await db.commit()
     # No db.refresh() needed — the updated values are already known from the
     # UPDATE statement above; avoid an extra round-trip to the database.

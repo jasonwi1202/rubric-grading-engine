@@ -268,7 +268,7 @@ Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (cla
 
 **PATCH /classes/{classId}/groups/{groupId}** (requires JWT)
 
-Manually replaces the student membership of a skill-gap group. The supplied `student_ids` list becomes the new membership in full. Deduplicates student IDs while preserving order. An empty list transitions the group to `stability='exited'`.
+Manually replaces the student membership of a skill-gap group. The supplied `student_ids` list becomes the new membership in full. Duplicate student IDs are removed while preserving the submitted order of the resulting membership list. The returned `students` array is sorted by `full_name` for deterministic UI ordering and therefore does not necessarily match the submitted order. An empty list transitions the group to `stability='exited'`.
 
 **Request body:**
 ```json
