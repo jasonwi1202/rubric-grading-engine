@@ -54,7 +54,7 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.student import Student
@@ -79,21 +79,26 @@ async def _assert_class_owned_by(
     class_id: uuid.UUID,
     teacher_id: uuid.UUID,
 ) -> None:
-    """Verify that the class exists and is accessible to the given teacher.
+    """Verify that the class exists and belongs to the given teacher.
 
-    The query is scoped to the teacher's own rows (``WHERE teacher_id = ?``),
-    which is consistent with RLS behaviour in production: a class that exists
-    but belongs to a different teacher is indistinguishable from one that does
-    not exist at all.  Both cases raise :exc:`~app.exceptions.NotFoundError`.
+    Performs a two-step ownership check that mirrors the pattern used by other
+    class services (e.g. :func:`app.services.class_._get_class_owned_by`):
+    first queries by ``class_id`` only to determine existence, then verifies
+    ``teacher_id`` to raise the appropriate error.  This produces the documented
+    API semantics — ``404`` when the class does not exist and ``403`` when it
+    belongs to a different teacher — consistent with the rest of the codebase
+    and the security policy documented in ``docs/architecture/security.md``.
 
     Raises:
-        NotFoundError:  Class does not exist or is not accessible to this teacher.
+        NotFoundError:  Class does not exist.
+        ForbiddenError: Class exists but belongs to a different teacher.
     """
-    result = await db.execute(
-        select(Class.id).where(Class.id == class_id, Class.teacher_id == teacher_id)
-    )
-    if result.one_or_none() is None:
+    result = await db.execute(select(Class.id, Class.teacher_id).where(Class.id == class_id))
+    row = result.one_or_none()
+    if row is None:
         raise NotFoundError("Class not found.")
+    if row.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this class.")
 
 
 async def _load_enrolled_student_ids(
@@ -270,7 +275,8 @@ async def compute_and_persist_groups(
         met the minimum size threshold).
 
     Raises:
-        NotFoundError:  Class does not exist or is not accessible to this teacher.
+        NotFoundError:  Class does not exist.
+        ForbiddenError: Class belongs to a different teacher.
         ConflictError:  Concurrent task conflict — caller should retry.
     """
     await _assert_class_owned_by(db, class_id, teacher_id)
@@ -429,8 +435,7 @@ async def list_class_groups(
     then exited groups sorted by label.
 
     Tenant isolation is enforced via ``teacher_id`` in every query; cross-teacher
-    access and missing classes both surface as :exc:`~app.exceptions.NotFoundError`
-    (consistent with Row-Level Security behaviour in production).
+    access raises :exc:`~app.exceptions.ForbiddenError`.
 
     Args:
         db:          Async database session.
@@ -441,7 +446,8 @@ async def list_class_groups(
         :class:`ClassGroupsResponse` with all groups.
 
     Raises:
-        NotFoundError:  Class does not exist or is not accessible to this teacher.
+        NotFoundError:  Class does not exist.
+        ForbiddenError: Class belongs to a different teacher.
     """
     await _assert_class_owned_by(db, class_id, teacher_id)
 

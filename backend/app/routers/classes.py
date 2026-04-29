@@ -603,8 +603,8 @@ async def get_class_groups_endpoint(
 
     Returns an empty ``groups`` list when no groups have been computed yet.
 
-    Returns 404 if the class does not exist or is not accessible to the
-    requesting teacher (consistent with Row-Level Security behaviour).
+    Returns 403 if the class belongs to a different teacher.
+    Returns 404 if the class does not exist.
     """
     response = await list_class_groups(db, teacher.id, class_id)
     return JSONResponse(

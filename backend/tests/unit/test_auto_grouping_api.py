@@ -3,7 +3,7 @@
 Tests cover:
 - Happy path: returns groups with correct shape and envelope.
 - Empty groups: returns empty list when no groups have been computed.
-- Cross-teacher denial: returns 404 (class not found under RLS).
+- Cross-teacher denial: returns 403.
 - Not found: returns 404 when class does not exist.
 - Authentication required: returns 401 when no credentials.
 - Router passes teacher_id to service correctly.
@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
-from app.exceptions import NotFoundError
+from app.exceptions import ForbiddenError, NotFoundError
 from app.main import create_app
 from app.schemas.student_group import (
     ClassGroupsResponse,
@@ -244,13 +244,8 @@ class TestGetClassGroups:
         assert resp.status_code == 404
         assert resp.json()["error"]["code"] == "NOT_FOUND"
 
-    def test_returns_404_for_inaccessible_class(self) -> None:
-        """Cross-teacher (or non-existent) class returns 404 under RLS.
-
-        With Row-Level Security enabled in production, a class that belongs to
-        a different teacher is indistinguishable from one that does not exist:
-        both raise NotFoundError and surface as 404.
-        """
+    def test_returns_403_for_other_teachers_class(self) -> None:
+        """Cross-teacher access must return 403."""
         teacher = _make_teacher()
         class_id = uuid.uuid4()
         app = _app_with_teacher(teacher)
@@ -258,14 +253,14 @@ class TestGetClassGroups:
             patch(
                 "app.routers.classes.list_class_groups",
                 new_callable=AsyncMock,
-                side_effect=NotFoundError("Class not found."),
+                side_effect=ForbiddenError("You do not have access to this class."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.get(f"/api/v1/classes/{class_id}/groups")
 
-        assert resp.status_code == 404
-        assert resp.json()["error"]["code"] == "NOT_FOUND"
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
 
     def test_requires_authentication(self) -> None:
         """Unauthenticated request must return 401."""
