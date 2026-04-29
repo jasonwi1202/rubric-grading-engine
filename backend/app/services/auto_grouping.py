@@ -27,7 +27,8 @@ Tenant isolation:
   - ``teacher_id`` is passed explicitly to every query.
   - Class ownership is verified in every query via a WHERE clause on teacher_id.
   - The RLS tenant context (``app.current_teacher_id``) is set by the Celery
-    task before opening the database session; see ``app.tasks.auto_grouping``.
+    task on the opened database session before any tenant-scoped queries run;
+    see ``app.tasks.auto_grouping``.
   - No student PII (names, essay content, raw scores) is written to log
     statements — only entity IDs.
 

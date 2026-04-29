@@ -6,12 +6,13 @@ Tests cover:
 - Service: min_group_size threshold filters out singleton groups.
 - Service: students with no skill profile are skipped.
 - Service: skills above the underperformance threshold are excluded.
-- Task happy-path: resolves class_id, calls compute_and_persist_groups.
+- Task happy-path: resolves class_id, calls compute_and_persist_groups, and
+  asserts set_tenant_context is awaited (RLS context activation).
 - Task: NotFoundError and ForbiddenError are swallowed (no retry).
 - Task: transient errors trigger exponential-backoff retry then FAILURE.
+- Task: ConflictError (concurrent race) triggers retry.
 - Task: idempotent on second call.
 - Lock-trigger: lock_grade enqueues compute_class_groups task.
-- Tenant isolation: task payload with a different teacher's grade is denied.
 
 No student PII in any fixture.  All database and broker calls are mocked.
 """
@@ -294,6 +295,12 @@ class TestRunComputeClassGroups:
 
     @pytest.mark.asyncio
     async def test_forbidden_error_propagates(self) -> None:
+        """ForbiddenError from compute_and_persist_groups propagates to the task."""
+        # _get_class_id_for_grade only raises NotFoundError (FORCE RLS makes a
+        # follow-up existence check indistinguishable from 404).  ForbiddenError
+        # can still arrive from compute_and_persist_groups → _assert_class_owned_by
+        # when the class ownership check is done without the RLS tenant context.
+        # This test verifies that _run_compute_class_groups propagates it.
         with (
             patch(
                 "app.tasks.auto_grouping._get_class_id_for_grade",

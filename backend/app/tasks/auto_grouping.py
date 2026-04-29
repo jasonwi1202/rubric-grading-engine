@@ -64,9 +64,14 @@ async def _get_class_id_for_grade(
     The query is fully tenant-scoped (joins through Class.teacher_id) so a
     spoofed grade_id cannot expose another teacher's data.
 
+    Note: with FORCE ROW LEVEL SECURITY enabled on the ``grades`` table (see
+    migration ``020_rls_tenant_isolation``), a follow-up existence check
+    against the same session cannot distinguish a missing grade from a
+    cross-tenant grade — the RLS policy hides both identically.  Any missing
+    or cross-tenant grade is therefore surfaced as ``NotFoundError``.
+
     Raises:
-        NotFoundError:  Grade not found.
-        ForbiddenError: Grade exists but belongs to a different teacher.
+        NotFoundError: Grade not found or belongs to a different teacher.
     """
     from sqlalchemy import select  # noqa: PLC0415
 
@@ -92,10 +97,7 @@ async def _get_class_id_for_grade(
         result = row.one_or_none()
 
         if result is None:
-            exists_row = await db.execute(select(Grade.id).where(Grade.id == grade_id))
-            if exists_row.scalar_one_or_none() is None:
-                raise NotFoundError("Grade not found.")
-            raise ForbiddenError("You do not have access to this grade.")
+            raise NotFoundError("Grade not found.")
 
     return cast(uuid.UUID, result.class_id)
 
