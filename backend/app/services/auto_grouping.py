@@ -54,7 +54,7 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.exceptions import ConflictError, NotFoundError
 from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.student import Student
@@ -79,18 +79,21 @@ async def _assert_class_owned_by(
     class_id: uuid.UUID,
     teacher_id: uuid.UUID,
 ) -> None:
-    """Verify that the class exists and belongs to the given teacher.
+    """Verify that the class exists and is accessible to the given teacher.
+
+    The query is scoped to the teacher's own rows (``WHERE teacher_id = ?``),
+    which is consistent with RLS behaviour in production: a class that exists
+    but belongs to a different teacher is indistinguishable from one that does
+    not exist at all.  Both cases raise :exc:`~app.exceptions.NotFoundError`.
 
     Raises:
-        NotFoundError:  Class does not exist.
-        ForbiddenError: Class exists but belongs to a different teacher.
+        NotFoundError:  Class does not exist or is not accessible to this teacher.
     """
-    result = await db.execute(select(Class.id, Class.teacher_id).where(Class.id == class_id))
-    row = result.one_or_none()
-    if row is None:
+    result = await db.execute(
+        select(Class.id).where(Class.id == class_id, Class.teacher_id == teacher_id)
+    )
+    if result.one_or_none() is None:
         raise NotFoundError("Class not found.")
-    if row.teacher_id != teacher_id:
-        raise ForbiddenError("You do not have access to this class.")
 
 
 async def _load_enrolled_student_ids(
@@ -267,32 +270,24 @@ async def compute_and_persist_groups(
         met the minimum size threshold).
 
     Raises:
-        NotFoundError:  Class does not exist.
-        ForbiddenError: Class belongs to a different teacher.
+        NotFoundError:  Class does not exist or is not accessible to this teacher.
         ConflictError:  Concurrent task conflict — caller should retry.
     """
     await _assert_class_owned_by(db, class_id, teacher_id)
-
-    # Snapshot active skill_keys before DELETE so we can compute stability.
-    previous_active_skill_keys = await _load_existing_active_skill_keys(
-        db, teacher_id, class_id
-    )
 
     student_ids = await _load_enrolled_student_ids(db, class_id, teacher_id)
 
     profiles = await _load_skill_profiles(db, teacher_id, student_ids)
 
-    groups = _build_groups(
+    # Compute clusters outside the lock — this is the expensive work.  Stability
+    # is NOT assigned here; it will be applied once we hold the lock and have a
+    # consistent view of the previous groups.
+    raw_clusters = _build_groups(
         profiles,
         underperformance_threshold,
         min_group_size,
-        previous_active_skill_keys=previous_active_skill_keys,
+        previous_active_skill_keys=None,  # stability tagged inside the lock
     )
-
-    # Determine exited groups: skill_keys that were active before but produced
-    # no new cluster in this computation run.
-    new_skill_keys = {g["skill_key"] for g in groups}
-    exited_skill_keys = previous_active_skill_keys - new_skill_keys
 
     # ------------------------------------------------------------------
     # Acquire a row-level lock on the Class to serialise concurrent task
@@ -308,6 +303,28 @@ async def compute_and_persist_groups(
             Class.teacher_id == teacher_id,
         ).with_for_update()
     )
+
+    # Load previous active skill keys AFTER acquiring the lock so stability
+    # and exited classification are based on the committed state that is now
+    # frozen for the duration of this transaction.  Loading them before the
+    # lock creates a window where a concurrent task can commit new groups
+    # between the snapshot and the lock, causing incorrect new/persistent/
+    # exited labels for the race winner.
+    previous_active_skill_keys = await _load_existing_active_skill_keys(
+        db, teacher_id, class_id
+    )
+
+    # Apply stability to the pre-computed clusters using the locked snapshot.
+    prev_keys = previous_active_skill_keys
+    groups = [
+        {**cluster, "stability": "persistent" if cluster["skill_key"] in prev_keys else "new"}
+        for cluster in raw_clusters
+    ]
+
+    # Determine exited groups: skill_keys that were active before but produced
+    # no new cluster in this computation run.
+    new_skill_keys = {g["skill_key"] for g in groups}
+    exited_skill_keys = previous_active_skill_keys - new_skill_keys
 
     persisted: list[StudentGroup] = []
     computed_at = datetime.now(UTC)
@@ -406,7 +423,8 @@ async def list_class_groups(
     then exited groups sorted by label.
 
     Tenant isolation is enforced via ``teacher_id`` in every query; cross-teacher
-    access raises :exc:`~app.exceptions.ForbiddenError`.
+    access and missing classes both surface as :exc:`~app.exceptions.NotFoundError`
+    (consistent with Row-Level Security behaviour in production).
 
     Args:
         db:          Async database session.
@@ -417,8 +435,7 @@ async def list_class_groups(
         :class:`ClassGroupsResponse` with all groups.
 
     Raises:
-        NotFoundError:  Class does not exist.
-        ForbiddenError: Class belongs to a different teacher.
+        NotFoundError:  Class does not exist or is not accessible to this teacher.
     """
     await _assert_class_owned_by(db, class_id, teacher_id)
 
@@ -440,10 +457,15 @@ async def list_class_groups(
     # Batch-fetch student records for all referenced students, tenant-scoped.
     student_map: dict[str, StudentInGroupResponse] = {}
     if all_student_id_strs:
-        try:
-            student_uuids = [uuid.UUID(s) for s in all_student_id_strs]
-        except ValueError:
-            student_uuids = []
+        student_uuids: list[uuid.UUID] = []
+        for s in all_student_id_strs:
+            try:
+                student_uuids.append(uuid.UUID(s))
+            except ValueError:
+                logger.warning(
+                    "Skipping malformed student_id in group record",
+                    extra={"class_id": str(class_id)},
+                )
 
         if student_uuids:
             students_result = await db.execute(
