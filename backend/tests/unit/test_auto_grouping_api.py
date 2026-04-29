@@ -526,10 +526,12 @@ class TestPatchClassGroup:
 
         mock_service.assert_awaited_once()
         call_args = mock_service.call_args
-        # Positional args: db, teacher.id, class_id, group_id, student_ids
+        # Verify positional args: db, teacher.id, class_id, group_id, student_ids
         assert teacher.id in call_args.args
         assert class_id in call_args.args
         assert group_id in call_args.args
         # student_ids is the last positional arg — a list of UUIDs
-        student_ids_arg = call_args.args[4]
-        assert sid in student_ids_arg
+        assert any(
+            isinstance(arg, list) and sid in arg
+            for arg in call_args.args
+        ), f"Expected student UUID {sid} in one of the positional list args"

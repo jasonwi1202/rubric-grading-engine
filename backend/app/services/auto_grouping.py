@@ -581,14 +581,14 @@ async def update_group_members(
         raise NotFoundError("Group not found.")
 
     # Deduplicate while preserving order.
-    seen: set[str] = set()
-    unique_ids: list[str] = []
+    seen: set[uuid.UUID] = set()
+    unique_ids_uuid: list[uuid.UUID] = []
     for sid in student_ids:
-        s = str(sid)
-        if s not in seen:
-            seen.add(s)
-            unique_ids.append(s)
+        if sid not in seen:
+            seen.add(sid)
+            unique_ids_uuid.append(sid)
 
+    unique_ids: list[str] = [str(s) for s in unique_ids_uuid]
     new_count = len(unique_ids)
 
     # Determine new stability: empty list → exited, otherwise preserve
@@ -610,16 +610,16 @@ async def update_group_members(
         )
     )
     await db.commit()
-    await db.refresh(group)
+    # No db.refresh() needed — the updated values are already known from the
+    # UPDATE statement above; avoid an extra round-trip to the database.
 
     # Resolve student names for the response, tenant-scoped.
     students_in_group: list[StudentInGroupResponse] = []
-    if unique_ids:
-        student_uuids = [uuid.UUID(s) for s in unique_ids]
+    if unique_ids_uuid:
         students_result = await db.execute(
             select(Student.id, Student.full_name, Student.external_id).where(
                 Student.teacher_id == teacher_id,
-                Student.id.in_(student_uuids),
+                Student.id.in_(unique_ids_uuid),
             )
         )
         # Build map for ordering.
@@ -641,8 +641,8 @@ async def update_group_members(
         id=group.id,
         skill_key=group.skill_key,
         label=group.label,
-        student_count=group.student_count,
+        student_count=new_count,
         students=students_in_group,
-        stability=group.stability,  # type: ignore[arg-type]
+        stability=new_stability,  # type: ignore[arg-type]  # new_stability is str; Pydantic coerces to Literal
         computed_at=group.computed_at,
     )

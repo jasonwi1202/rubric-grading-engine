@@ -270,7 +270,7 @@ describe("SkillGroupsPanel — expand / collapse", () => {
     await user.click(screen.getByRole("button", { name: /expand group/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /add student to evidence/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/add student to evidence/i)).toBeInTheDocument();
     });
   });
 });
@@ -327,10 +327,10 @@ describe("SkillGroupsPanel — manual adjustment", () => {
     await user.click(screen.getByRole("button", { name: /expand group/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /add student to evidence/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/add student to evidence/i)).toBeInTheDocument();
     });
 
-    const select = screen.getByRole("combobox", { name: /add student to evidence/i });
+    const select = screen.getByLabelText(/add student to evidence/i);
     await user.selectOptions(select, "stu-003");
 
     await waitFor(() => {

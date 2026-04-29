@@ -76,6 +76,9 @@ function GroupCard({ group, classId, enrolledStudents }: GroupCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  // selectKey is incremented after a successful add to force the <select>
+  // to remount with the placeholder option selected again.
+  const [selectKey, setSelectKey] = useState(0);
 
   const currentIds = group.students.map((s) => s.id);
 
@@ -114,10 +117,12 @@ function GroupCard({ group, classId, enrolledStudents }: GroupCardProps) {
     const newIds = [...currentIds, studentId];
     setAddError(null);
     patchMutation.mutate(newIds, {
+      onSuccess: () => {
+        // Force the <select> to remount so it resets to the placeholder option.
+        setSelectKey((k) => k + 1);
+      },
       onError: () => setAddError("Failed to add student. Please try again."),
     });
-    // Reset the select back to the placeholder.
-    e.target.value = "";
   };
 
   const isActive = group.stability !== "exited";
@@ -227,6 +232,7 @@ function GroupCard({ group, classId, enrolledStudents }: GroupCardProps) {
                 Add student to {group.label}
               </label>
               <select
+                key={selectKey}
                 id={`add-student-${group.id}`}
                 onChange={handleAddStudent}
                 disabled={patchMutation.isPending}
