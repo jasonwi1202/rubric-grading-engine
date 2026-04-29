@@ -65,10 +65,10 @@ async def _get_class_id_for_grade(
     spoofed grade_id cannot expose another teacher's data.
 
     Note: with FORCE ROW LEVEL SECURITY enabled on the ``grades`` table (see
-    migration ``020_rls_tenant_isolation``), a follow-up existence check
-    against the same session cannot distinguish a missing grade from a
-    cross-tenant grade — the RLS policy hides both identically.  Any missing
-    or cross-tenant grade is therefore surfaced as ``NotFoundError``.
+    migration ``20260424_020_rls_enable_tenant_isolation``), a follow-up
+    existence check against the same session cannot distinguish a missing grade
+    from a cross-tenant grade — the RLS policy hides both identically.  Any
+    missing or cross-tenant grade is therefore surfaced as ``NotFoundError``.
 
     Raises:
         NotFoundError: Grade not found or belongs to a different teacher.
