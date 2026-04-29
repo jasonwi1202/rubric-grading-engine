@@ -18,6 +18,7 @@ Endpoints:
   DELETE /classes/{classId}/students/{studentId}        — soft-remove a student from the class
   GET    /classes/{classId}/insights                    — class-level skill averages, distributions, and common issues
   GET    /classes/{classId}/groups                      — current auto-generated skill-gap groups with student lists and stability status
+  PATCH  /classes/{classId}/groups/{groupId}            — manually adjust student membership of a skill-gap group
 """
 
 from __future__ import annotations
@@ -45,11 +46,12 @@ from app.schemas.roster_import import (
     ImportRowStatus,
 )
 from app.schemas.student import EnrolledStudentResponse, EnrollStudentRequest, StudentResponse
+from app.schemas.student_group import PatchGroupMembersRequest, StudentGroupResponse
 from app.services.assignment import (
     create_assignment,
     list_assignments,
 )
-from app.services.auto_grouping import list_class_groups
+from app.services.auto_grouping import list_class_groups, update_group_members
 from app.services.class_ import (
     archive_class,
     create_class,
@@ -610,4 +612,51 @@ async def get_class_groups_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": response.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# PATCH /classes/{classId}/groups/{groupId}
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/{class_id}/groups/{group_id}",
+    summary="Manually adjust student membership of a skill-gap group",
+)
+async def patch_class_group_endpoint(
+    class_id: uuid.UUID,
+    group_id: uuid.UUID,
+    payload: PatchGroupMembersRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Replace the student membership of a skill-gap group.
+
+    Accepts a ``student_ids`` list that fully replaces the current group
+    membership.  The update does **not** affect the underlying
+    ``StudentSkillProfile`` data — it only adjusts which students are
+    associated with this group record.
+
+    Stability transitions:
+    - If the list is empty, the group's ``stability`` becomes ``'exited'``.
+    - If the group was previously ``'exited'`` and now receives students,
+      its ``stability`` becomes ``'persistent'``.
+    - Otherwise the existing stability value is preserved.
+
+    Returns the updated group with resolved student names.
+
+    Returns 403 if the class belongs to a different teacher.
+    Returns 404 if the class or group does not exist.
+    """
+    updated = await update_group_members(
+        db,
+        teacher.id,
+        class_id,
+        group_id,
+        payload.student_ids,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": updated.model_dump(mode="json")},
     )

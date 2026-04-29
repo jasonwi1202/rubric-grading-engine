@@ -50,7 +50,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -529,4 +529,120 @@ async def list_class_groups(
     return ClassGroupsResponse(
         class_id=class_id,
         groups=active_groups + exited_groups,
+    )
+
+
+async def update_group_members(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID,
+    group_id: uuid.UUID,
+    student_ids: list[uuid.UUID],
+) -> StudentGroupResponse:
+    """Manually adjust the student membership of a skill-gap group.
+
+    Replaces the group's ``student_ids`` with the supplied list (deduplicated).
+    Updates ``student_count`` to match.  When the list is empty, the group's
+    stability is set to ``'exited'`` to reflect that the gap is resolved.
+    When previously exited and now receiving students, stability becomes
+    ``'persistent'`` to indicate a manually re-activated group.
+
+    Tenant isolation: every query includes ``teacher_id``.  The group record
+    is fetched by ``(group_id, class_id, teacher_id)`` in a single query so
+    ownership of both the class and the group are verified together.
+
+    Args:
+        db:          Async database session.
+        teacher_id:  UUID of the authenticated teacher.
+        class_id:    UUID of the class the group belongs to.
+        group_id:    UUID of the group to update.
+        student_ids: New ordered list of student UUIDs to assign (may be empty).
+
+    Returns:
+        Updated :class:`StudentGroupResponse` with resolved student names.
+
+    Raises:
+        NotFoundError:  Group does not exist, or belongs to a different class.
+        ForbiddenError: Class or group belongs to a different teacher.
+    """
+    # Verify class ownership first (produces 404 vs 403 semantics).
+    await _assert_class_owned_by(db, class_id, teacher_id)
+
+    # Fetch the group, scoped to teacher + class in a single query.
+    result = await db.execute(
+        select(StudentGroup).where(
+            StudentGroup.id == group_id,
+            StudentGroup.class_id == class_id,
+            StudentGroup.teacher_id == teacher_id,
+        )
+    )
+    group = result.scalar_one_or_none()
+    if group is None:
+        raise NotFoundError("Group not found.")
+
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    unique_ids: list[str] = []
+    for sid in student_ids:
+        s = str(sid)
+        if s not in seen:
+            seen.add(s)
+            unique_ids.append(s)
+
+    new_count = len(unique_ids)
+
+    # Determine new stability: empty list → exited, otherwise preserve
+    # previous stability or promote from exited to persistent.
+    if new_count == 0:
+        new_stability = "exited"
+    elif group.stability == "exited":
+        new_stability = "persistent"
+    else:
+        new_stability = group.stability
+
+    await db.execute(
+        update(StudentGroup)
+        .where(StudentGroup.id == group_id)
+        .values(
+            student_ids=unique_ids,
+            student_count=new_count,
+            stability=new_stability,
+        )
+    )
+    await db.commit()
+    await db.refresh(group)
+
+    # Resolve student names for the response, tenant-scoped.
+    students_in_group: list[StudentInGroupResponse] = []
+    if unique_ids:
+        student_uuids = [uuid.UUID(s) for s in unique_ids]
+        students_result = await db.execute(
+            select(Student.id, Student.full_name, Student.external_id).where(
+                Student.teacher_id == teacher_id,
+                Student.id.in_(student_uuids),
+            )
+        )
+        # Build map for ordering.
+        student_map: dict[str, StudentInGroupResponse] = {
+            str(row.id): StudentInGroupResponse(
+                id=row.id,
+                full_name=row.full_name,
+                external_id=row.external_id,
+            )
+            for row in students_result.all()
+        }
+        # Preserve the caller-specified order; unknown IDs are silently skipped.
+        for sid_str in unique_ids:
+            s = student_map.get(sid_str)
+            if s is not None:
+                students_in_group.append(s)
+
+    return StudentGroupResponse(
+        id=group.id,
+        skill_key=group.skill_key,
+        label=group.label,
+        student_count=group.student_count,
+        students=students_in_group,
+        stability=group.stability,  # type: ignore[arg-type]
+        computed_at=group.computed_at,
     )
