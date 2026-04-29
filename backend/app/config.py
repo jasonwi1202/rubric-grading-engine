@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     skill_normalization_config_path: str | None = None
 
     # -------------------------------------------------------------------------
+    # Auto-Grouping
+    # -------------------------------------------------------------------------
+    # Minimum number of students required to form a skill-gap group.
+    # Groups with fewer students than this threshold are discarded.
+    auto_grouping_min_group_size: int = 2
+    # A student skill dimension with avg_score strictly below this threshold
+    # (0.0–1.0) is considered underperforming and eligible for grouping.
+    auto_grouping_underperformance_threshold: float = 0.7
+
+    # -------------------------------------------------------------------------
     # Regrade Requests
     # -------------------------------------------------------------------------
     # Number of days after a grade is created within which regrade requests may
