@@ -177,9 +177,13 @@ export default function EssayReviewPage() {
   // Load revision comparison — 404 means the essay has not been resubmitted
   // and re-graded yet; this is treated as "no comparison available" (null),
   // not an error.  The ResubmissionPanel is only rendered when non-null.
+  // Non-404 errors (403 = forbidden, 5xx = server error) are captured in
+  // `revisionError` and shown as a static alert; they do not bubble to an
+  // error boundary because React Query does not throw to boundaries by default.
   const {
     data: revisionComparison,
     isLoading: revisionLoading,
+    isError: revisionIsError,
   } = useQuery({
     queryKey: ["revision-comparison", essayId],
     queryFn: async () => {
@@ -187,8 +191,6 @@ export default function EssayReviewPage() {
         return await getRevisionComparison(essayId);
       } catch (err) {
         // 404 = essay not yet resubmitted and re-graded — treat as "no comparison".
-        // Other errors (403 = forbidden, 5xx = server error) propagate so the
-        // error boundary can surface them rather than silently hiding them.
         if (err instanceof ApiError && err.status === 404) {
           return null;
         }
@@ -387,9 +389,17 @@ export default function EssayReviewPage() {
 
             {/* Resubmission comparison panel — shown only when a revision
                 comparison has been computed for this essay. 404 is treated as
-                "not yet resubmitted" and the panel is hidden. */}
+                "not yet resubmitted" and the panel is hidden.
+                Other non-404 errors (e.g. 403, 5xx) show a static alert. */}
             {revisionLoading ? (
               <ResubmissionPanelSkeleton />
+            ) : revisionIsError ? (
+              <p
+                role="alert"
+                className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700"
+              >
+                Failed to load revision comparison. Please refresh the page.
+              </p>
             ) : revisionComparison ? (
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <ResubmissionPanel

@@ -168,6 +168,7 @@ function CriterionDeltaRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasFeedback = feedbackItem !== undefined;
+  const detailsId = `feedback-detail-${delta.criterion_id}`;
 
   return (
     <li className="rounded-lg border border-gray-100 bg-white px-4 py-3">
@@ -204,6 +205,7 @@ function CriterionDeltaRow({
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
+            aria-controls={detailsId}
             className="flex w-full items-center gap-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
             <span
@@ -226,7 +228,7 @@ function CriterionDeltaRow({
           </button>
 
           {expanded && (
-            <div className="mt-2 space-y-2 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
+            <div id={detailsId} className="mt-2 space-y-2 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
               <div>
                 <p className="font-medium text-gray-700">Feedback given:</p>
                 <p className="mt-0.5 italic">{feedbackItem.feedback_given}</p>

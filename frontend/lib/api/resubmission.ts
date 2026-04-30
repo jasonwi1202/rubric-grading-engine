@@ -80,7 +80,7 @@ export interface RevisionComparisonResponse {
 
 /**
  * Fetch the revision comparison for a resubmitted essay.
- * Calls GET /api/v1/essays/{essayId}/revision-comparison.
+ * Calls GET /essays/{essayId}/revision-comparison.
  *
  * Returns 404 when the essay has not been resubmitted and re-graded yet.
  * Callers should catch ApiError(404) and treat it as "no comparison available".
