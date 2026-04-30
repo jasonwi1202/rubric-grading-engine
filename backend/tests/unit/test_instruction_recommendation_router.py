@@ -1,7 +1,11 @@
 """Unit tests for instruction recommendation router endpoints (M6-07/M6-08).
 
 Tests cover HTTP layer concerns — status codes, response envelope shape,
-exception-to-HTTP mapping, auth enforcement, and cross-teacher 403 isolation.
+exception-to-HTTP mapping, auth enforcement, and cross-teacher isolation.
+Cross-teacher behavior varies by endpoint: generation/list endpoints return 403
+(ForbiddenError from the service); the /assign endpoint returns 404 because it
+uses the RLS-pattern query (WHERE id AND teacher_id) and cross-tenant rows are
+indistinguishable from nonexistent rows under FORCE RLS.
 All service calls are mocked; no real DB or LLM is used.
 No student PII in fixtures.
 

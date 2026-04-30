@@ -49,6 +49,8 @@ All list endpoints accept `?page=1&page_size=25`. Default page size: 25. Max: 10
 ### Authentication
 All endpoints require a valid JWT Bearer token in the `Authorization` header unless explicitly documented as public. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
 
+**Exception — FORCE RLS anti-enumeration endpoints:** Endpoints whose service layer uses a single `WHERE id = ? AND teacher_id = ?` query (matching the worklist `_load_worklist_item` pattern) cannot distinguish a cross-tenant ID from a nonexistent ID at the DB level, because FORCE RLS filters the row out before the application sees it. These endpoints return `404` for both missing and cross-tenant IDs. The endpoint description will explicitly note this behavior. Example: `POST /recommendations/{recommendationId}/assign`.
+
 **Public endpoints (no JWT required):**
 - `POST /auth/signup` — create a new teacher account
 - `GET /auth/verify-email` — verify email address via HMAC token

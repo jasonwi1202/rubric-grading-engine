@@ -46,8 +46,9 @@ async def assign_recommendation_endpoint(
     existing state without side effects.
 
     Returns 200 with the updated recommendation set.
-    Returns 404 if the recommendation does not exist.
-    Returns 403 if the recommendation belongs to a different teacher.
+    Returns 404 if the recommendation does not exist or belongs to a different teacher
+        (cross-tenant IDs are invisible under FORCE RLS and are indistinguishable
+        from nonexistent IDs — both surfaces as 404).
     Returns 409 if the recommendation has been dismissed and cannot be assigned.
     """
     rec = await assign_recommendation(db, teacher.id, recommendation_id)
