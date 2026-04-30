@@ -457,3 +457,180 @@ class TestGenerateGroupRecommendationsIntegration:
             )
 
         assert resp.status_code == 403, resp.text
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/recommendations/{recommendationId}/assign — integration tests
+# ---------------------------------------------------------------------------
+
+
+async def _seed_recommendation(
+    db: AsyncSession,
+    rec_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    *,
+    student_id: uuid.UUID | None = None,
+    group_id: uuid.UUID | None = None,
+    status: str = "pending_review",
+) -> None:
+    """Seed a minimal instruction_recommendations row for testing."""
+    await db.execute(
+        text(
+            "INSERT INTO instruction_recommendations "
+            "(id, teacher_id, student_id, group_id, grade_level, prompt_version, "
+            "recommendations, evidence_summary, status) "
+            "VALUES (:id, :tid, :sid, :gid, :gl, :pv, CAST(:recs AS jsonb), :ev, :st)"
+        ),
+        {
+            "id": str(rec_id),
+            "tid": str(teacher_id),
+            "sid": str(student_id) if student_id else None,
+            "gid": str(group_id) if group_id else None,
+            "gl": "Grade 8",
+            "pv": "instruction-v1",
+            "recs": json.dumps(
+                [
+                    {
+                        "skill_dimension": "evidence",
+                        "title": "Evidence Workshop",
+                        "description": "Practice evidence integration.",
+                        "estimated_minutes": 20,
+                        "strategy_type": "guided_practice",
+                    }
+                ]
+            ),
+            "ev": "Skill gap in evidence.",
+            "st": status,
+        },
+    )
+    await db.commit()
+
+
+@pytest.mark.integration
+class TestAssignRecommendationIntegration:
+    @pytest.mark.asyncio
+    async def test_happy_path_transitions_status_to_accepted(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /assign transitions status from pending_review to accepted."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_recommendation(
+            db_session, rec_id, teacher_id, student_id=student_id
+        )
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/assign")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        data = body["data"]
+        assert data["id"] == str(rec_id)
+        assert data["status"] == "accepted"
+
+        # Confirm DB reflects the new status.
+        result = await db_session.execute(
+            text(
+                "SELECT status FROM instruction_recommendations WHERE id = :id"
+            ),
+            {"id": str(rec_id)},
+        )
+        row = result.fetchone()
+        assert row is not None
+        assert row.status == "accepted"
+
+        # Confirm audit log entry was written.
+        result = await db_session.execute(
+            text(
+                "SELECT action, before_value, after_value "
+                "FROM audit_logs "
+                "WHERE entity_type = 'instruction_recommendation' "
+                "  AND entity_id = :eid"
+            ),
+            {"eid": str(rec_id)},
+        )
+        audit_rows = result.fetchall()
+        assert len(audit_rows) == 1
+        assert audit_rows[0].action == "recommendation_assigned"
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_already_accepted(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /assign is idempotent: calling twice on an accepted rec returns 200."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_recommendation(
+            db_session, rec_id, teacher_id, student_id=student_id, status="accepted"
+        )
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/assign")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    async def test_dismissed_recommendation_returns_409(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /assign on a dismissed recommendation returns 409 Conflict."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_recommendation(
+            db_session, rec_id, teacher_id, student_id=student_id, status="dismissed"
+        )
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/assign")
+
+        assert resp.status_code == 409, resp.text
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_returns_403(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """Teacher B cannot assign Teacher A's recommendation."""
+        teacher_a_id = _uuid()
+        teacher_b_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_a_id)
+        await _seed_teacher(db_session, teacher_b_id)
+        await _seed_student(db_session, student_id, teacher_a_id)
+        await _seed_recommendation(
+            db_session, rec_id, teacher_a_id, student_id=student_id
+        )
+
+        client = _client_for(teacher_b_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/assign")
+
+        assert resp.status_code == 403, resp.text
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_recommendation_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /assign on a nonexistent recommendation ID returns 404."""
+        teacher_id = _uuid()
+        await _seed_teacher(db_session, teacher_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{_uuid()}/assign")
+
+        assert resp.status_code == 404, resp.text

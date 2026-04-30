@@ -1,4 +1,4 @@
-"""Instruction recommendation service (M6-07).
+"""Instruction recommendation service (M6-07/M6-08).
 
 Business logic for generating, persisting, and retrieving AI-powered
 instruction recommendations from student skill profiles or class skill-gap
@@ -11,6 +11,8 @@ Public API:
     a class skill-gap group's shared skill gap and persist the result.
   - ``list_student_recommendations``     — return all persisted recommendation
     sets for a student (newest-first).
+  - ``assign_recommendation``            — record the teacher's explicit
+    confirmation to assign a recommendation (status → 'accepted').
 
 LLM integration:
   - Only aggregate skill profile data is sent to the LLM — no essay content.
@@ -43,9 +45,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, NotFoundError, ValidationError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.llm.client import call_instruction
 from app.llm.prompts.instruction_v1 import VERSION as INSTRUCTION_PROMPT_VERSION
+from app.models.audit_log import AuditLog
 from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.student import Student
 from app.models.student_group import StudentGroup
@@ -474,3 +477,74 @@ async def list_student_recommendations(
         .order_by(InstructionRecommendation.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def assign_recommendation(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    recommendation_id: uuid.UUID,
+) -> InstructionRecommendation:
+    """Record the teacher's explicit confirmation to assign an instruction recommendation.
+
+    Transitions the recommendation status from ``'pending_review'`` to
+    ``'accepted'`` and writes an audit log entry.
+
+    Idempotent: if the recommendation is already ``'accepted'``, it is returned
+    unchanged without writing a second audit entry.
+
+    Args:
+        db:                Async database session.
+        teacher_id:        Authenticated teacher's UUID (tenant scope).
+        recommendation_id: Recommendation to assign.
+
+    Returns:
+        The updated :class:`~app.models.instruction_recommendation.InstructionRecommendation` row.
+
+    Raises:
+        NotFoundError:  Recommendation not found.
+        ForbiddenError: Recommendation belongs to a different teacher.
+        ConflictError:  Recommendation has been dismissed and cannot be assigned.
+    """
+    # Fetch by primary key only so we can distinguish 404 (not found) from 403
+    # (found but wrong owner).  The subsequent UPDATE always includes teacher_id
+    # as defence-in-depth.
+    result = await db.execute(
+        select(InstructionRecommendation).where(InstructionRecommendation.id == recommendation_id)
+    )
+    rec = result.scalar_one_or_none()
+    if rec is None:
+        raise NotFoundError("Instruction recommendation not found.")
+    if rec.teacher_id != teacher_id:
+        raise ForbiddenError("You do not have access to this recommendation.")
+
+    if rec.status == "dismissed":
+        raise ConflictError("Cannot assign a dismissed recommendation.")
+
+    # Idempotent — already accepted, nothing to do.
+    if rec.status == "accepted":
+        return rec
+
+    # Transition pending_review → accepted.
+    before_status = rec.status
+    rec.status = "accepted"
+
+    audit = AuditLog(
+        teacher_id=teacher_id,
+        entity_type="instruction_recommendation",
+        entity_id=recommendation_id,
+        action="recommendation_assigned",
+        before_value={"status": before_status},
+        after_value={"status": "accepted"},
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(rec)
+
+    logger.info(
+        "Instruction recommendation assigned",
+        extra={
+            "recommendation_id": str(recommendation_id),
+            "teacher_id": str(teacher_id),
+        },
+    )
+    return rec
