@@ -33,15 +33,15 @@ Table design:
                               completes or when LLM step is unavailable.
   - ``created_at``            TIMESTAMPTZ, NOT NULL, default now().
 
-No RLS is applied to this table because the ``essay_id`` FK chain already
-routes through the RLS-protected ``essays`` table; service-layer queries
-always join through ``essays`` and enforce ``teacher_id`` in the WHERE clause.
+RLS: ENABLE + FORCE ROW LEVEL SECURITY with an EXISTS policy that traverses
+the essay_id → essays → assignments → classes FK chain to enforce teacher_id
+isolation.  This mirrors the pattern used for essay_versions and grades.
 
 Zero-downtime: ``CREATE INDEX CONCURRENTLY`` builds the ``essay_id`` index
 without holding a table-level lock, wrapped in ``autocommit_block()`` as
 required for CONCURRENTLY index operations.
 
-Downgrade: drop index concurrently, then drop table.
+Downgrade: drop policy + disable RLS, drop indexes concurrently, then drop table.
 """
 
 from collections.abc import Sequence
@@ -55,9 +55,6 @@ revision: str = "031_revision_comparisons_create_table"
 down_revision: str | None = "030_essay_versions_unique_version_number"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# CREATE INDEX CONCURRENTLY requires autocommit mode.
-transaction_per_migration = False
 
 _TABLE = "revision_comparisons"
 _INDEX_ESSAY_ID = "ix_revision_comparisons_essay_id"
@@ -88,7 +85,7 @@ def upgrade() -> None:
             sa.ForeignKey(
                 "essay_versions.id",
                 ondelete="CASCADE",
-                name="fk_revision_comparisons_base_version",
+                name="fk_revision_comparisons_essay_versions_base",
             ),
             nullable=False,
         ),
@@ -98,7 +95,7 @@ def upgrade() -> None:
             sa.ForeignKey(
                 "essay_versions.id",
                 ondelete="CASCADE",
-                name="fk_revision_comparisons_revised_version",
+                name="fk_revision_comparisons_essay_versions_revised",
             ),
             nullable=False,
         ),
@@ -108,7 +105,7 @@ def upgrade() -> None:
             sa.ForeignKey(
                 "grades.id",
                 ondelete="CASCADE",
-                name="fk_revision_comparisons_base_grade",
+                name="fk_revision_comparisons_grades_base",
             ),
             nullable=False,
         ),
@@ -118,7 +115,7 @@ def upgrade() -> None:
             sa.ForeignKey(
                 "grades.id",
                 ondelete="CASCADE",
-                name="fk_revision_comparisons_revised_grade",
+                name="fk_revision_comparisons_grades_revised",
             ),
             nullable=False,
         ),
@@ -177,8 +174,35 @@ def upgrade() -> None:
             postgresql_concurrently=True,
         )
 
+    # ------------------------------------------------------------------
+    # 3. Row-level security — mirrors the pattern used for essay_versions
+    #    and grades: EXISTS traversal through the essay_id FK chain.
+    # ------------------------------------------------------------------
+    op.execute(sa.text(f"ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text(f"ALTER TABLE {_TABLE} FORCE ROW LEVEL SECURITY"))
+    op.execute(
+        sa.text(f"""
+        CREATE POLICY tenant_isolation ON {_TABLE}
+        FOR ALL
+        USING (
+            EXISTS (
+                SELECT 1
+                FROM essays e
+                JOIN assignments a ON a.id = e.assignment_id
+                JOIN classes c ON c.id = a.class_id
+                WHERE e.id = {_TABLE}.essay_id
+                  AND c.teacher_id = NULLIF(current_setting('app.current_teacher_id', true), '')::uuid
+            )
+        )
+    """)
+    )
+
 
 def downgrade() -> None:
+    op.execute(
+        sa.text(f"DROP POLICY IF EXISTS tenant_isolation ON {_TABLE}")
+    )
+    op.execute(sa.text(f"ALTER TABLE {_TABLE} DISABLE ROW LEVEL SECURITY"))
     with op.get_context().autocommit_block():
         op.drop_index(_INDEX_REVISED, table_name=_TABLE, postgresql_concurrently=True)
         op.drop_index(_INDEX_ESSAY_ID, table_name=_TABLE, postgresql_concurrently=True)

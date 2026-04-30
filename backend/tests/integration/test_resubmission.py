@@ -1,15 +1,22 @@
-"""Integration tests for POST /essays/{essayId}/resubmit (M6-10).
+"""Integration tests for POST /essays/{essayId}/resubmit (M6-10)
+and GET /essays/{essayId}/revision-comparison (M6-11).
 
 Tests exercise the full stack: real PostgreSQL (via testcontainers),
 Alembic-migrated schema, real ORM writes, mocked S3 / MIME / extraction.
 Auth is injected via FastAPI dependency override.
 
-Covered scenarios:
+Covered scenarios (resubmit):
   - Happy path: 201 + new EssayVersion row with version_number = 2
   - Resubmission disabled: 409 RESUBMISSION_DISABLED
   - Resubmission limit reached: 409 RESUBMISSION_LIMIT_REACHED
   - Cross-teacher access: 403 FORBIDDEN
   - Essay not found: 404 NOT_FOUND
+
+Covered scenarios (revision-comparison):
+  - Happy path: 200 + RevisionComparisonResponse data envelope
+  - No comparison yet: 404 NOT_FOUND
+  - Cross-teacher access: 404 NOT_FOUND (FORCE-RLS; indistinguishable from missing)
+  - Nonexistent essay: 404 NOT_FOUND
 
 Tests skip automatically if Docker is not available.
 No student PII in any fixture.
@@ -195,6 +202,75 @@ async def _seed_essay_version(
             "vn": version_number,
             "content": "Original submission text for testing.",
             "wc": 6,
+        },
+    )
+    await db.commit()
+
+
+async def _seed_grade(
+    db: AsyncSession,
+    grade_id: uuid.UUID,
+    version_id: uuid.UUID,
+    total_score: str = "8.00",
+    max_possible_score: str = "10.00",
+) -> None:
+    await db.execute(
+        text(
+            "INSERT INTO grades "
+            "(id, essay_version_id, total_score, max_possible_score, "
+            "summary_feedback, strictness, ai_model, prompt_version, is_locked) "
+            "VALUES (:id, :vid, :ts, :mps, :sf, 'balanced', 'gpt-4o', 'grading-v1', false) "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {
+            "id": str(grade_id),
+            "vid": str(version_id),
+            "ts": total_score,
+            "mps": max_possible_score,
+            "sf": "Good work overall.",
+        },
+    )
+    await db.commit()
+
+
+async def _seed_revision_comparison(
+    db: AsyncSession,
+    comparison_id: uuid.UUID,
+    essay_id: uuid.UUID,
+    base_version_id: uuid.UUID,
+    revised_version_id: uuid.UUID,
+    base_grade_id: uuid.UUID,
+    revised_grade_id: uuid.UUID,
+) -> None:
+    criterion_deltas = json.dumps(
+        [
+            {
+                "criterion_id": str(uuid.uuid4()),
+                "base_score": 3,
+                "revised_score": 4,
+                "delta": 1,
+            }
+        ]
+    )
+    await db.execute(
+        text(
+            "INSERT INTO revision_comparisons "
+            "(id, essay_id, base_version_id, revised_version_id, "
+            "base_grade_id, revised_grade_id, total_score_delta, "
+            "criterion_deltas, is_low_effort, low_effort_reasons, feedback_addressed) "
+            "VALUES (:id, :eid, :bvid, :rvid, :bgid, :rgid, :delta, "
+            "CAST(:cdelta AS jsonb), false, '[]'::jsonb, NULL) "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {
+            "id": str(comparison_id),
+            "eid": str(essay_id),
+            "bvid": str(base_version_id),
+            "rvid": str(revised_version_id),
+            "bgid": str(base_grade_id),
+            "rgid": str(revised_grade_id),
+            "delta": "1.00",
+            "cdelta": criterion_deltas,
         },
     )
     await db.commit()
@@ -449,5 +525,138 @@ class TestResubmitEssayIntegration:
                 f"/api/v1/essays/{nonexistent_essay_id}/resubmit",
                 files={field: (filename, data, "text/plain")},
             )
+
+        assert resp.status_code == 404, resp.text
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/revision-comparison — M6-11
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestGetRevisionComparisonIntegration:
+    """Integration tests for GET /essays/{essayId}/revision-comparison."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_comparison(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """200 + data envelope with comparison fields when a comparison exists."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+        rubric_id = _uuid()
+        assignment_id = _uuid()
+        essay_id = _uuid()
+        v1_id = _uuid()
+        v2_id = _uuid()
+        grade1_id = _uuid()
+        grade2_id = _uuid()
+        comparison_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        await _seed_rubric(db_session, rubric_id, teacher_id)
+        await _seed_assignment(db_session, assignment_id, class_id, rubric_id)
+        await _seed_essay(db_session, essay_id, assignment_id)
+        await _seed_essay_version(db_session, v1_id, essay_id, version_number=1)
+        await _seed_essay_version(db_session, v2_id, essay_id, version_number=2)
+        await _seed_grade(db_session, grade1_id, v1_id, total_score="7.00")
+        await _seed_grade(db_session, grade2_id, v2_id, total_score="8.00")
+        await _seed_revision_comparison(
+            db_session, comparison_id, essay_id, v1_id, v2_id, grade1_id, grade2_id
+        )
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{essay_id}/revision-comparison")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        data = body["data"]
+        assert data["id"] == str(comparison_id)
+        assert data["essay_id"] == str(essay_id)
+        assert data["base_version_id"] == str(v1_id)
+        assert data["revised_version_id"] == str(v2_id)
+        assert data["total_score_delta"] == 1.0
+        assert isinstance(data["criterion_deltas"], list)
+        assert data["is_low_effort"] is False
+        assert data["feedback_addressed"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_comparison_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """404 when the essay exists but has no revision comparison."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+        rubric_id = _uuid()
+        assignment_id = _uuid()
+        essay_id = _uuid()
+        version_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        await _seed_rubric(db_session, rubric_id, teacher_id)
+        await _seed_assignment(db_session, assignment_id, class_id, rubric_id)
+        await _seed_essay(db_session, essay_id, assignment_id)
+        await _seed_essay_version(db_session, version_id, essay_id, version_number=1)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{essay_id}/revision-comparison")
+
+        assert resp.status_code == 404, resp.text
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """Teacher B cannot access Teacher A's revision comparison.
+
+        ``revision_comparisons`` has FORCE RLS through essay_id → essays chain:
+        cross-tenant IDs are DB-invisible, so the endpoint returns 404.
+        """
+        teacher_a_id = _uuid()
+        teacher_b_id = _uuid()
+        class_id = _uuid()
+        rubric_id = _uuid()
+        assignment_id = _uuid()
+        essay_id = _uuid()
+        v1_id = _uuid()
+        v2_id = _uuid()
+        grade1_id = _uuid()
+        grade2_id = _uuid()
+        comparison_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_a_id)
+        await _seed_teacher(db_session, teacher_b_id)
+        await _seed_class(db_session, class_id, teacher_a_id)
+        await _seed_rubric(db_session, rubric_id, teacher_a_id)
+        await _seed_assignment(db_session, assignment_id, class_id, rubric_id)
+        await _seed_essay(db_session, essay_id, assignment_id)
+        await _seed_essay_version(db_session, v1_id, essay_id, version_number=1)
+        await _seed_essay_version(db_session, v2_id, essay_id, version_number=2)
+        await _seed_grade(db_session, grade1_id, v1_id, total_score="7.00")
+        await _seed_grade(db_session, grade2_id, v2_id, total_score="8.00")
+        await _seed_revision_comparison(
+            db_session, comparison_id, essay_id, v1_id, v2_id, grade1_id, grade2_id
+        )
+
+        # Teacher B attempts to access Teacher A's comparison.
+        client = _client_for(teacher_b_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{essay_id}/revision-comparison")
+
+        assert resp.status_code == 404, resp.text
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_essay_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """404 when the essay UUID does not exist."""
+        teacher_id = _uuid()
+        await _seed_teacher(db_session, teacher_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{_uuid()}/revision-comparison")
 
         assert resp.status_code == 404, resp.text

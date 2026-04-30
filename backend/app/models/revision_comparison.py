@@ -11,6 +11,7 @@ indicators without additional joins.
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric
@@ -53,32 +54,42 @@ class RevisionComparison(Base):
     )
     essay_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("essays.id", ondelete="CASCADE"),
+        ForeignKey("essays.id", ondelete="CASCADE", name="fk_revision_comparisons_essays"),
         nullable=False,
         index=True,
     )
     base_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("essay_versions.id", ondelete="CASCADE"),
+        ForeignKey(
+            "essay_versions.id",
+            ondelete="CASCADE",
+            name="fk_revision_comparisons_essay_versions_base",
+        ),
         nullable=False,
     )
     revised_version_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("essay_versions.id", ondelete="CASCADE"),
+        ForeignKey(
+            "essay_versions.id",
+            ondelete="CASCADE",
+            name="fk_revision_comparisons_essay_versions_revised",
+        ),
         nullable=False,
     )
     base_grade_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("grades.id", ondelete="CASCADE"),
+        ForeignKey("grades.id", ondelete="CASCADE", name="fk_revision_comparisons_grades_base"),
         nullable=False,
     )
     revised_grade_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("grades.id", ondelete="CASCADE"),
+        ForeignKey(
+            "grades.id", ondelete="CASCADE", name="fk_revision_comparisons_grades_revised"
+        ),
         nullable=False,
     )
     # revised.total_score − base.total_score (may be negative for regressions)
-    total_score_delta: Mapped[float] = mapped_column(Numeric(6, 2), nullable=False)
+    total_score_delta: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     # [{criterion_id, base_score, revised_score, delta}, ...]
     criterion_deltas: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
     # True when heuristics indicate a surface-level (low-effort) revision.

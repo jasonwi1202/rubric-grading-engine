@@ -602,9 +602,10 @@ async def get_revision_comparison_endpoint(
 
     Response body: ``{"data": RevisionComparisonResponse}``
 
-    Returns 403 if the essay belongs to a different teacher.
-    Returns 404 if the essay has no revision comparison yet (not yet resubmitted
-    and re-graded) or does not exist.
+    Returns 404 if the essay does not exist, belongs to a different teacher
+    (FORCE-RLS makes cross-tenant IDs invisible, so they are indistinguishable
+    from missing), or has no revision comparison yet (not yet resubmitted and
+    re-graded).
     """
     comparison = await get_revision_comparison(
         db=db,

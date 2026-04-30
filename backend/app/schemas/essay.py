@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -297,11 +297,11 @@ class RevisionComparisonResponse(BaseModel):
     base_grade_id: uuid.UUID
     revised_grade_id: uuid.UUID
     total_score_delta: float
-    criterion_deltas: list[Any]
+    criterion_deltas: list[CriterionDeltaResponse]
     is_low_effort: bool
     low_effort_reasons: list[str]
     # Null when LLM analysis was skipped or failed.
-    feedback_addressed: list[Any] | None
+    feedback_addressed: list[FeedbackAddressedItemResponse] | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

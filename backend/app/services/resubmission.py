@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, NotFoundError
+from app.exceptions import NotFoundError
 from app.llm.client import call_revision_comparison
 from app.models.assignment import Assignment
 from app.models.class_ import Class
@@ -252,9 +252,7 @@ async def compute_revision_comparison(
     # ------------------------------------------------------------------
     # 3. Compute score deltas.
     # ------------------------------------------------------------------
-    total_score_delta = float(
-        Decimal(str(revised_grade.total_score)) - Decimal(str(base_grade.total_score))
-    )
+    total_score_delta: Decimal = revised_grade.total_score - base_grade.total_score
 
     # Build lookup for revised scores by criterion ID.
     revised_by_criterion: dict[uuid.UUID, CriterionScore] = {
@@ -374,6 +372,9 @@ async def get_revision_comparison(
     """Load the most recent RevisionComparison for an essay.
 
     Enforces tenant isolation via an Assignment → Class → teacher_id JOIN.
+    Consistent with the project's FORCE-RLS convention, both cross-tenant
+    and missing essays return :class:`NotFoundError` (404) — cross-tenant
+    IDs are DB-invisible to the authenticated teacher's session.
 
     Args:
         db: Async database session.
@@ -384,10 +385,12 @@ async def get_revision_comparison(
         The most recently created :class:`RevisionComparison` for the essay.
 
     Raises:
-        NotFoundError: Essay does not exist or has no revision comparison.
-        ForbiddenError: Essay belongs to a different teacher.
+        NotFoundError: Essay does not exist, belongs to a different teacher,
+            or has no revision comparison yet.
     """
-    # Verify essay existence and tenant ownership.
+    # Single tenant-scoped query — FORCE RLS makes cross-tenant IDs invisible,
+    # so we always return 404 (never 403) to stay consistent with the
+    # project's FORCE-RLS convention for essays.
     essay_result = await db.execute(
         select(Essay)
         .join(Assignment, Essay.assignment_id == Assignment.id)
@@ -396,10 +399,7 @@ async def get_revision_comparison(
     )
     essay = essay_result.scalar_one_or_none()
     if essay is None:
-        exists_result = await db.execute(select(Essay.id).where(Essay.id == essay_id))
-        if exists_result.scalar_one_or_none() is None:
-            raise NotFoundError("Essay not found.")
-        raise ForbiddenError("You do not have access to this essay.")
+        raise NotFoundError("Essay not found.")
 
     # Load the most recent comparison.
     comparison_result = await db.execute(

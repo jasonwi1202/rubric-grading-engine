@@ -33,7 +33,6 @@ from app.services.resubmission import (
     compute_revision_comparison,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers / factories
 # ---------------------------------------------------------------------------
@@ -155,7 +154,7 @@ class TestDetectLowEffort:
         assert not is_low
         assert reasons == []
 
-    def test_returns_false_when_no_heuristic_triggers(self) -> None:
+    def test_flags_low_effort_when_word_count_delta_is_zero(self) -> None:
         base = "word " * 100
         revised = "different " * 80 + "word " * 20
         is_low, reasons = _detect_low_effort(base, revised, 100, 100)
