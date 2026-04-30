@@ -1411,7 +1411,7 @@ async def resubmit_essay(
     """Create a new versioned submission for an existing essay.
 
     Validates resubmission eligibility (enabled, limit), stores the file to
-    S3, extracts and normalises text, and persists a new :class:`EssayVersion`
+    S3, extracts and normalizes text, and persists a new :class:`EssayVersion`
     record with ``version_number = max(existing) + 1``.
 
     Args:
@@ -1438,7 +1438,7 @@ async def resubmit_essay(
         - File size is checked before any extraction or S3 I/O.
         - S3 upload happens before extraction; on extraction failure the object
           is deleted to avoid orphaned storage.
-        - Filename is sanitised before embedding in the S3 key.
+        - Filename is sanitized before embedding in the S3 key.
         - No student PII appears in any log output.
     """
     # 1. Validate file size and MIME type before any DB or S3 work.

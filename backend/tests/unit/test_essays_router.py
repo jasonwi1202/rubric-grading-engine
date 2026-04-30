@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_current_teacher
 from app.exceptions import FileTooLargeError, FileTypeNotAllowedError, ForbiddenError, NotFoundError
 from app.main import create_app
-from app.schemas.essay import EssayListItemResponse
+from app.schemas.essay import EssayListItemResponse, ResubmitEssayResponse
 from app.services.student_matching import AutoAssignResult
 
 # ---------------------------------------------------------------------------
@@ -488,9 +488,7 @@ class TestResubmitEssay:
         essay_id: uuid.UUID | None = None,
         assignment_id: uuid.UUID | None = None,
         version_number: int = 2,
-    ) -> MagicMock:
-        from app.schemas.essay import ResubmitEssayResponse
-
+    ) -> "ResubmitEssayResponse":
         eid = essay_id or uuid.uuid4()
         return ResubmitEssayResponse(
             essay_id=eid,
