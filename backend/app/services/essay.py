@@ -34,10 +34,12 @@ from html.parser import HTMLParser as _HtmlParser
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.exceptions import (
+    ConflictError,
     FileTooLargeError,
     FileTypeNotAllowedError,
     ForbiddenError,
@@ -1445,12 +1447,28 @@ async def resubmit_essay(
     validate_file_size(data)
     mime_type = validate_mime_type(data)
 
-    # 2. Verify essay existence and teacher ownership.  _get_essay_for_teacher
-    #    raises NotFoundError (404) or ForbiddenError (403) as appropriate.
-    essay = await _get_essay_for_teacher(db, essay_id, teacher_id)
+    # 2. Verify essay existence and teacher ownership in a single tenant-scoped
+    #    JOIN query — no check-then-fetch.  FOR UPDATE serialises concurrent
+    #    resubmissions so the version-number counter (step 5) reads committed
+    #    state from a stable snapshot of the parent row.
+    essay_result = await db.execute(
+        select(Essay)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(Essay.id == essay_id, Class.teacher_id == teacher_id)
+        .with_for_update(of=Essay)
+    )
+    essay = essay_result.scalar_one_or_none()
+    if essay is None:
+        essay_exists_result = await db.execute(
+            select(Essay.id).where(Essay.id == essay_id)
+        )
+        if essay_exists_result.scalar_one_or_none() is None:
+            raise NotFoundError("Essay not found.")
+        raise ForbiddenError("You do not have access to this essay.")
 
-    # 3. Load the assignment — re-use teacher_id in the JOIN to maintain tenant
-    #    isolation in the query itself (not just via the prior ownership check).
+    # 3. Load the assignment — teacher_id is already enforced by the JOIN above;
+    #    re-assert it here as defence-in-depth.
     assignment_result = await db.execute(
         select(Assignment)
         .join(Class, Assignment.class_id == Class.id)
@@ -1502,17 +1520,17 @@ async def resubmit_essay(
     # 7. Extract text; clean up S3 object on failure.
     try:
         raw_text = extract_text(data, mime_type)
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Text extraction failed for resubmission; cleaning up S3 object",
-            extra={"essay_id": str(essay.id)},
+            extra={"essay_id": str(essay.id), "error_type": type(exc).__name__},
         )
         try:
             await loop.run_in_executor(None, delete_file, s3_key)
-        except Exception:
+        except Exception as cleanup_exc:
             logger.exception(
                 "S3 cleanup after resubmission extraction failure also failed",
-                extra={"essay_id": str(essay.id)},
+                extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
             )
         raise
 
@@ -1536,7 +1554,13 @@ async def resubmit_essay(
     )
     db.add(version)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError(
+            "A concurrent resubmission created the same version number. Please retry."
+        ) from exc
     await db.refresh(version)
 
     logger.info(

@@ -585,6 +585,7 @@ class TestResubmitEssay:
         db.execute = AsyncMock()
         db.flush = AsyncMock()
         db.commit = AsyncMock()
+        db.rollback = AsyncMock()
         db.add = MagicMock()
 
         # refresh populates server-side defaults that the mock DB doesn't set.
@@ -600,20 +601,19 @@ class TestResubmitEssay:
     def _make_essay_ownership_result(
         self, essay_id: uuid.UUID, teacher_id: uuid.UUID
     ) -> tuple[MagicMock, MagicMock]:
-        """Return (check_result, essay_result) for the ownership two-step query."""
-        check_row = MagicMock()
-        check_row.teacher_id = teacher_id
-        check_result = MagicMock()
-        check_result.one_or_none = MagicMock(return_value=check_row)
+        """Return (essay_result, essay_obj) for the single tenant-scoped JOIN query.
 
+        The new ``resubmit_essay`` fetches the ``Essay`` row via a single JOIN
+        that includes ``Class.teacher_id == teacher_id`` — no check-then-fetch.
+        """
         essay_obj = MagicMock()
         essay_obj.id = essay_id
         essay_obj.assignment_id = uuid.uuid4()
         essay_obj.student_id = None
         essay_result = MagicMock()
-        essay_result.scalar_one = MagicMock(return_value=essay_obj)
+        essay_result.scalar_one_or_none = MagicMock(return_value=essay_obj)
 
-        return check_result, essay_result, essay_obj
+        return essay_result, essay_obj
 
     def _make_assignment_result(
         self,
@@ -651,7 +651,7 @@ class TestResubmitEssay:
         data = b"Revised essay content for testing purposes."
 
         db = self._make_db()
-        check_result, essay_result, essay_obj = self._make_essay_ownership_result(
+        essay_result, essay_obj = self._make_essay_ownership_result(
             essay_id, teacher_id
         )
         essay_obj.assignment_id = assignment_id
@@ -661,7 +661,7 @@ class TestResubmitEssay:
         ver_stats_result = self._make_ver_stats_result(ver_count=1, max_ver=1)
 
         db.execute = AsyncMock(
-            side_effect=[check_result, essay_result, assignment_result, ver_stats_result]
+            side_effect=[essay_result, assignment_result, ver_stats_result]
         )
 
         added_objects: list[Any] = []
@@ -699,7 +699,7 @@ class TestResubmitEssay:
         assignment_id = uuid.uuid4()
 
         db = self._make_db()
-        check_result, essay_result, essay_obj = self._make_essay_ownership_result(
+        essay_result, essay_obj = self._make_essay_ownership_result(
             essay_id, teacher_id
         )
         essay_obj.assignment_id = assignment_id
@@ -708,7 +708,7 @@ class TestResubmitEssay:
         )
 
         db.execute = AsyncMock(
-            side_effect=[check_result, essay_result, assignment_result]
+            side_effect=[essay_result, assignment_result]
         )
 
         with (
@@ -733,7 +733,7 @@ class TestResubmitEssay:
         assignment_id = uuid.uuid4()
 
         db = self._make_db()
-        check_result, essay_result, essay_obj = self._make_essay_ownership_result(
+        essay_result, essay_obj = self._make_essay_ownership_result(
             essay_id, teacher_id
         )
         essay_obj.assignment_id = assignment_id
@@ -744,7 +744,7 @@ class TestResubmitEssay:
         ver_stats_result = self._make_ver_stats_result(ver_count=2, max_ver=2)
 
         db.execute = AsyncMock(
-            side_effect=[check_result, essay_result, assignment_result, ver_stats_result]
+            side_effect=[essay_result, assignment_result, ver_stats_result]
         )
 
         with (
@@ -769,7 +769,7 @@ class TestResubmitEssay:
         data = b"Revised essay text for the limit test."
 
         db = self._make_db()
-        check_result, essay_result, essay_obj = self._make_essay_ownership_result(
+        essay_result, essay_obj = self._make_essay_ownership_result(
             essay_id, teacher_id
         )
         essay_obj.assignment_id = assignment_id
@@ -780,7 +780,7 @@ class TestResubmitEssay:
         ver_stats_result = self._make_ver_stats_result(ver_count=2, max_ver=2)
 
         db.execute = AsyncMock(
-            side_effect=[check_result, essay_result, assignment_result, ver_stats_result]
+            side_effect=[essay_result, assignment_result, ver_stats_result]
         )
 
         added_objects: list[Any] = []
@@ -811,9 +811,13 @@ class TestResubmitEssay:
         from app.services.essay import resubmit_essay
 
         db = self._make_db()
-        not_found_result = MagicMock()
-        not_found_result.one_or_none = MagicMock(return_value=None)
-        db.execute = AsyncMock(return_value=not_found_result)
+        # First call: tenant-scoped JOIN returns None (no matching essay+teacher).
+        join_result = MagicMock()
+        join_result.scalar_one_or_none = MagicMock(return_value=None)
+        # Second call: existence check also returns None → NotFoundError.
+        exists_result = MagicMock()
+        exists_result.scalar_one_or_none = MagicMock(return_value=None)
+        db.execute = AsyncMock(side_effect=[join_result, exists_result])
 
         with (
             patch("app.services.essay.validate_mime_type", return_value="text/plain"),
@@ -832,14 +836,17 @@ class TestResubmitEssay:
         from app.services.essay import resubmit_essay
 
         teacher_id = uuid.uuid4()
-        other_teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
 
         db = self._make_db()
-        check_row = MagicMock()
-        check_row.teacher_id = other_teacher_id  # different teacher
-        check_result = MagicMock()
-        check_result.one_or_none = MagicMock(return_value=check_row)
-        db.execute = AsyncMock(return_value=check_result)
+        # First call: tenant-scoped JOIN returns None (essay belongs to a
+        # different teacher, so teacher_id filter excludes it).
+        join_result = MagicMock()
+        join_result.scalar_one_or_none = MagicMock(return_value=None)
+        # Second call: existence check finds the essay (it exists → 403, not 404).
+        exists_result = MagicMock()
+        exists_result.scalar_one_or_none = MagicMock(return_value=essay_id)
+        db.execute = AsyncMock(side_effect=[join_result, exists_result])
 
         with (
             patch("app.services.essay.validate_mime_type", return_value="text/plain"),
@@ -848,7 +855,7 @@ class TestResubmitEssay:
             await resubmit_essay(
                 db=db,
                 teacher_id=teacher_id,
-                essay_id=uuid.uuid4(),
+                essay_id=essay_id,
                 filename="revised.txt",
                 data=b"content",
             )
@@ -862,7 +869,7 @@ class TestResubmitEssay:
         assignment_id = uuid.uuid4()
 
         db = self._make_db()
-        check_result, essay_result, essay_obj = self._make_essay_ownership_result(
+        essay_result, essay_obj = self._make_essay_ownership_result(
             essay_id, teacher_id
         )
         essay_obj.assignment_id = assignment_id
@@ -872,7 +879,7 @@ class TestResubmitEssay:
         ver_stats_result = self._make_ver_stats_result(ver_count=1, max_ver=1)
 
         db.execute = AsyncMock(
-            side_effect=[check_result, essay_result, assignment_result, ver_stats_result]
+            side_effect=[essay_result, assignment_result, ver_stats_result]
         )
 
         with (
@@ -905,7 +912,7 @@ class TestResubmitEssay:
         data = b"Revised essay text for unlimited resubmission test."
 
         db = self._make_db()
-        check_result, essay_result, essay_obj = self._make_essay_ownership_result(
+        essay_result, essay_obj = self._make_essay_ownership_result(
             essay_id, teacher_id
         )
         essay_obj.assignment_id = assignment_id
@@ -917,7 +924,7 @@ class TestResubmitEssay:
         ver_stats_result = self._make_ver_stats_result(ver_count=10, max_ver=10)
 
         db.execute = AsyncMock(
-            side_effect=[check_result, essay_result, assignment_result, ver_stats_result]
+            side_effect=[essay_result, assignment_result, ver_stats_result]
         )
 
         added_objects: list[Any] = []
