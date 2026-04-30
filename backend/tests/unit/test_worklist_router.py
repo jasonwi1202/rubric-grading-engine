@@ -23,7 +23,6 @@ from app.dependencies import get_current_teacher
 from app.exceptions import ForbiddenError, NotFoundError
 from app.main import create_app
 from app.models.worklist import TeacherWorklistItem
-from app.schemas.worklist import WorklistItemStatus
 
 # ---------------------------------------------------------------------------
 # Helpers / factories
