@@ -121,7 +121,9 @@ class TestGetWorklistEndpoint:
     def test_returns_multiple_items_ordered(self) -> None:
         teacher = _make_teacher()
         item1 = _make_worklist_item(teacher_id=teacher.id, urgency=4, trigger_type="regression")
-        item2 = _make_worklist_item(teacher_id=teacher.id, urgency=2, trigger_type="high_inconsistency")
+        item2 = _make_worklist_item(
+            teacher_id=teacher.id, urgency=2, trigger_type="high_inconsistency"
+        )
         client = _client(teacher)
 
         with patch(
@@ -469,9 +471,7 @@ class TestDismissWorklistItemEndpoint:
         client = _client(teacher)
         captured: list[uuid.UUID] = []
 
-        async def _mock_dismiss(
-            db: object, item_id: uuid.UUID, teacher_id: uuid.UUID
-        ) -> MagicMock:
+        async def _mock_dismiss(db: object, item_id: uuid.UUID, teacher_id: uuid.UUID) -> MagicMock:
             captured.append(teacher_id)
             return item
 

@@ -39,9 +39,7 @@ class RecommendationItemResponse(BaseModel):
     ``skill_dimension`` identifies which skill gap the activity targets.
     """
 
-    skill_dimension: str = Field(
-        description="Canonical skill dimension targeted (e.g. 'thesis')."
-    )
+    skill_dimension: str = Field(description="Canonical skill dimension targeted (e.g. 'thesis').")
     title: str = Field(description="Short activity title — serves as the objective.")
     description: str = Field(
         description="Specific, actionable activity description — the structure."
@@ -81,16 +79,13 @@ class InstructionRecommendationResponse(BaseModel):
     skill_key: str | None = Field(
         default=None,
         description=(
-            "Target skill dimension key (e.g. 'evidence').  "
-            "NULL when targeting all detected gaps."
+            "Target skill dimension key (e.g. 'evidence').  NULL when targeting all detected gaps."
         ),
     )
     grade_level: str = Field(
         description="Grade-level descriptor used in the LLM prompt (e.g. 'Grade 8')."
     )
-    prompt_version: str = Field(
-        description="Instruction prompt version used to generate this set."
-    )
+    prompt_version: str = Field(description="Instruction prompt version used to generate this set.")
     recommendations: list[RecommendationItemResponse] = Field(
         description=(
             "List of recommended activities parsed from the LLM response.  "
@@ -98,13 +93,9 @@ class InstructionRecommendationResponse(BaseModel):
         )
     )
     evidence_summary: str = Field(
-        description=(
-            "Human-readable summary of the skill gaps that triggered generation."
-        )
+        description=("Human-readable summary of the skill gaps that triggered generation.")
     )
-    status: RecommendationStatus = Field(
-        description="Teacher review lifecycle status."
-    )
+    status: RecommendationStatus = Field(description="Teacher review lifecycle status.")
     created_at: datetime
 
 

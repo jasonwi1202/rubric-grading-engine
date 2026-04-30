@@ -171,8 +171,8 @@ jobs:
           current=$(docker compose exec -T postgres psql -U postgres -d migration_smoke -t -c \
             "SELECT version_num FROM alembic_version;" | tr -d '[:space:]')
           echo "Alembic version in DB: $current"
-          if [ "$current" != "025_essay_versions_signals" ]; then
-            echo "ERROR: expected '025_essay_versions_signals' but got '$current'"
+          if [ "$current" != "029_instruction_recommendations" ]; then
+            echo "ERROR: expected '029_instruction_recommendations' but got '$current'"
             exit 1
           fi
 

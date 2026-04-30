@@ -55,7 +55,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import case, delete, insert, nulls_first, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.assignment import Assignment
 from app.models.class_ import Class
@@ -112,7 +114,7 @@ _TRIGGER_ORDER: dict[str, int] = {
 }
 
 
-def _trigger_order_case_expr() -> object:
+def _trigger_order_case_expr() -> ColumnElement[int]:
     """Return a SQLAlchemy CASE expression for deterministic trigger-type ordering.
 
     Produces the same ordering used by :func:`_rank_items` so that DB queries
@@ -530,9 +532,7 @@ async def _load_per_assignment_skill_scores_for_all_students(
     raw_rows = rows_result.all()
 
     # Group by (student_id, grade_id) → criterion scores.
-    student_assignment_map: dict[uuid.UUID, dict[uuid.UUID, dict[str, Any]]] = defaultdict(
-        dict
-    )
+    student_assignment_map: dict[uuid.UUID, dict[uuid.UUID, dict[str, Any]]] = defaultdict(dict)
     for row in raw_rows:
         student_id = cast(uuid.UUID, row.student_id)
         grade_id = cast(uuid.UUID, row.grade_id)
@@ -704,9 +704,7 @@ async def generate_teacher_worklist(
     """
     profiles = await _load_skill_profiles(db, teacher_id)
     persistent_memberships = await _load_persistent_group_memberships(db, teacher_id)
-    per_assignment_scores = await _load_per_assignment_skill_scores_for_all_students(
-        db, teacher_id
-    )
+    per_assignment_scores = await _load_per_assignment_skill_scores_for_all_students(db, teacher_id)
     resubmission_pairs = await _load_resubmission_pairs_for_all_students(db, teacher_id)
 
     all_items: list[_WorklistItemData] = []
@@ -782,9 +780,7 @@ async def compute_and_persist_worklist(
     # triggered by rapid grade locks can both DELETE before either INSERT
     # commits, causing both to INSERT the full item set and leaving
     # duplicated active rows.  The lock is released at transaction commit.
-    await db.execute(
-        select(User.id).where(User.id == teacher_id).with_for_update()
-    )
+    await db.execute(select(User.id).where(User.id == teacher_id).with_for_update())
 
     # Delete all currently active items for this teacher.
     # Non-active items (snoozed, completed, dismissed) are preserved.
@@ -1014,7 +1010,7 @@ async def complete_worklist_item(
             )
             .values(status="completed", completed_at=now)
         )
-        if result.rowcount == 0:
+        if cast("CursorResult[Any]", result).rowcount == 0:
             # A concurrent request moved the item to a terminal state between
             # our load and this UPDATE.  Refresh and surface the new state.
             await db.refresh(item)
@@ -1086,7 +1082,7 @@ async def snooze_worklist_item(
         )
         .values(status="snoozed", snoozed_until=snoozed_until)
     )
-    if result.rowcount != 1:
+    if cast("CursorResult[Any]", result).rowcount != 1:
         # A concurrent request moved the item to a terminal state.
         await db.rollback()
         raise InvalidStateTransitionError(
@@ -1148,7 +1144,7 @@ async def dismiss_worklist_item(
             )
             .values(status="dismissed")
         )
-        if result.rowcount:
+        if cast("CursorResult[Any]", result).rowcount:
             await db.commit()
             await db.refresh(item)
         else:

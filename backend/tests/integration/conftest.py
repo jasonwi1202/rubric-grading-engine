@@ -59,9 +59,7 @@ def pg_dsn() -> str:
         container = PostgresContainer("pgvector/pgvector:pg16")
         container.start()
     except Exception as exc:
-        pytest.skip(
-            f"PostgreSQL testcontainer could not start — skipping integration tests: {exc}"
-        )
+        pytest.skip(f"PostgreSQL testcontainer could not start — skipping integration tests: {exc}")
 
     # Build the asyncpg DSN using the mapped host/port.
     host = container.get_container_host_ip()
@@ -91,16 +89,24 @@ def pg_dsn() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Session-scoped async engine
+# Function-scoped async engine and session
+#
+# The engine MUST be function-scoped (not session-scoped) because
+# pytest-asyncio creates a fresh event loop per test function.  A session-
+# scoped engine would bind its asyncpg connection pool to the first test's
+# loop; subsequent tests would then fail with:
+#   RuntimeError: Future attached to a different loop
+# or
+#   AttributeError: 'NoneType' object has no attribute 'send'   (proactor)
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
-def async_engine(pg_dsn: str) -> AsyncEngine:
-    """Return a session-scoped async engine wired to the test container."""
+@pytest_asyncio.fixture
+async def async_engine(pg_dsn: str) -> AsyncGenerator[AsyncEngine, None]:
+    """Yield a fresh async engine per test, bound to the current event loop."""
     engine = create_async_engine(pg_dsn, echo=False)
     yield engine
-    # Engine is closed at session teardown by the event loop
+    await engine.dispose()
 
 
 # ---------------------------------------------------------------------------

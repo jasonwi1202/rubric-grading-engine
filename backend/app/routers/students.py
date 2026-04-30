@@ -250,5 +250,7 @@ async def list_student_recommendations_endpoint(
     recs = await list_student_recommendations(db, teacher.id, student_id)
     return JSONResponse(
         status_code=200,
-        content={"data": [recommendation_response_from_orm(r).model_dump(mode="json") for r in recs]},
+        content={
+            "data": [recommendation_response_from_orm(r).model_dump(mode="json") for r in recs]
+        },
     )

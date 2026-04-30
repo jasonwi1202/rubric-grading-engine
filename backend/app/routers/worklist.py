@@ -88,9 +88,7 @@ async def get_worklist_endpoint(
     # Use the most recent generation timestamp across all returned items so
     # the response accurately reflects when the newest batch was computed,
     # regardless of which item sorts first by urgency.
-    generated_at: datetime = (
-        max(i.generated_at for i in items) if items else datetime.now(UTC)
-    )
+    generated_at: datetime = max(i.generated_at for i in items) if items else datetime.now(UTC)
     payload = {
         "teacher_id": str(teacher.id),
         "items": [r.model_dump(mode="json") for r in item_responses],

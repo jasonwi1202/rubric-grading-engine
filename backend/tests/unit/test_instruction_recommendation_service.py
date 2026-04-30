@@ -288,9 +288,7 @@ class TestGenerateStudentRecommendations:
     @pytest.mark.asyncio
     async def test_student_not_found_raises_not_found(self):
         db = AsyncMock()
-        db.execute = AsyncMock(
-            return_value=MagicMock(one_or_none=MagicMock(return_value=None))
-        )
+        db.execute = AsyncMock(return_value=MagicMock(one_or_none=MagicMock(return_value=None)))
         with pytest.raises(NotFoundError, match="Student not found"):
             await generate_student_recommendations(
                 db,
@@ -659,9 +657,7 @@ class TestListStudentRecommendations:
     @pytest.mark.asyncio
     async def test_student_not_found_raises_not_found(self):
         db = AsyncMock()
-        db.execute = AsyncMock(
-            return_value=MagicMock(one_or_none=MagicMock(return_value=None))
-        )
+        db.execute = AsyncMock(return_value=MagicMock(one_or_none=MagicMock(return_value=None)))
         with pytest.raises(NotFoundError):
             await list_student_recommendations(db, _T_ID, _S_ID)
 
