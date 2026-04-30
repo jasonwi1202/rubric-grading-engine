@@ -9,12 +9,13 @@ Endpoints (``assignments_router``, prefix ``/assignments``):
   POST  /assignments/{assignmentId}/essays/compose — create essay for in-browser composition (M5-09)
 
 Endpoints (``essay_router``, prefix ``/essays``):
-  PATCH /essays/{essayId}                  — manually assign a student to an essay
-  POST  /essays/{essayId}/grade/retry      — re-enqueue grading for a failed essay
-  POST  /essays/{essayId}/resubmit         — submit a new essay version (M6-10)
-  POST  /essays/{essayId}/snapshots        — save a writing-process snapshot (M5-09)
-  GET   /essays/{essayId}/snapshots        — retrieve snapshots for editor recovery (M5-09)
-  GET   /essays/{essayId}/process-signals  — composition timeline signals (M5-10)
+  PATCH /essays/{essayId}                        — manually assign a student to an essay
+  POST  /essays/{essayId}/grade/retry            — re-enqueue grading for a failed essay
+  POST  /essays/{essayId}/resubmit              — submit a new essay version (M6-10)
+  GET   /essays/{essayId}/revision-comparison   — get revision comparison for a resubmission (M6-11)
+  POST  /essays/{essayId}/snapshots             — save a writing-process snapshot (M5-09)
+  GET   /essays/{essayId}/snapshots             — retrieve snapshots for editor recovery (M5-09)
+  GET   /essays/{essayId}/process-signals       — composition timeline signals (M5-10)
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from app.schemas.essay import (
     ComposeEssayRequest,
     EssayListItemResponse,
     EssayUploadItemResponse,
+    RevisionComparisonResponse,
     WriteSnapshotRequest,
 )
 from app.services.batch_grading import retry_essay_grading
@@ -52,6 +54,7 @@ from app.services.essay import (
     resubmit_essay,
     save_writing_snapshot,
 )
+from app.services.resubmission import get_revision_comparison
 from app.tasks.embedding import compute_essay_embedding as _compute_embedding_task
 
 logger = logging.getLogger(__name__)
@@ -567,4 +570,49 @@ async def get_process_signals_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/revision-comparison  (M6-11)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.get(
+    "/{essay_id}/revision-comparison",
+    summary="Get the revision comparison for a resubmitted essay (M6-11)",
+)
+async def get_revision_comparison_endpoint(
+    essay_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return the most recent revision comparison for a resubmitted essay.
+
+    The revision comparison is computed automatically when a resubmission is
+    graded.  It includes:
+
+    - ``total_score_delta``: revised total score minus base total score.
+    - ``criterion_deltas``: per-criterion score deltas.
+    - ``is_low_effort``: ``true`` when heuristics flag a surface-level revision.
+    - ``low_effort_reasons``: human-readable explanations for the flag.
+    - ``feedback_addressed``: per-criterion assessment of whether the student's
+      revision addressed the prior feedback (populated by LLM analysis, or
+      ``null`` when the LLM step was skipped or failed).
+
+    Response body: ``{"data": RevisionComparisonResponse}``
+
+    Returns 403 if the essay belongs to a different teacher.
+    Returns 404 if the essay has no revision comparison yet (not yet resubmitted
+    and re-graded) or does not exist.
+    """
+    comparison = await get_revision_comparison(
+        db=db,
+        essay_id=essay_id,
+        teacher_id=teacher.id,
+    )
+    response = RevisionComparisonResponse.model_validate(comparison)
+    return JSONResponse(
+        status_code=200,
+        content={"data": response.model_dump(mode="json")},
     )

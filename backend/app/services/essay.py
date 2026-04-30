@@ -1541,7 +1541,8 @@ async def resubmit_essay(
             extra={"essay_id": str(essay.id), "word_count": words, "mime_type": mime_type},
         )
 
-    # 9. Persist the new version.
+    # 9. Persist the new version and reset the essay status to queued so the
+    #    grading pipeline can re-grade this resubmission (M6-11).
     version = EssayVersion(
         essay_id=essay.id,
         version_number=new_version_number,
@@ -1550,6 +1551,11 @@ async def resubmit_essay(
         word_count=words,
     )
     db.add(version)
+    # Reset the essay status to queued so the grading pipeline (M6-11) can
+    # pick up and grade this new version.  The essay was previously in
+    # "graded" (or another terminal) state; moving it back to "queued"
+    # makes it eligible for the normal grade_essay code path.
+    essay.status = EssayStatus.queued
 
     try:
         await db.commit()
