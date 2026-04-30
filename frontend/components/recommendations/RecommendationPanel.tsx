@@ -138,12 +138,14 @@ function ActivityItem({ item }: { item: RecommendationItemResponse }) {
 function ActivityItemEditable({
   item,
   index,
+  cardId,
   onChangeTitle,
   onChangeDescription,
   disabled,
 }: {
   item: RecommendationItemResponse;
   index: number;
+  cardId: string;
   onChangeTitle: (index: number, value: string) => void;
   onChangeDescription: (index: number, value: string) => void;
   disabled: boolean;
@@ -163,13 +165,13 @@ function ActivityItemEditable({
       </div>
       <div>
         <label
-          htmlFor={`edit-title-${index}`}
+          htmlFor={`${cardId}-edit-title-${index}`}
           className="block text-xs font-medium text-gray-600 mb-1"
         >
           Objective
         </label>
         <input
-          id={`edit-title-${index}`}
+          id={`${cardId}-edit-title-${index}`}
           type="text"
           value={item.title}
           onChange={(e) => onChangeTitle(index, e.target.value)}
@@ -180,13 +182,13 @@ function ActivityItemEditable({
       </div>
       <div>
         <label
-          htmlFor={`edit-desc-${index}`}
+          htmlFor={`${cardId}-edit-desc-${index}`}
           className="block text-xs font-medium text-gray-600 mb-1"
         >
           Structure / description
         </label>
         <textarea
-          id={`edit-desc-${index}`}
+          id={`${cardId}-edit-desc-${index}`}
           value={item.description}
           onChange={(e) => onChangeDescription(index, e.target.value)}
           disabled={disabled}
@@ -211,6 +213,8 @@ interface ConfirmDialogProps {
   onCancel: () => void;
   isPending: boolean;
   isDestructive?: boolean;
+  /** Element that triggered the dialog; receives focus when the dialog closes. */
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 function ConfirmDialog({
@@ -221,14 +225,22 @@ function ConfirmDialog({
   onCancel,
   isPending,
   isDestructive = false,
+  triggerRef,
 }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
 
-  // Move focus into the dialog on open.
+  // Move focus into the dialog on open; restore to trigger element on unmount.
   useEffect(() => {
+    // Capture the trigger at mount time; the ref may have changed by cleanup.
+    const trigger = triggerRef?.current ?? null;
     cancelRef.current?.focus();
+    return () => {
+      trigger?.focus();
+    };
+  // triggerRef is a stable ref object — its identity never changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Trap focus within the dialog and close on Escape.
@@ -326,13 +338,19 @@ function RecommendationCard({
   const [mode, setMode] = useState<CardMode>("view");
   // Track which mode triggered the accept confirmation so Cancel restores correctly.
   // "view" → Accept opens confirm from view mode; Cancel → view
-  // "modify" → "Assign modified" opens confirm from modify mode; Cancel → modify
+  // "modify" → "Assign" opens confirm from modify mode; Cancel → modify
   const [preConfirmMode, setPreConfirmMode] = useState<"view" | "modify">("view");
   const [editedItems, setEditedItems] = useState<RecommendationItemResponse[]>(
     rec.recommendations,
   );
 
   const headingId = useId();
+  const cardId = useId();
+
+  // Refs for trigger buttons — used to restore focus when dialogs close.
+  const acceptBtnRef = useRef<HTMLButtonElement>(null);
+  const dismissBtnRef = useRef<HTMLButtonElement>(null);
+  const assignModifiedBtnRef = useRef<HTMLButtonElement>(null);
 
   const assignMutation = useMutation({
     mutationFn: () => assignRecommendation(rec.id),
@@ -434,6 +452,7 @@ function RecommendationCard({
                       <ActivityItemEditable
                         item={item}
                         index={i}
+                        cardId={cardId}
                         onChangeTitle={handleChangeTitle}
                         onChangeDescription={handleChangeDescription}
                         disabled={isPending}
@@ -467,6 +486,7 @@ function RecommendationCard({
             {mode === "view" && (
               <>
                 <button
+                  ref={acceptBtnRef}
                   type="button"
                   onClick={() => {
                     setPreConfirmMode("view");
@@ -486,6 +506,7 @@ function RecommendationCard({
                   Modify
                 </button>
                 <button
+                  ref={dismissBtnRef}
                   type="button"
                   onClick={() => setMode("confirm-dismiss")}
                   disabled={anyPending || isPending}
@@ -502,6 +523,7 @@ function RecommendationCard({
                   Edits above are for your planning reference and are not saved to the record.
                 </p>
                 <button
+                  ref={assignModifiedBtnRef}
                   type="button"
                   onClick={() => {
                     setPreConfirmMode("modify");
@@ -535,6 +557,7 @@ function RecommendationCard({
           onConfirm={() => assignMutation.mutate()}
           onCancel={() => setMode(preConfirmMode)}
           isPending={isPending}
+          triggerRef={preConfirmMode === "modify" ? assignModifiedBtnRef : acceptBtnRef}
         />
       )}
 
@@ -547,6 +570,7 @@ function RecommendationCard({
           onCancel={() => setMode("view")}
           isPending={isPending}
           isDestructive
+          triggerRef={dismissBtnRef}
         />
       )}
     </li>
@@ -634,12 +658,16 @@ function GenerateForm({ studentId, onGenerated }: GenerateFormProps) {
             step={1}
             value={durationMinutes}
             onChange={(e) => {
-              const n = parseInt(e.target.value, 10);
-              if (!Number.isNaN(n)) setDurationMinutes(n);
+              const n = e.currentTarget.valueAsNumber;
+              if (Number.isInteger(n)) {
+                setDurationMinutes(n);
+              }
             }}
             onBlur={(e) => {
-              const n = parseInt(e.target.value, 10);
-              if (!Number.isNaN(n)) setDurationMinutes(clampDuration(n));
+              const n = e.currentTarget.valueAsNumber;
+              setDurationMinutes(
+                clampDuration(Number.isInteger(n) ? n : durationMinutes),
+              );
             }}
             disabled={generateMutation.isPending}
             className="w-24 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"

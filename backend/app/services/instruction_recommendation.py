@@ -630,6 +630,10 @@ async def dismiss_recommendation(
     if rec.status == "accepted":
         raise ConflictError("Cannot dismiss a recommendation that has already been assigned.")
 
+    # Idempotent — already dismissed, nothing to do.
+    if rec.status == "dismissed":
+        return rec
+
     # Attempt atomic conditional UPDATE: only transitions if still pending_review.
     # This prevents duplicate audit entries when two concurrent requests race.
     before_status = rec.status
