@@ -360,6 +360,10 @@ function RecommendationCard({
       setMode("view");
       onAssigned();
     },
+    onError: () => {
+      // Close the confirmation dialog so the inline error message is visible.
+      setMode(preConfirmMode);
+    },
   });
 
   const dismissMutation = useMutation({
@@ -369,6 +373,10 @@ function RecommendationCard({
     onSuccess: () => {
       setMode("view");
       onDismissed();
+    },
+    onError: () => {
+      // Close the confirmation dialog so the inline error message is visible.
+      setMode("view");
     },
   });
 
@@ -455,7 +463,7 @@ function RecommendationCard({
                         cardId={cardId}
                         onChangeTitle={handleChangeTitle}
                         onChangeDescription={handleChangeDescription}
-                        disabled={isPending}
+                        disabled={anyPending || isPending}
                       />
                     </li>
                   ))
@@ -529,7 +537,7 @@ function RecommendationCard({
                     setPreConfirmMode("modify");
                     setMode("confirm-accept");
                   }}
-                  disabled={isPending}
+                  disabled={anyPending || isPending}
                   className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Assign
@@ -537,7 +545,7 @@ function RecommendationCard({
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  disabled={isPending}
+                  disabled={anyPending || isPending}
                   className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel

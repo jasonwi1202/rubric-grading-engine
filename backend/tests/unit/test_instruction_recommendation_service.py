@@ -865,27 +865,29 @@ class TestDismissRecommendation:
 
     @pytest.mark.asyncio
     async def test_idempotent_when_already_dismissed(self):
-        """Dismissing an already-dismissed rec returns it without side effects."""
+        """Dismissing an already-dismissed rec returns it without side effects.
+
+        The early-return path must short-circuit before any UPDATE or refresh —
+        db.execute is called exactly once (the initial SELECT) and db.refresh is
+        never awaited.
+        """
         db = AsyncMock()
         rec = self._make_rec_orm(status="dismissed")
 
-        update_result = MagicMock()
-        update_result.rowcount = 0
-
         db.execute = AsyncMock(
-            side_effect=[
-                MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
-                update_result,
-            ]
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=rec))
         )
         db.add = MagicMock()
         db.commit = AsyncMock()
-        db.refresh = AsyncMock(side_effect=lambda obj: None)
+        db.refresh = AsyncMock()
 
         result = await dismiss_recommendation(db, _T_ID, _REC_ID)
 
+        # Only the initial SELECT should have been issued — no UPDATE.
+        db.execute.assert_awaited_once()
         db.add.assert_not_called()
         db.commit.assert_not_awaited()
+        db.refresh.assert_not_awaited()
         assert result is rec
 
     @pytest.mark.asyncio
