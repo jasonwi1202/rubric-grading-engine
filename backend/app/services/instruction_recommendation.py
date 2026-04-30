@@ -253,8 +253,11 @@ async def generate_student_recommendations(
     if worklist_item_id is not None:
         await _assert_worklist_item_owned_by(db, worklist_item_id, teacher_id)
 
-    # Load skill profile — both student and teacher ID are required so a
-    # teacher cannot read another teacher's profile via a student they own.
+    # Load skill profile — both teacher_id and student_id are required as a
+    # defense-in-depth measure for tenant isolation: the ownership check above
+    # verified the student belongs to this teacher, and the query filter here
+    # ensures that even if that check were bypassed (e.g. via a direct DB call),
+    # a teacher still cannot retrieve another teacher's profile.
     result = await db.execute(
         select(StudentSkillProfile).where(
             StudentSkillProfile.teacher_id == teacher_id,

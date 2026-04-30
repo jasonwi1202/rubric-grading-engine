@@ -38,11 +38,11 @@ RLS:
   policy matching the pattern used by all other tenant-scoped tables.
 
 Zero-downtime:
-  Two ``CREATE INDEX CONCURRENTLY`` calls build the ``teacher_id`` and
-  ``student_id`` indexes without holding a table-level lock.  Each runs
-  inside ``autocommit_block()`` so PostgreSQL sees them outside a
-  transaction, which is required for ``CONCURRENTLY`` index builds.
-  Alembic's per-migration transaction is therefore disabled via
+  Three ``CREATE INDEX CONCURRENTLY`` calls build the ``teacher_id``,
+  ``student_id``, and ``group_id`` indexes without holding a table-level
+  lock.  Each runs inside ``autocommit_block()`` so PostgreSQL sees them
+  outside a transaction, which is required for ``CONCURRENTLY`` index
+  builds.  Alembic's per-migration transaction is therefore disabled via
   ``transaction_per_migration = False``.
 
 Downgrade:
@@ -160,6 +160,12 @@ def upgrade() -> None:
             ["student_id"],
             postgresql_concurrently=True,
         )
+        op.create_index(
+            "ix_instruction_recommendations_group_id",
+            "instruction_recommendations",
+            ["group_id"],
+            postgresql_concurrently=True,
+        )
 
     # ------------------------------------------------------------------
     # 3. Enable RLS — FORCE so the policy applies to the table owner too
@@ -199,6 +205,11 @@ def downgrade() -> None:
     )
 
     with op.get_context().autocommit_block():
+        op.drop_index(
+            "ix_instruction_recommendations_group_id",
+            table_name="instruction_recommendations",
+            postgresql_concurrently=True,
+        )
         op.drop_index(
             "ix_instruction_recommendations_student_id",
             table_name="instruction_recommendations",

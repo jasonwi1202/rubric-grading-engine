@@ -31,7 +31,6 @@ from fastapi.responses import JSONResponse, Response
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
 from app.exceptions import ValidationError as DomainValidationError
-from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.user import User
 from app.schemas.assignment import (
     AssignmentListItemResponse,
@@ -41,8 +40,7 @@ from app.schemas.assignment import (
 from app.schemas.class_ import ClassResponse, CreateClassRequest, PatchClassRequest
 from app.schemas.instruction_recommendation import (
     GenerateGroupRecommendationRequest,
-    InstructionRecommendationResponse,
-    RecommendationItemResponse,
+    recommendation_response_from_orm,
 )
 from app.schemas.roster_import import (
     DiffRowResponse,
@@ -674,29 +672,6 @@ async def patch_class_group_endpoint(
 # ---------------------------------------------------------------------------
 
 
-def _group_recommendation_response(
-    rec: InstructionRecommendation,
-) -> InstructionRecommendationResponse:
-    """Build a response schema from an ORM recommendation row."""
-    return InstructionRecommendationResponse(
-        id=rec.id,
-        teacher_id=rec.teacher_id,
-        student_id=rec.student_id,
-        group_id=rec.group_id,
-        worklist_item_id=rec.worklist_item_id,
-        skill_key=rec.skill_key,
-        grade_level=rec.grade_level,
-        prompt_version=rec.prompt_version,
-        recommendations=[
-            RecommendationItemResponse(**item)
-            for item in (rec.recommendations or [])
-        ],
-        evidence_summary=rec.evidence_summary,
-        status=rec.status,
-        created_at=rec.created_at,
-    )
-
-
 @router.post(
     "/{class_id}/groups/{group_id}/recommendations",
     status_code=201,
@@ -730,5 +705,5 @@ async def generate_group_recommendations_endpoint(
     )
     return JSONResponse(
         status_code=201,
-        content={"data": _group_recommendation_response(rec).model_dump(mode="json")},
+        content={"data": recommendation_response_from_orm(rec).model_dump(mode="json")},
     )

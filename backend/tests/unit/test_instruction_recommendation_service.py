@@ -37,6 +37,7 @@ No student PII in fixtures.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -503,8 +504,6 @@ class TestGenerateStudentRecommendations:
                 duration_minutes=20,
                 skill_key="evidence",
             )
-
-        import json
 
         sent_profile = json.loads(captured_calls[0]["skill_profile_json"])
         assert "evidence" in sent_profile

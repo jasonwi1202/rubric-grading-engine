@@ -20,14 +20,12 @@ from fastapi.responses import JSONResponse
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
-from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.student import Student
 from app.models.student_skill_profile import StudentSkillProfile
 from app.models.user import User
 from app.schemas.instruction_recommendation import (
     GenerateStudentRecommendationRequest,
-    InstructionRecommendationResponse,
-    RecommendationItemResponse,
+    recommendation_response_from_orm,
 )
 from app.schemas.student import (
     AssignmentHistoryItemResponse,
@@ -56,29 +54,6 @@ router = APIRouter(prefix="/students", tags=["students"])
 
 def _student_response(student: object) -> StudentResponse:
     return StudentResponse.model_validate(student)
-
-
-def _recommendation_response(
-    rec: InstructionRecommendation,
-) -> InstructionRecommendationResponse:
-    """Build a response schema from an ORM recommendation row."""
-    return InstructionRecommendationResponse(
-        id=rec.id,
-        teacher_id=rec.teacher_id,
-        student_id=rec.student_id,
-        group_id=rec.group_id,
-        worklist_item_id=rec.worklist_item_id,
-        skill_key=rec.skill_key,
-        grade_level=rec.grade_level,
-        prompt_version=rec.prompt_version,
-        recommendations=[
-            RecommendationItemResponse(**item)
-            for item in (rec.recommendations or [])
-        ],
-        evidence_summary=rec.evidence_summary,
-        status=rec.status,
-        created_at=rec.created_at,
-    )
 
 
 def _student_with_profile_response(
@@ -249,7 +224,7 @@ async def generate_student_recommendations_endpoint(
     )
     return JSONResponse(
         status_code=201,
-        content={"data": _recommendation_response(rec).model_dump(mode="json")},
+        content={"data": recommendation_response_from_orm(rec).model_dump(mode="json")},
     )
 
 
@@ -275,5 +250,5 @@ async def list_student_recommendations_endpoint(
     recs = await list_student_recommendations(db, teacher.id, student_id)
     return JSONResponse(
         status_code=200,
-        content={"data": [_recommendation_response(r).model_dump(mode="json") for r in recs]},
+        content={"data": [recommendation_response_from_orm(r).model_dump(mode="json") for r in recs]},
     )

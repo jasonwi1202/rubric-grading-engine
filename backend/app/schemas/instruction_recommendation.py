@@ -14,8 +14,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.models.instruction_recommendation import InstructionRecommendation
 
 
 class RecommendationStatus(StrEnum):
@@ -157,4 +161,29 @@ class GenerateGroupRecommendationRequest(BaseModel):
         ge=5,
         le=120,
         description="Target activity duration in minutes.",
+    )
+
+
+def recommendation_response_from_orm(
+    rec: "InstructionRecommendation",
+) -> InstructionRecommendationResponse:
+    """Build an :class:`InstructionRecommendationResponse` from an ORM row.
+
+    Shared by the students and classes routers to guarantee identical
+    serialisation logic for both student-level and group-level recommendations.
+    """
+    items: list[Any] = rec.recommendations or []
+    return InstructionRecommendationResponse(
+        id=rec.id,
+        teacher_id=rec.teacher_id,
+        student_id=rec.student_id,
+        group_id=rec.group_id,
+        worklist_item_id=rec.worklist_item_id,
+        skill_key=rec.skill_key,
+        grade_level=rec.grade_level,
+        prompt_version=rec.prompt_version,
+        recommendations=[RecommendationItemResponse(**item) for item in items],
+        evidence_summary=rec.evidence_summary,
+        status=rec.status,
+        created_at=rec.created_at,
     )
