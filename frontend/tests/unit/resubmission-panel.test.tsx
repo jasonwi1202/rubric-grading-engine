@@ -242,9 +242,9 @@ describe("ResubmissionPanel — score delta display", () => {
     const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
     const thesisText = within(criterionList).getByText(/Thesis/i);
     const thesisItem = thesisText.closest("li");
-    expect(thesisItem).not.toBeNull();
-    expect(within(thesisItem as HTMLElement).getByText("3")).toBeInTheDocument();
-    expect(within(thesisItem as HTMLElement).getByText("4")).toBeInTheDocument();
+    if (!thesisItem) throw new Error("Thesis list item not found in DOM");
+    expect(within(thesisItem).getByText("3")).toBeInTheDocument();
+    expect(within(thesisItem).getByText("4")).toBeInTheDocument();
   });
 
   it("shows criterion delta values in criterion delta rows", () => {
@@ -301,14 +301,13 @@ describe("ResubmissionPanel — low-effort warning", () => {
 describe("ResubmissionPanel — feedback-addressed indicators", () => {
   it("shows 'Feedback addressed' indicator for addressed criterion (crit-001)", () => {
     render(<ResubmissionPanel {...makeProps()} />);
-    // crit-001 (Thesis) has addressed=true — the button name contains "addressed"
-    // and is present within the Thesis criterion item
+    // crit-001 (Thesis) has addressed=true — the button is present within the Thesis li
     const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
     const thesisText = within(criterionList).getByText(/Thesis/i);
     const thesisItem = thesisText.closest("li");
-    expect(thesisItem).not.toBeNull();
+    if (!thesisItem) throw new Error("Thesis list item not found in DOM");
     expect(
-      within(thesisItem as HTMLElement).getByRole("button", { name: /Feedback addressed/i }),
+      within(thesisItem).getByRole("button", { name: /Feedback addressed/i }),
     ).toBeInTheDocument();
   });
 
@@ -318,9 +317,9 @@ describe("ResubmissionPanel — feedback-addressed indicators", () => {
     const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
     const evidenceText = within(criterionList).getByText(/Evidence/i);
     const evidenceItem = evidenceText.closest("li");
-    expect(evidenceItem).not.toBeNull();
+    if (!evidenceItem) throw new Error("Evidence list item not found in DOM");
     expect(
-      within(evidenceItem as HTMLElement).getByRole("button", { name: /Feedback not addressed/i }),
+      within(evidenceItem).getByRole("button", { name: /Feedback not addressed/i }),
     ).toBeInTheDocument();
   });
 

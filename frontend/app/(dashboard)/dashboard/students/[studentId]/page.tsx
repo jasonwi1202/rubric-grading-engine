@@ -201,6 +201,7 @@ function HistoryRow({ item }: { item: AssignmentHistoryItem }) {
         <Link
           href={`/dashboard/assignments/${item.assignment_id}/review/${item.essay_id}`}
           className="mt-0.5 inline-block text-xs text-gray-400 underline hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          aria-label={`View essay review for ${item.assignment_title}`}
         >
           View essay review
         </Link>

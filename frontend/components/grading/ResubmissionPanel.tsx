@@ -326,20 +326,32 @@ export interface ResubmissionPanelProps {
   criteria: RubricSnapshotCriterion[];
   /**
    * Submission date for the base version (v1), used in the version strip.
-   * When null the strip shows the comparison `created_at` as a fallback.
+   * When null/undefined the strip falls back to `comparison.created_at`.
+   *
+   * NOTE (M6-12): The backend does not yet expose per-version submission dates
+   * in the revision-comparison response.  These props are intentional placeholders
+   * for a future milestone that adds a dedicated essay-versions list endpoint.
    */
   baseVersionSubmittedAt?: string | null;
   /**
    * Submission date for the revised version, used in the version strip.
-   * When null the strip shows the comparison `created_at` as a fallback.
+   * When null/undefined the strip falls back to `comparison.created_at`.
+   *
+   * NOTE (M6-12): See `baseVersionSubmittedAt` — same placeholder rationale.
    */
   revisedVersionSubmittedAt?: string | null;
   /**
    * Word count for the base version, shown in the version strip.
+   *
+   * NOTE (M6-12): Per-version word counts are not included in the current
+   * revision-comparison API response.  Defaults to 0 until a versions list
+   * endpoint is available.
    */
   baseVersionWordCount?: number;
   /**
    * Word count for the revised version, shown in the version strip.
+   *
+   * NOTE (M6-12): See `baseVersionWordCount` — same placeholder rationale.
    */
   revisedVersionWordCount?: number;
 }
