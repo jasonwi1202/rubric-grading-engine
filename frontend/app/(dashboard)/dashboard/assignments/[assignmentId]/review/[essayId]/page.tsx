@@ -7,13 +7,16 @@
  *
  * Two-panel layout:
  *   Left  — Essay text panel (placeholder until a dedicated API endpoint is
- *            available to serve extracted essay content) + Integrity panel.
+ *            available to serve extracted essay content) + Integrity panel
+ *            + Writing process panel + Resubmission comparison panel (when
+ *            the essay has been resubmitted and re-graded).
  *   Right — Rubric scores + feedback editing panel (EssayReviewPanel).
  *
  * Data loading:
- *   1. GET /assignments/{assignmentId}   → assignment with rubric_snapshot
- *   2. GET /essays/{essayId}/grade       → grade with all criterion scores
- *   3. GET /essays/{essayId}/integrity   → integrity report (404 = no report)
+ *   1. GET /assignments/{assignmentId}              → assignment with rubric_snapshot
+ *   2. GET /essays/{essayId}/grade                 → grade with all criterion scores
+ *   3. GET /essays/{essayId}/integrity             → integrity report (404 = no report)
+ *   4. GET /essays/{essayId}/revision-comparison   → revision comparison (404 = no resubmission)
  *
  * The rubric_snapshot provides criterion names, weights, and score ranges
  * that are cross-referenced with the criterion scores by rubric_criterion_id.
@@ -36,6 +39,7 @@ import type { IntegrityReportResponse } from "@/lib/api/integrity";
 import { getProcessSignals } from "@/lib/api/process-signals";
 import { getSnapshots } from "@/lib/api/essays";
 import { ApiError } from "@/lib/api/errors";
+import { getRevisionComparison } from "@/lib/api/resubmission";
 import {
   EssayReviewPanel,
   type RubricSnapshotCriterion,
@@ -51,6 +55,10 @@ import {
   WritingProcessPanelSkeleton,
   WritingProcessPanelEmpty,
 } from "@/components/grading/WritingProcessPanel";
+import {
+  ResubmissionPanel,
+  ResubmissionPanelSkeleton,
+} from "@/components/grading/ResubmissionPanel";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -161,6 +169,28 @@ export default function EssayReviewPage() {
     },
     select: (data) => (data === null ? null : { snapshots: data.snapshots }),
     enabled: !!essayId && processSignals?.has_process_data === true,
+    staleTime: 60_000,
+  });
+
+  // Load revision comparison — 404 means the essay has not been resubmitted
+  // and re-graded yet; this is treated as "no comparison available" (null),
+  // not an error.  The ResubmissionPanel is only rendered when non-null.
+  const {
+    data: revisionComparison,
+    isLoading: revisionLoading,
+  } = useQuery({
+    queryKey: ["revision-comparison", essayId],
+    queryFn: async () => {
+      try {
+        return await getRevisionComparison(essayId);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    enabled: !!essayId,
     staleTime: 60_000,
   });
 
@@ -345,6 +375,20 @@ export default function EssayReviewPage() {
               />
             ) : processSignals ? (
               <WritingProcessPanelEmpty />
+            ) : null}
+
+            {/* Resubmission comparison panel — shown only when a revision
+                comparison has been computed for this essay. 404 is treated as
+                "not yet resubmitted" and the panel is hidden. */}
+            {revisionLoading ? (
+              <ResubmissionPanelSkeleton />
+            ) : revisionComparison ? (
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <ResubmissionPanel
+                  comparison={revisionComparison}
+                  criteria={criteria}
+                />
+              </div>
             ) : null}
           </div>
 

@@ -195,6 +195,16 @@ function HistoryRow({ item }: { item: AssignmentHistoryItem }) {
           {item.assignment_title}
         </Link>
         <p className="mt-0.5 text-xs text-gray-500">{date}</p>
+        {/* Link to the essay review page — the review page shows the
+            ResubmissionPanel automatically when a revision comparison exists
+            for this essay. */}
+        <Link
+          href={`/dashboard/assignments/${item.assignment_id}/review/${item.essay_id}`}
+          className="mt-0.5 inline-block text-xs text-gray-400 underline hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          aria-label={`Review essay for ${item.assignment_title}`}
+        >
+          View essay review
+        </Link>
       </div>
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold tabular-nums text-gray-900">
@@ -446,6 +456,9 @@ export default function StudentProfilePage() {
               {student?.skill_profile?.assignment_count === 1
                 ? "assignment"
                 : "assignments"}
+              {strengths.length > 0 && (
+                <> · Upward skill trends may reflect resubmission progress</>
+              )}
             </p>
           </>
         )}
