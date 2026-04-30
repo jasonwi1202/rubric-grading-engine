@@ -471,3 +471,207 @@ class TestAssignEssay:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.patch(self._url(), json={})
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/essays/{id}/resubmit  (M6-10)
+# ---------------------------------------------------------------------------
+
+
+class TestResubmitEssay:
+    def _url(self, essay_id: uuid.UUID | None = None) -> str:
+        eid = essay_id or uuid.uuid4()
+        return f"/api/v1/essays/{eid}/resubmit"
+
+    def _make_resubmit_response(
+        self,
+        essay_id: uuid.UUID | None = None,
+        assignment_id: uuid.UUID | None = None,
+        version_number: int = 2,
+    ) -> MagicMock:
+        from app.schemas.essay import ResubmitEssayResponse
+
+        eid = essay_id or uuid.uuid4()
+        return ResubmitEssayResponse(
+            essay_id=eid,
+            essay_version_id=uuid.uuid4(),
+            version_number=version_number,
+            assignment_id=assignment_id or uuid.uuid4(),
+            word_count=150,
+            file_storage_key="essays/a/b/v2/revised.txt",
+            submitted_at=datetime.now(UTC),
+        )
+
+    def test_happy_path_returns_201(self) -> None:
+        teacher = _make_teacher()
+        essay_id = uuid.uuid4()
+        resubmit_resp = self._make_resubmit_response(essay_id=essay_id)
+
+        app = _app_with_teacher(teacher)
+
+        with (
+            patch(
+                "app.routers.essays.resubmit_essay",
+                new_callable=AsyncMock,
+                return_value=resubmit_resp,
+            ),
+            patch("app.routers.essays._compute_embedding_task"),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(essay_id),
+                files=[("file", ("revised.txt", BytesIO(b"Revised essay text."), "text/plain"))],
+            )
+
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert "data" in body
+        data = body["data"]
+        assert data["essay_id"] == str(essay_id)
+        assert data["version_number"] == 2
+        assert data["word_count"] == 150
+
+    def test_no_auth_returns_401(self) -> None:
+        app = create_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            self._url(),
+            files=[("file", ("revised.txt", BytesIO(b"text"), "text/plain"))],
+        )
+        assert resp.status_code == 401
+
+    def test_essay_not_found_returns_404(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.resubmit_essay",
+            new_callable=AsyncMock,
+            side_effect=NotFoundError("Essay not found."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(),
+                files=[("file", ("revised.txt", BytesIO(b"text"), "text/plain"))],
+            )
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    def test_cross_teacher_returns_403(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.resubmit_essay",
+            new_callable=AsyncMock,
+            side_effect=ForbiddenError("Forbidden."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(),
+                files=[("file", ("revised.txt", BytesIO(b"text"), "text/plain"))],
+            )
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_resubmission_disabled_returns_409(self) -> None:
+        from app.exceptions import ResubmissionDisabledError
+
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.resubmit_essay",
+            new_callable=AsyncMock,
+            side_effect=ResubmissionDisabledError("Resubmission is not enabled."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(),
+                files=[("file", ("revised.txt", BytesIO(b"text"), "text/plain"))],
+            )
+
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "RESUBMISSION_DISABLED"
+
+    def test_resubmission_limit_reached_returns_409(self) -> None:
+        from app.exceptions import ResubmissionLimitReachedError
+
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.resubmit_essay",
+            new_callable=AsyncMock,
+            side_effect=ResubmissionLimitReachedError("Limit reached."),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(),
+                files=[("file", ("revised.txt", BytesIO(b"text"), "text/plain"))],
+            )
+
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "RESUBMISSION_LIMIT_REACHED"
+
+    def test_file_too_large_returns_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        teacher = _make_teacher()
+        monkeypatch.setattr("app.routers.essays.settings.max_essay_file_size_mb", 1)
+        app = _app_with_teacher(teacher)
+
+        big_data = b"x" * (1 * 1024 * 1024 + 2)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            self._url(),
+            files=[("file", ("big.txt", BytesIO(big_data), "text/plain"))],
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "FILE_TOO_LARGE"
+
+    def test_invalid_mime_type_returns_422(self) -> None:
+        teacher = _make_teacher()
+        app = _app_with_teacher(teacher)
+
+        with patch(
+            "app.routers.essays.resubmit_essay",
+            new_callable=AsyncMock,
+            side_effect=FileTypeNotAllowedError("Type not allowed.", field="file"),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(),
+                files=[("file", ("bad.jpg", BytesIO(b"fake"), "image/jpeg"))],
+            )
+
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "FILE_TYPE_NOT_ALLOWED"
+
+    def test_embedding_task_failure_does_not_break_response(self) -> None:
+        """A broker outage on embedding enqueue must not fail the 201 response."""
+        teacher = _make_teacher()
+        essay_id = uuid.uuid4()
+        resubmit_resp = self._make_resubmit_response(essay_id=essay_id)
+
+        app = _app_with_teacher(teacher)
+
+        failing_task = MagicMock()
+        failing_task.delay.side_effect = Exception("broker down")
+
+        with (
+            patch(
+                "app.routers.essays.resubmit_essay",
+                new_callable=AsyncMock,
+                return_value=resubmit_resp,
+            ),
+            patch("app.routers.essays._compute_embedding_task", failing_task),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                self._url(essay_id),
+                files=[("file", ("revised.txt", BytesIO(b"Revised essay text."), "text/plain"))],
+            )
+
+        assert resp.status_code == 201, resp.text

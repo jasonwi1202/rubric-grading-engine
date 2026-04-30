@@ -212,6 +212,28 @@ class RapidCompletionEventResponse(BaseModel):
     completion_fraction: float
 
 
+# ---------------------------------------------------------------------------
+# Resubmission intake — M6-10
+# ---------------------------------------------------------------------------
+
+
+class ResubmitEssayResponse(BaseModel):
+    """Response for ``POST /essays/{essayId}/resubmit``.
+
+    Returns metadata for the newly created essay version.
+    """
+
+    essay_id: uuid.UUID
+    essay_version_id: uuid.UUID
+    version_number: int
+    assignment_id: uuid.UUID
+    word_count: int
+    file_storage_key: str | None
+    submitted_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ProcessSignalsResponse(BaseModel):
     """Response for ``GET /essays/{essayId}/process-signals``.
 

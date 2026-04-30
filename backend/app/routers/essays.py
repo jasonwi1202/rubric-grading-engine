@@ -11,6 +11,7 @@ Endpoints (``assignments_router``, prefix ``/assignments``):
 Endpoints (``essay_router``, prefix ``/essays``):
   PATCH /essays/{essayId}                  — manually assign a student to an essay
   POST  /essays/{essayId}/grade/retry      — re-enqueue grading for a failed essay
+  POST  /essays/{essayId}/resubmit         — submit a new essay version (M6-10)
   POST  /essays/{essayId}/snapshots        — save a writing-process snapshot (M5-09)
   GET   /essays/{essayId}/snapshots        — retrieve snapshots for editor recovery (M5-09)
   GET   /essays/{essayId}/process-signals  — composition timeline signals (M5-10)
@@ -48,6 +49,7 @@ from app.services.essay import (
     get_writing_snapshots,
     ingest_essay,
     list_essays_for_assignment,
+    resubmit_essay,
     save_writing_snapshot,
 )
 from app.tasks.embedding import compute_essay_embedding as _compute_embedding_task
@@ -303,6 +305,75 @@ async def retry_essay_grading_endpoint(
     return JSONResponse(
         status_code=202,
         content={"data": {"essay_id": str(essay_id), "status": "queued"}},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /essays/{essayId}/resubmit  (M6-10)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.post(
+    "/{essay_id}/resubmit",
+    status_code=201,
+    summary="Submit a new essay version (resubmission)",
+)
+async def resubmit_essay_endpoint(
+    essay_id: uuid.UUID,
+    file: UploadFile = File(..., description="Revised essay file (PDF, DOCX, or TXT)"),
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Create a new versioned submission for an existing essay.
+
+    Validates resubmission eligibility against the assignment's
+    ``resubmission_enabled`` flag and ``resubmission_limit``, then stores the
+    revised file and creates a new :class:`EssayVersion` record.
+
+    Response body: ``{"data": ResubmitEssayResponse}``
+
+    Returns 403 if the essay belongs to a different teacher.
+    Returns 404 if the essay does not exist.
+    Returns 409 if resubmission is disabled or the limit has been reached.
+    Returns 422 if the file MIME type is not allowed or the file is too large.
+    """
+    max_bytes = settings.max_essay_file_size_mb * 1024 * 1024
+    raw = await file.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise FileTooLargeError(
+            f"File exceeds the maximum allowed size of {settings.max_essay_file_size_mb} MB.",
+            field="file",
+        )
+
+    filename = file.filename or f"resubmission_{uuid.uuid4()}"
+
+    result = await resubmit_essay(
+        db=db,
+        teacher_id=teacher.id,
+        essay_id=essay_id,
+        filename=filename,
+        data=raw,
+    )
+
+    # Enqueue embedding task for the new version.  Fire-and-forget.
+    try:
+        _compute_embedding_task.delay(
+            str(result.essay_version_id),
+            str(result.assignment_id),
+            str(teacher.id),
+        )
+    except Exception as embed_exc:
+        logger.warning(
+            "Failed to enqueue embedding task for resubmission — version is still persisted",
+            extra={
+                "essay_version_id": str(result.essay_version_id),
+                "error_type": type(embed_exc).__name__,
+            },
+        )
+
+    return JSONResponse(
+        status_code=201,
+        content={"data": result.model_dump(mode="json")},
     )
 
 

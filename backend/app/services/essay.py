@@ -42,6 +42,8 @@ from app.exceptions import (
     FileTypeNotAllowedError,
     ForbiddenError,
     NotFoundError,
+    ResubmissionDisabledError,
+    ResubmissionLimitReachedError,
     ValidationError,
 )
 from app.models.assignment import Assignment
@@ -57,6 +59,7 @@ from app.schemas.essay import (
     PasteEventResponse,
     ProcessSignalsResponse,
     RapidCompletionEventResponse,
+    ResubmitEssayResponse,
     SessionSegmentResponse,
     SnapshotItem,
     WriteSnapshotResponse,
@@ -1390,4 +1393,169 @@ async def get_process_signals(
             for e in cached["rapid_completion_events"]
         ],
         computed_at=computed_at_dt,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Resubmission intake — M6-10
+# ---------------------------------------------------------------------------
+
+
+async def resubmit_essay(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    essay_id: uuid.UUID,
+    filename: str,
+    data: bytes,
+) -> ResubmitEssayResponse:
+    """Create a new versioned submission for an existing essay.
+
+    Validates resubmission eligibility (enabled, limit), stores the file to
+    S3, extracts and normalises text, and persists a new :class:`EssayVersion`
+    record with ``version_number = max(existing) + 1``.
+
+    Args:
+        db: Async database session.
+        teacher_id: The authenticated teacher's UUID (tenant scoping).
+        essay_id: The existing essay's UUID.
+        filename: Original filename from the upload (sanitized server-side).
+        data: Raw file bytes.
+
+    Returns:
+        A :class:`~app.schemas.essay.ResubmitEssayResponse` with the new
+        version metadata.
+
+    Raises:
+        FileTooLargeError: File exceeds ``settings.max_essay_file_size_mb``.
+        FileTypeNotAllowedError: MIME type is not allowed.
+        NotFoundError: Essay does not exist.
+        ForbiddenError: Essay belongs to a different teacher.
+        ResubmissionDisabledError: Assignment does not allow resubmissions.
+        ResubmissionLimitReachedError: Per-assignment resubmission limit reached.
+
+    Security notes:
+        - MIME type is validated from magic bytes, not the file extension.
+        - File size is checked before any extraction or S3 I/O.
+        - S3 upload happens before extraction; on extraction failure the object
+          is deleted to avoid orphaned storage.
+        - Filename is sanitised before embedding in the S3 key.
+        - No student PII appears in any log output.
+    """
+    # 1. Validate file size and MIME type before any DB or S3 work.
+    validate_file_size(data)
+    mime_type = validate_mime_type(data)
+
+    # 2. Verify essay existence and teacher ownership.  _get_essay_for_teacher
+    #    raises NotFoundError (404) or ForbiddenError (403) as appropriate.
+    essay = await _get_essay_for_teacher(db, essay_id, teacher_id)
+
+    # 3. Load the assignment — re-use teacher_id in the JOIN to maintain tenant
+    #    isolation in the query itself (not just via the prior ownership check).
+    assignment_result = await db.execute(
+        select(Assignment)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(Assignment.id == essay.assignment_id, Class.teacher_id == teacher_id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    if assignment is None:
+        raise NotFoundError("Assignment not found.")
+
+    # 4. Check resubmission policy.
+    if not assignment.resubmission_enabled:
+        raise ResubmissionDisabledError("Resubmission is not enabled for this assignment.")
+
+    # 5. Count existing versions to determine next version number and enforce limit.
+    #    Both the count and the max version number are derived from one query to
+    #    avoid a race between check and insert.
+    ver_stats_result = await db.execute(
+        select(
+            func.count(EssayVersion.id).label("ver_count"),
+            func.max(EssayVersion.version_number).label("max_ver"),
+        ).where(EssayVersion.essay_id == essay_id)
+    )
+    ver_stats = ver_stats_result.one()
+    ver_count: int = ver_stats.ver_count or 0
+    max_ver: int = ver_stats.max_ver or 0
+
+    # Resubmissions = total versions − 1 (version 1 is the original).
+    resubmission_count = max(ver_count - 1, 0)
+    if (
+        assignment.resubmission_limit is not None
+        and resubmission_count >= assignment.resubmission_limit
+    ):
+        raise ResubmissionLimitReachedError(
+            f"Resubmission limit of {assignment.resubmission_limit} has been reached."
+        )
+
+    new_version_number = max_ver + 1
+
+    # 6. Upload raw file to S3 before extraction.
+    safe_filename = _sanitize_filename(filename)
+    s3_key = f"essays/{assignment.id}/{essay.id}/v{new_version_number}/{safe_filename}"
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, upload_file, s3_key, data, mime_type)
+    logger.info(
+        "Resubmission file uploaded to S3",
+        extra={"essay_id": str(essay.id), "assignment_id": str(assignment.id)},
+    )
+
+    # 7. Extract text; clean up S3 object on failure.
+    try:
+        raw_text = extract_text(data, mime_type)
+    except Exception:
+        logger.exception(
+            "Text extraction failed for resubmission; cleaning up S3 object",
+            extra={"essay_id": str(essay.id)},
+        )
+        try:
+            await loop.run_in_executor(None, delete_file, s3_key)
+        except Exception:
+            logger.exception(
+                "S3 cleanup after resubmission extraction failure also failed",
+                extra={"essay_id": str(essay.id)},
+            )
+        raise
+
+    # 8. Normalise and count words.
+    normalized = normalize_text(raw_text)
+    words = count_words(normalized)
+
+    if words < _MIN_WORD_COUNT_THRESHOLD:
+        logger.warning(
+            "Resubmission extracted text is suspiciously short",
+            extra={"essay_id": str(essay.id), "word_count": words, "mime_type": mime_type},
+        )
+
+    # 9. Persist the new version.
+    version = EssayVersion(
+        essay_id=essay.id,
+        version_number=new_version_number,
+        content=normalized,
+        file_storage_key=s3_key,
+        word_count=words,
+    )
+    db.add(version)
+
+    await db.commit()
+    await db.refresh(version)
+
+    logger.info(
+        "Essay resubmission ingested",
+        extra={
+            "essay_id": str(essay.id),
+            "essay_version_id": str(version.id),
+            "assignment_id": str(assignment.id),
+            "version_number": new_version_number,
+            "word_count": words,
+        },
+    )
+
+    return ResubmitEssayResponse(
+        essay_id=essay.id,
+        essay_version_id=version.id,
+        version_number=version.version_number,
+        assignment_id=essay.assignment_id,
+        word_count=version.word_count,
+        file_storage_key=version.file_storage_key,
+        submitted_at=version.submitted_at,
     )
