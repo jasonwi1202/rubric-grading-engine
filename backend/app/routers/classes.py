@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse, Response
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
 from app.exceptions import ValidationError as DomainValidationError
+from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.user import User
 from app.schemas.assignment import (
     AssignmentListItemResponse,
@@ -38,6 +39,11 @@ from app.schemas.assignment import (
     CreateAssignmentRequest,
 )
 from app.schemas.class_ import ClassResponse, CreateClassRequest, PatchClassRequest
+from app.schemas.instruction_recommendation import (
+    GenerateGroupRecommendationRequest,
+    InstructionRecommendationResponse,
+    RecommendationItemResponse,
+)
 from app.schemas.roster_import import (
     DiffRowResponse,
     ImportConfirmRequest,
@@ -60,6 +66,7 @@ from app.services.class_ import (
     update_class,
 )
 from app.services.class_insights import get_class_insights
+from app.services.instruction_recommendation import generate_group_recommendations
 from app.services.roster_import import (
     CsvParseResult,
     ParsedRow,
@@ -659,4 +666,69 @@ async def patch_class_group_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": updated.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /classes/{classId}/groups/{groupId}/recommendations
+# ---------------------------------------------------------------------------
+
+
+def _group_recommendation_response(
+    rec: InstructionRecommendation,
+) -> InstructionRecommendationResponse:
+    """Build a response schema from an ORM recommendation row."""
+    return InstructionRecommendationResponse(
+        id=rec.id,
+        teacher_id=rec.teacher_id,
+        student_id=rec.student_id,
+        group_id=rec.group_id,
+        worklist_item_id=rec.worklist_item_id,
+        skill_key=rec.skill_key,
+        grade_level=rec.grade_level,
+        prompt_version=rec.prompt_version,
+        recommendations=[
+            RecommendationItemResponse(**item)
+            for item in (rec.recommendations or [])
+        ],
+        evidence_summary=rec.evidence_summary,
+        status=rec.status,
+        created_at=rec.created_at,
+    )
+
+
+@router.post(
+    "/{class_id}/groups/{group_id}/recommendations",
+    status_code=201,
+    summary="Generate instruction recommendations for a class skill-gap group",
+)
+async def generate_group_recommendations_endpoint(
+    class_id: uuid.UUID,
+    group_id: uuid.UUID,
+    payload: GenerateGroupRecommendationRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Generate AI-powered instruction recommendations targeting a class skill-gap group.
+
+    Uses the group's shared skill gap as the generation context.  Only
+    aggregate group metadata is sent to the LLM — no individual student essay
+    content or PII.
+
+    Returns 201 with the persisted recommendation set.
+    Returns 404 if the class or group does not exist.
+    Returns 403 if the class or group belongs to a different teacher.
+    Returns 503 if the LLM service is temporarily unavailable.
+    """
+    rec = await generate_group_recommendations(
+        db,
+        teacher.id,
+        class_id,
+        group_id,
+        grade_level=payload.grade_level,
+        duration_minutes=payload.duration_minutes,
+    )
+    return JSONResponse(
+        status_code=201,
+        content={"data": _group_recommendation_response(rec).model_dump(mode="json")},
     )
