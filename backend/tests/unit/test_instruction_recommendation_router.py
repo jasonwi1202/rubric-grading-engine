@@ -449,3 +449,55 @@ class TestAssignRecommendationEndpoint:
     def test_unauthenticated_returns_401(self):
         resp = _anon_client().post(self._url())
         assert resp.status_code == 401
+
+
+class TestDismissRecommendationEndpoint:
+    _path = "/api/v1/recommendations/{recommendation_id}/dismiss"
+
+    def _url(self, recommendation_id: uuid.UUID | None = None) -> str:
+        return self._path.format(recommendation_id=recommendation_id or uuid.uuid4())
+
+    def test_happy_path_returns_200_with_envelope(self):
+        teacher = _make_teacher()
+        rec_id = uuid.uuid4()
+        rec = _make_recommendation_orm(
+            rec_id=rec_id, teacher_id=teacher.id, student_id=uuid.uuid4(), status="dismissed"
+        )
+        with patch(
+            "app.routers.recommendations.dismiss_recommendation",
+            new_callable=AsyncMock,
+            return_value=rec,
+        ):
+            resp = _client(teacher).post(self._url(rec_id))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "data" in body
+        data = body["data"]
+        assert data["id"] == str(rec_id)
+        assert data["status"] == "dismissed"
+
+    def test_not_found_returns_404(self):
+        teacher = _make_teacher()
+        with patch(
+            "app.routers.recommendations.dismiss_recommendation",
+            new_callable=AsyncMock,
+            side_effect=NotFoundError("Instruction recommendation not found."),
+        ):
+            resp = _client(teacher).post(self._url())
+        assert resp.status_code == 404
+
+    def test_already_assigned_returns_409(self):
+        from app.exceptions import ConflictError
+
+        teacher = _make_teacher()
+        with patch(
+            "app.routers.recommendations.dismiss_recommendation",
+            new_callable=AsyncMock,
+            side_effect=ConflictError("Cannot dismiss a recommendation that has already been assigned."),
+        ):
+            resp = _client(teacher).post(self._url())
+        assert resp.status_code == 409
+
+    def test_unauthenticated_returns_401(self):
+        resp = _anon_client().post(self._url())
+        assert resp.status_code == 401
