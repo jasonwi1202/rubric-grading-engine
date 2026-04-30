@@ -42,8 +42,10 @@ Zero-downtime:
   ``student_id``, and ``group_id`` indexes without holding a table-level
   lock.  Each runs inside ``autocommit_block()`` so PostgreSQL sees them
   outside a transaction, which is required for ``CONCURRENTLY`` index
-  builds.  Alembic's per-migration transaction is therefore disabled via
-  ``transaction_per_migration = False``.
+  builds.  The Alembic environment (``env.py``) uses
+  ``transaction_per_migration=True`` so that ``autocommit_block()`` can
+  temporarily switch the connection to autocommit mode within an otherwise
+  transactional migration.
 
 Downgrade:
   Drops the policy, disables RLS, then drops the table (indexes are
@@ -61,9 +63,6 @@ revision: str = "029_instruction_recommendations"
 down_revision: str | None = "028_teacher_worklist_items"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
-transaction_per_migration = False
 
 
 def upgrade() -> None:
@@ -144,6 +143,10 @@ def upgrade() -> None:
             "(student_id IS NOT NULL AND group_id IS NULL)"
             " OR (student_id IS NULL AND group_id IS NOT NULL)",
             name="ck_instruction_recommendations_context_exclusive",
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending_review', 'accepted', 'dismissed')",
+            name="ck_instruction_recommendations_status",
         ),
     )
 

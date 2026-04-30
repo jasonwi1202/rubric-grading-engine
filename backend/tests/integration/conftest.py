@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -32,6 +33,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+
+from app.config import settings as app_settings
 
 # ---------------------------------------------------------------------------
 # Session-scoped PostgreSQL container
@@ -51,34 +54,33 @@ def pg_dsn() -> str:
 
     container = None
     try:
-        container = PostgresContainer("postgres:16-alpine")
+        # Use the pgvector image so migration 006's `CREATE EXTENSION IF NOT
+        # EXISTS vector` succeeds — same image as docker-compose.
+        container = PostgresContainer("pgvector/pgvector:pg16")
         container.start()
     except Exception as exc:
         pytest.skip(
             f"PostgreSQL testcontainer could not start — skipping integration tests: {exc}"
         )
 
-    # Build DSNs using the mapped host/port so they work across environments.
+    # Build the asyncpg DSN using the mapped host/port.
     host = container.get_container_host_ip()
     port = container.get_exposed_port(5432)
     user = container.username
     password = container.password
     dbname = container.dbname
-
-    # Synchronous DSN for Alembic (uses psycopg2 by default)
-    sync_url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"
-    # Asyncpg DSN for SQLAlchemy async engine
     async_url = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{dbname}"
 
     # Run Alembic migrations to create the full schema (including RLS policies).
+    # env.py reads settings.database_url (not the alembic.ini key), so
+    # temporarily override it to point at the testcontainer.
     try:
         from alembic import command as alembic_command
         from alembic.config import Config as AlembicConfig
 
-        # alembic.ini lives in backend/, which is the CWD when pytest is run.
         cfg = AlembicConfig(Path(__file__).parent.parent.parent / "alembic.ini")
-        cfg.set_main_option("sqlalchemy.url", sync_url)
-        alembic_command.upgrade(cfg, "head")
+        with patch.object(app_settings, "database_url", async_url):
+            alembic_command.upgrade(cfg, "head")
     except Exception as exc:
         container.stop()
         pytest.skip(f"Alembic migrations failed — skipping integration tests: {exc}")

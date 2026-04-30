@@ -46,6 +46,10 @@ class InstructionRecommendation(Base):
             " OR (student_id IS NULL AND group_id IS NOT NULL)",
             name="ck_instruction_recommendations_context_exclusive",
         ),
+        CheckConstraint(
+            "status IN ('pending_review', 'accepted', 'dismissed')",
+            name="ck_instruction_recommendations_status",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
