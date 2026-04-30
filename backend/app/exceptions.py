@@ -141,3 +141,20 @@ class RegradeRequestLimitReachedError(ConflictError):
     """Per-grade regrade request limit has been reached."""
 
     code = "REGRADE_REQUEST_LIMIT_REACHED"
+
+
+# ---------------------------------------------------------------------------
+# Resubmission ConflictError subclasses
+# ---------------------------------------------------------------------------
+
+
+class ResubmissionDisabledError(ConflictError):
+    """Resubmission is not enabled for this assignment."""
+
+    code = "RESUBMISSION_DISABLED"
+
+
+class ResubmissionLimitReachedError(ConflictError):
+    """Per-assignment resubmission limit has been reached."""
+
+    code = "RESUBMISSION_LIMIT_REACHED"

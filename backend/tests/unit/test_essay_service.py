@@ -10,6 +10,7 @@ Tests cover:
 - _sanitize_filename: path traversal stripping, unsafe char replacement, length cap
 - ingest_essay: happy path (TXT, mocked DB + S3), cross-teacher 403, 404,
   student ownership/enrollment validation, s3-before-extraction ordering
+- resubmit_essay: happy path, limit enforcement, disabled, cross-teacher, extraction cleanup
 
 No real PostgreSQL, S3, or file I/O.  All external calls are mocked.
 No student PII in fixtures.
@@ -18,6 +19,7 @@ No student PII in fixtures.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -568,3 +570,424 @@ class TestIngestEssay:
         assert called_key.startswith(f"essays/{assignment_id}/"), (
             f"delete_file called with unexpected key: {called_key!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# resubmit_essay — unit tests (M6-10)
+# ---------------------------------------------------------------------------
+
+
+class TestResubmitEssay:
+    """Unit tests for resubmit_essay service with all I/O mocked."""
+
+    def _make_db(self) -> MagicMock:
+        db = MagicMock()
+        db.execute = AsyncMock()
+        db.flush = AsyncMock()
+        db.commit = AsyncMock()
+        db.rollback = AsyncMock()
+        db.add = MagicMock()
+
+        # refresh populates server-side defaults that the mock DB doesn't set.
+        async def _refresh(obj: Any) -> None:
+            if not getattr(obj, "submitted_at", None):
+                obj.submitted_at = datetime.now(UTC)
+            if not getattr(obj, "id", None):
+                obj.id = uuid.uuid4()
+
+        db.refresh = AsyncMock(side_effect=_refresh)
+        return db
+
+    def _make_essay_ownership_result(
+        self, essay_id: uuid.UUID, teacher_id: uuid.UUID
+    ) -> tuple[MagicMock, MagicMock]:
+        """Return (essay_result, essay_obj) for the single tenant-scoped JOIN query.
+
+        The new ``resubmit_essay`` fetches the ``Essay`` row via a single JOIN
+        that includes ``Class.teacher_id == teacher_id`` — no check-then-fetch.
+        """
+        essay_obj = MagicMock()
+        essay_obj.id = essay_id
+        essay_obj.assignment_id = uuid.uuid4()
+        essay_obj.student_id = None
+        essay_result = MagicMock()
+        essay_result.scalar_one_or_none = MagicMock(return_value=essay_obj)
+
+        return essay_result, essay_obj
+
+    def _make_assignment_result(
+        self,
+        assignment_id: uuid.UUID,
+        teacher_id: uuid.UUID,
+        resubmission_enabled: bool = True,
+        resubmission_limit: int | None = None,
+    ) -> tuple[MagicMock, MagicMock]:
+        assignment_obj = MagicMock()
+        assignment_obj.id = assignment_id
+        assignment_obj.class_id = uuid.uuid4()
+        assignment_obj.resubmission_enabled = resubmission_enabled
+        assignment_obj.resubmission_limit = resubmission_limit
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=assignment_obj)
+        return result, assignment_obj
+
+    def _make_ver_stats_result(
+        self, ver_count: int = 1, max_ver: int = 1
+    ) -> MagicMock:
+        row = MagicMock()
+        row.ver_count = ver_count
+        row.max_ver = max_ver
+        result = MagicMock()
+        result.one = MagicMock(return_value=row)
+        return result
+
+    @pytest.mark.asyncio
+    async def test_happy_path_creates_new_version(self) -> None:
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        data = b"Revised essay content for testing purposes."
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(
+            essay_id, teacher_id
+        )
+        essay_obj.assignment_id = assignment_id
+        assignment_result, assignment_obj = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True
+        )
+        ver_stats_result = self._make_ver_stats_result(ver_count=1, max_ver=1)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+
+        added_objects: list[Any] = []
+
+        def _capture_add(obj: Any) -> None:
+            obj.id = uuid.uuid4()
+            added_objects.append(obj)
+
+        db.add.side_effect = _capture_add
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch("app.services.essay.extract_text", return_value="Revised essay content"),
+        ):
+            resp = await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=data,
+            )
+
+        db.commit.assert_called_once()
+        assert resp.version_number == 2
+        assert resp.essay_id == essay_id
+
+    @pytest.mark.asyncio
+    async def test_resubmission_disabled_raises(self) -> None:
+        from app.exceptions import ResubmissionDisabledError
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(
+            essay_id, teacher_id
+        )
+        essay_obj.assignment_id = assignment_id
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=False
+        )
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result]
+        )
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            pytest.raises(ResubmissionDisabledError),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=b"content",
+            )
+
+    @pytest.mark.asyncio
+    async def test_resubmission_limit_reached_raises(self) -> None:
+        from app.exceptions import ResubmissionLimitReachedError
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(
+            essay_id, teacher_id
+        )
+        essay_obj.assignment_id = assignment_id
+        # limit = 1, already have ver_count=2 (1 original + 1 resubmission)
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True, resubmission_limit=1
+        )
+        ver_stats_result = self._make_ver_stats_result(ver_count=2, max_ver=2)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            pytest.raises(ResubmissionLimitReachedError),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=b"content",
+            )
+
+    @pytest.mark.asyncio
+    async def test_limit_not_reached_when_under_limit(self) -> None:
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        data = b"Revised essay text for the limit test."
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(
+            essay_id, teacher_id
+        )
+        essay_obj.assignment_id = assignment_id
+        # limit = 2, currently 1 resubmission made (ver_count=2, max_ver=2)
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True, resubmission_limit=2
+        )
+        ver_stats_result = self._make_ver_stats_result(ver_count=2, max_ver=2)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+
+        added_objects: list[Any] = []
+
+        def _capture_add(obj: Any) -> None:
+            obj.id = uuid.uuid4()
+            added_objects.append(obj)
+
+        db.add.side_effect = _capture_add
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch("app.services.essay.extract_text", return_value="Revised essay text"),
+        ):
+            resp = await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=data,
+            )
+
+        assert resp.version_number == 3
+
+    @pytest.mark.asyncio
+    async def test_essay_not_found_raises(self) -> None:
+        from app.services.essay import resubmit_essay
+
+        db = self._make_db()
+        # First call: tenant-scoped JOIN returns None (no matching essay+teacher).
+        join_result = MagicMock()
+        join_result.scalar_one_or_none = MagicMock(return_value=None)
+        # Second call: existence check also returns None → NotFoundError.
+        exists_result = MagicMock()
+        exists_result.scalar_one_or_none = MagicMock(return_value=None)
+        db.execute = AsyncMock(side_effect=[join_result, exists_result])
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            pytest.raises(NotFoundError),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=uuid.uuid4(),
+                essay_id=uuid.uuid4(),
+                filename="revised.txt",
+                data=b"content",
+            )
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_raises_not_found(self) -> None:
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+
+        db = self._make_db()
+        # The tenant-scoped JOIN returns None because the essay belongs to a
+        # different teacher.  FORCE RLS makes cross-tenant IDs indistinguishable
+        # from missing ones, so the service raises NotFoundError (404) in both cases.
+        join_result = MagicMock()
+        join_result.scalar_one_or_none = MagicMock(return_value=None)
+        db.execute = AsyncMock(return_value=join_result)
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            pytest.raises(NotFoundError),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=b"content",
+            )
+
+    @pytest.mark.asyncio
+    async def test_extraction_failure_triggers_s3_cleanup(self) -> None:
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(
+            essay_id, teacher_id
+        )
+        essay_obj.assignment_id = assignment_id
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True
+        )
+        ver_stats_result = self._make_ver_stats_result(ver_count=1, max_ver=1)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch(
+                "app.services.essay.extract_text",
+                side_effect=RuntimeError("extraction failed"),
+            ),
+            patch("app.services.essay.delete_file") as mock_delete,
+            pytest.raises(RuntimeError, match="extraction failed"),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=b"content",
+            )
+
+        mock_delete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unlimited_resubmissions_when_limit_is_none(self) -> None:
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+        data = b"Revised essay text for unlimited resubmission test."
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(
+            essay_id, teacher_id
+        )
+        essay_obj.assignment_id = assignment_id
+        # No limit (None = unlimited)
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True, resubmission_limit=None
+        )
+        # High existing version count
+        ver_stats_result = self._make_ver_stats_result(ver_count=10, max_ver=10)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+
+        added_objects: list[Any] = []
+
+        def _capture_add(obj: Any) -> None:
+            obj.id = uuid.uuid4()
+            added_objects.append(obj)
+
+        db.add.side_effect = _capture_add
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch("app.services.essay.extract_text", return_value="Revised essay text"),
+        ):
+            resp = await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=data,
+            )
+
+        assert resp.version_number == 11
+
+    @pytest.mark.asyncio
+    async def test_commit_integrity_error_raises_conflict_and_cleans_up_s3(self) -> None:
+        """IntegrityError on commit → ConflictError + S3 cleanup + rollback."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.exceptions import ConflictError
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(essay_id, teacher_id)
+        essay_obj.assignment_id = assignment_id
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True
+        )
+        ver_stats_result = self._make_ver_stats_result(ver_count=1, max_ver=1)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+        # Simulate a concurrent write that already inserted the same version_number.
+        db.commit = AsyncMock(side_effect=IntegrityError(None, None, Exception()))
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch("app.services.essay.extract_text", return_value="Revised essay content"),
+            patch("app.services.essay.delete_file") as mock_delete,
+            pytest.raises(ConflictError),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=b"Revised essay content for integrity error test.",
+            )
+
+        db.rollback.assert_called_once()
+        mock_delete.assert_called_once()
