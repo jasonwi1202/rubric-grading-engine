@@ -24,6 +24,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getWorklist,
@@ -172,13 +173,13 @@ function WorklistItemCard({
           <p className="mt-1 text-sm text-gray-600">{item.suggested_action}</p>
 
         {/* Student profile link — accessible name uses no PII, only UUID in href */}
-          <a
+          <Link
             href={`/dashboard/students/${item.student_id}`}
             aria-label={`View student profile (ID: ${item.student_id})`}
             className="mt-1 inline-block text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             View student profile →
-          </a>
+          </Link>
         </div>
 
         {/* Action controls */}

@@ -69,7 +69,7 @@ export interface SnoozeWorklistItemRequest {
 
 /**
  * Fetch the authenticated teacher's prioritized worklist.
- * Calls GET /api/v1/worklist.
+ * Calls GET /worklist.
  */
 export async function getWorklist(): Promise<TeacherWorklistResponse> {
   return apiGet<TeacherWorklistResponse>("/worklist");
@@ -77,7 +77,7 @@ export async function getWorklist(): Promise<TeacherWorklistResponse> {
 
 /**
  * Mark a worklist item as completed.
- * Calls POST /api/v1/worklist/{itemId}/complete.
+ * Calls POST /worklist/{itemId}/complete.
  */
 export async function completeWorklistItem(itemId: string): Promise<WorklistItem> {
   return apiPost<WorklistItem>(`/worklist/${itemId}/complete`, {});
@@ -85,7 +85,7 @@ export async function completeWorklistItem(itemId: string): Promise<WorklistItem
 
 /**
  * Snooze a worklist item.
- * Calls POST /api/v1/worklist/{itemId}/snooze.
+ * Calls POST /worklist/{itemId}/snooze.
  */
 export async function snoozeWorklistItem(
   itemId: string,
@@ -96,7 +96,7 @@ export async function snoozeWorklistItem(
 
 /**
  * Dismiss a worklist item permanently.
- * Calls DELETE /api/v1/worklist/{itemId}.
+ * Calls DELETE /worklist/{itemId}.
  */
 export async function dismissWorklistItem(itemId: string): Promise<WorklistItem> {
   return apiDelete<WorklistItem>(`/worklist/${itemId}`);
