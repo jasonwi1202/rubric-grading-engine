@@ -926,17 +926,18 @@ async def _load_worklist_item(
 ) -> TeacherWorklistItem:
     """Load a single worklist item, enforcing tenant isolation.
 
-    Uses a two-step query: step 1 checks existence and ownership via a
-    lightweight ``SELECT id, teacher_id WHERE id = ?``; step 2 fetches the full
-    row with both ``id`` and ``teacher_id`` filters.
+    Issues a single ``SELECT … WHERE id = ? AND teacher_id = ?`` query so that
+    the ``teacher_id`` predicate is always present in every DB fetch (per the
+    project's tenant-isolation requirement).
 
     .. note::
-        Under a FORCE RLS policy that filters by ``app.current_teacher_id``,
-        step 1 is also subject to RLS, so cross-tenant item IDs may appear as
-        non-existent (404) rather than forbidden (403).  This is an acceptable
-        design trade-off: revealing that a 404 *might* be a 403 would itself
-        leak tenant information.  All mutation endpoints document 404 as the
-        possible outcome for both missing and cross-tenant items.
+        With a FORCE RLS policy keyed on ``app.current_teacher_id``, the DB
+        already filters rows to the authenticated teacher before this predicate
+        is evaluated, so a cross-tenant ``item_id`` and a genuinely missing
+        ``item_id`` are indistinguishable at the DB level — both return no row.
+        The endpoint therefore returns 404 in both cases.  This is by design:
+        returning a different status for cross-tenant IDs would leak information
+        about whether a resource exists for another teacher.
 
     Args:
         db:         Async database session.
@@ -947,35 +948,20 @@ async def _load_worklist_item(
         The :class:`TeacherWorklistItem` ORM row.
 
     Raises:
-        :class:`~app.exceptions.NotFoundError`: Item does not exist (or belongs
-            to a different teacher under FORCE RLS).
-        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different
-            teacher (service-layer check; fired when RLS is not active).
+        :class:`~app.exceptions.NotFoundError`: Item does not exist or is not
+            accessible to the authenticated teacher.
     """
-    from app.exceptions import ForbiddenError, NotFoundError  # noqa: PLC0415
+    from app.exceptions import NotFoundError  # noqa: PLC0415
 
-    # Step 1: lightweight existence + ownership check (distinguishes 404 vs 403
-    # even when RLS filters rows by teacher_id at the DB level).
-    ownership_result = await db.execute(
-        select(TeacherWorklistItem.id, TeacherWorklistItem.teacher_id).where(
-            TeacherWorklistItem.id == item_id
-        )
-    )
-    ownership_row = ownership_result.one_or_none()
-    if ownership_row is None:
-        raise NotFoundError(f"Worklist item {item_id} not found.")
-    if ownership_row.teacher_id != teacher_id:
-        raise ForbiddenError("You do not have access to this worklist item.")
-
-    # Step 2: fetch full row with both filters to satisfy the tenant-isolation
-    # requirement that every DB fetch includes teacher_id in the query itself.
     result = await db.execute(
         select(TeacherWorklistItem).where(
             TeacherWorklistItem.id == item_id,
             TeacherWorklistItem.teacher_id == teacher_id,
         )
     )
-    item = result.scalar_one()
+    item = result.scalar_one_or_none()
+    if item is None:
+        raise NotFoundError(f"Worklist item {item_id} not found.")
     return item
 
 
@@ -1019,16 +1005,27 @@ async def complete_worklist_item(
         )
     if item.status != "completed":
         now = datetime.now(UTC)
-        await db.execute(
+        result = await db.execute(
             update(TeacherWorklistItem)
             .where(
                 TeacherWorklistItem.id == item_id,
                 TeacherWorklistItem.teacher_id == teacher_id,
+                TeacherWorklistItem.status.in_(("active", "snoozed")),
             )
             .values(status="completed", completed_at=now)
         )
-        await db.commit()
-        await db.refresh(item)
+        if result.rowcount == 0:
+            # A concurrent request moved the item to a terminal state between
+            # our load and this UPDATE.  Refresh and surface the new state.
+            await db.refresh(item)
+            if item.status == "dismissed":
+                raise InvalidStateTransitionError(
+                    f"Cannot complete a dismissed worklist item (id={item_id})."
+                )
+            # Concurrently completed — fall through (idempotent).
+        else:
+            await db.commit()
+            await db.refresh(item)
     logger.info(
         "Worklist item completed",
         extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
@@ -1080,14 +1077,21 @@ async def snooze_worklist_item(
         )
     if snoozed_until is None:
         snoozed_until = datetime.now(UTC) + timedelta(days=_DEFAULT_SNOOZE_DAYS)
-    await db.execute(
+    result = await db.execute(
         update(TeacherWorklistItem)
         .where(
             TeacherWorklistItem.id == item_id,
             TeacherWorklistItem.teacher_id == teacher_id,
+            TeacherWorklistItem.status.in_(("active", "snoozed")),
         )
         .values(status="snoozed", snoozed_until=snoozed_until)
     )
+    if result.rowcount != 1:
+        # A concurrent request moved the item to a terminal state.
+        await db.rollback()
+        raise InvalidStateTransitionError(
+            f"Cannot snooze worklist item (id={item_id}) from its current state."
+        )
     await db.commit()
     await db.refresh(item)
     logger.info(
@@ -1135,16 +1139,25 @@ async def dismiss_worklist_item(
             f"Cannot dismiss a completed worklist item (id={item_id})."
         )
     if item.status != "dismissed":
-        await db.execute(
+        result = await db.execute(
             update(TeacherWorklistItem)
             .where(
                 TeacherWorklistItem.id == item_id,
                 TeacherWorklistItem.teacher_id == teacher_id,
+                TeacherWorklistItem.status.in_(("active", "snoozed")),
             )
             .values(status="dismissed")
         )
-        await db.commit()
-        await db.refresh(item)
+        if result.rowcount:
+            await db.commit()
+            await db.refresh(item)
+        else:
+            # A concurrent request moved the item to a terminal state.
+            await db.refresh(item)
+            if item.status == "completed":
+                raise InvalidStateTransitionError(
+                    f"Cannot dismiss a completed worklist item (id={item_id})."
+                )
     logger.info(
         "Worklist item dismissed",
         extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},

@@ -120,8 +120,8 @@ async def complete_worklist_item_endpoint(
 
     Response body: ``{"data": WorklistItemResponse}``
 
-    Returns 403 if the item belongs to a different teacher.
-    Returns 404 if the item does not exist.
+    Returns 404 if the item does not exist or is not accessible to the
+    authenticated teacher.
     """
     item = await complete_worklist_item(db, item_id=item_id, teacher_id=teacher.id)
     return JSONResponse(
@@ -152,8 +152,8 @@ async def snooze_worklist_item_endpoint(
 
     Response body: ``{"data": WorklistItemResponse}``
 
-    Returns 403 if the item belongs to a different teacher.
-    Returns 404 if the item does not exist.
+    Returns 404 if the item does not exist or is not accessible to the
+    authenticated teacher.
     """
     item = await snooze_worklist_item(
         db,
@@ -188,8 +188,8 @@ async def dismiss_worklist_item_endpoint(
 
     Response body: ``{"data": WorklistItemResponse}``
 
-    Returns 403 if the item belongs to a different teacher.
-    Returns 404 if the item does not exist.
+    Returns 404 if the item does not exist or is not accessible to the
+    authenticated teacher.
     """
     item = await dismiss_worklist_item(db, item_id=item_id, teacher_id=teacher.id)
     return JSONResponse(

@@ -846,23 +846,28 @@ def _make_db_for_load(
     item: MagicMock,
     ownership_teacher_id: uuid.UUID | None = None,
 ) -> MagicMock:
-    """Build an AsyncMock db whose first execute returns an ownership row and
-    second execute returns the full item.
+    """Build an AsyncMock db whose first execute returns the item (single-step load).
 
-    If ``ownership_teacher_id`` is None, uses ``item.teacher_id``.
+    With the simplified ``_load_worklist_item`` implementation, a single
+    ``SELECT … WHERE id = ? AND teacher_id = ?`` is issued.  The result's
+    ``scalar_one_or_none()`` either returns the ORM row (matched) or ``None``
+    (not found / cross-tenant).
+
+    If ``ownership_teacher_id`` is provided and differs from ``item.teacher_id``,
+    the mock simulates the cross-tenant / not-found path (returns ``None``).
+    Otherwise it returns ``item``.
     """
     from unittest.mock import AsyncMock  # noqa: PLC0415
 
     actual_teacher = ownership_teacher_id if ownership_teacher_id is not None else item.teacher_id
-    ownership_row = _make_ownership_row(actual_teacher, item.id)
-    ownership_result = MagicMock()
-    ownership_result.one_or_none.return_value = ownership_row
-
-    full_result = MagicMock()
-    full_result.scalar_one.return_value = item
+    load_result = MagicMock()
+    if actual_teacher != item.teacher_id:
+        load_result.scalar_one_or_none.return_value = None
+    else:
+        load_result.scalar_one_or_none.return_value = item
 
     db = AsyncMock()
-    db.execute = AsyncMock(side_effect=[ownership_result, full_result])
+    db.execute = AsyncMock(side_effect=[load_result])
     return db
 
 
@@ -910,8 +915,9 @@ class TestCompleteWorklistItem:
         teacher_id = uuid.uuid4()
         item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
         db = _make_db_for_load(item)
-        # Third execute: the UPDATE
+        # Second execute: the UPDATE
         update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(
             side_effect=list(db.execute.side_effect) + [update_result]
         )
@@ -931,8 +937,8 @@ class TestCompleteWorklistItem:
 
         result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
         assert result is item
-        # No UPDATE should be executed (only 2 selects from _load_worklist_item)
-        assert db.execute.await_count == 2
+        # No UPDATE should be executed (only 1 select from _load_worklist_item)
+        assert db.execute.await_count == 1
         db.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -943,33 +949,32 @@ class TestCompleteWorklistItem:
         teacher_id = uuid.uuid4()
         item_id = uuid.uuid4()
 
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = None
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
         db = MagicMock()
-        db.execute = AsyncMock(return_value=ownership_result)
+        db.execute = AsyncMock(return_value=load_result)
 
         with pytest.raises(NotFoundError):
             await complete_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
 
     @pytest.mark.asyncio
-    async def test_raises_forbidden_for_wrong_teacher(self) -> None:
-        from app.exceptions import ForbiddenError
+    async def test_raises_not_found_for_cross_tenant_item(self) -> None:
+        """Cross-tenant access returns NotFoundError (indistinguishable from 404 under RLS)."""
+        from app.exceptions import NotFoundError
         from app.services.worklist import complete_worklist_item
 
-        owner_teacher_id = uuid.uuid4()
-        requesting_teacher_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
         item_id = uuid.uuid4()
 
-        ownership_row = _make_ownership_row(owner_teacher_id, item_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        # Simulate the DB returning no row because RLS / teacher_id filter
+        # excludes the cross-tenant item.
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
         db = MagicMock()
-        db.execute = AsyncMock(return_value=ownership_result)
+        db.execute = AsyncMock(return_value=load_result)
 
-        with pytest.raises(ForbiddenError):
-            await complete_worklist_item(
-                db, item_id=item_id, teacher_id=requesting_teacher_id
-            )
+        with pytest.raises(NotFoundError):
+            await complete_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
 
 
 class TestSnoozeWorklistItem:
@@ -985,6 +990,7 @@ class TestSnoozeWorklistItem:
         item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
         db = _make_db_for_load(item)
         update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(
             side_effect=list(db.execute.side_effect) + [update_result]
         )
@@ -1007,6 +1013,7 @@ class TestSnoozeWorklistItem:
         item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
         db = _make_db_for_load(item)
         update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(
             side_effect=list(db.execute.side_effect) + [update_result]
         )
@@ -1025,33 +1032,30 @@ class TestSnoozeWorklistItem:
         teacher_id = uuid.uuid4()
         item_id = uuid.uuid4()
 
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = None
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
         db = MagicMock()
-        db.execute = AsyncMock(return_value=ownership_result)
+        db.execute = AsyncMock(return_value=load_result)
 
         with pytest.raises(NotFoundError):
             await snooze_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
 
     @pytest.mark.asyncio
-    async def test_raises_forbidden_for_wrong_teacher(self) -> None:
-        from app.exceptions import ForbiddenError
+    async def test_raises_not_found_for_cross_tenant_item(self) -> None:
+        """Cross-tenant access returns NotFoundError (indistinguishable from 404 under RLS)."""
+        from app.exceptions import NotFoundError
         from app.services.worklist import snooze_worklist_item
 
-        owner_teacher_id = uuid.uuid4()
-        requesting_teacher_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
         item_id = uuid.uuid4()
 
-        ownership_row = _make_ownership_row(owner_teacher_id, item_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
         db = MagicMock()
-        db.execute = AsyncMock(return_value=ownership_result)
+        db.execute = AsyncMock(return_value=load_result)
 
-        with pytest.raises(ForbiddenError):
-            await snooze_worklist_item(
-                db, item_id=item_id, teacher_id=requesting_teacher_id
-            )
+        with pytest.raises(NotFoundError):
+            await snooze_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
 
 
 class TestDismissWorklistItem:
@@ -1065,6 +1069,7 @@ class TestDismissWorklistItem:
         item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
         db = _make_db_for_load(item)
         update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(
             side_effect=list(db.execute.side_effect) + [update_result]
         )
@@ -1084,8 +1089,8 @@ class TestDismissWorklistItem:
 
         result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
         assert result is item
-        # No UPDATE: only the 2 selects from _load_worklist_item
-        assert db.execute.await_count == 2
+        # No UPDATE: only the 1 select from _load_worklist_item
+        assert db.execute.await_count == 1
         db.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -1096,33 +1101,30 @@ class TestDismissWorklistItem:
         teacher_id = uuid.uuid4()
         item_id = uuid.uuid4()
 
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = None
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
         db = MagicMock()
-        db.execute = AsyncMock(return_value=ownership_result)
+        db.execute = AsyncMock(return_value=load_result)
 
         with pytest.raises(NotFoundError):
             await dismiss_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
 
     @pytest.mark.asyncio
-    async def test_raises_forbidden_for_wrong_teacher(self) -> None:
-        from app.exceptions import ForbiddenError
+    async def test_raises_not_found_for_cross_tenant_item(self) -> None:
+        """Cross-tenant access returns NotFoundError (indistinguishable from 404 under RLS)."""
+        from app.exceptions import NotFoundError
         from app.services.worklist import dismiss_worklist_item
 
-        owner_teacher_id = uuid.uuid4()
-        requesting_teacher_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
         item_id = uuid.uuid4()
 
-        ownership_row = _make_ownership_row(owner_teacher_id, item_id)
-        ownership_result = MagicMock()
-        ownership_result.one_or_none.return_value = ownership_row
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
         db = MagicMock()
-        db.execute = AsyncMock(return_value=ownership_result)
+        db.execute = AsyncMock(return_value=load_result)
 
-        with pytest.raises(ForbiddenError):
-            await dismiss_worklist_item(
-                db, item_id=item_id, teacher_id=requesting_teacher_id
-            )
+        with pytest.raises(NotFoundError):
+            await dismiss_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1157,6 +1159,7 @@ class TestTerminalStateGuards:
         item = _make_worklist_item_orm(teacher_id=teacher_id, status="snoozed")
         db = _make_db_for_load(item)
         update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
 
         result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
@@ -1215,6 +1218,7 @@ class TestTerminalStateGuards:
         item = _make_worklist_item_orm(teacher_id=teacher_id, status="snoozed")
         db = _make_db_for_load(item)
         update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
 
         result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
