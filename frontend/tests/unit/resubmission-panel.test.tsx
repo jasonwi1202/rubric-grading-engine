@@ -39,7 +39,7 @@ import {
   ResubmissionPanelSkeleton,
 } from "@/components/grading/ResubmissionPanel";
 import type { ResubmissionPanelProps } from "@/components/grading/ResubmissionPanel";
-import type { RevisionComparisonResponse } from "@/lib/api/resubmission";
+import type { RevisionComparisonResponse, FeedbackAddressedItemResponse } from "@/lib/api/resubmission";
 import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 
 // ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ function makeFeedbackItem(
   addressed: boolean,
   feedbackGiven = "Work on topic sentence clarity.",
   detail = "The revision showed improved topic sentences.",
-): RevisionComparisonResponse["feedback_addressed"][number] {
+): FeedbackAddressedItemResponse {
   return {
     criterion_id: criterionId,
     feedback_given: feedbackGiven,
