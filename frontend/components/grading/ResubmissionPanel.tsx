@@ -456,7 +456,7 @@ export function ResubmissionPanel({
           Criterion Score Changes
         </h3>
         {comparison.criterion_deltas.length === 0 ? (
-          <p className="text-sm text-gray-400">No criterion data available.</p>
+          <p className="text-sm text-gray-400">No criteria data available.</p>
         ) : (
           <ul
             aria-label="Criterion score changes"

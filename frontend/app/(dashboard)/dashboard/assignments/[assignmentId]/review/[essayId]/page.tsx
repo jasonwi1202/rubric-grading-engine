@@ -6,11 +6,13 @@
  * Essay review page — the primary teacher grade-review workflow.
  *
  * Two-panel layout:
- *   Left  — Essay text panel (placeholder until a dedicated API endpoint is
- *            available to serve extracted essay content) + Integrity panel
- *            + Writing process panel + Resubmission comparison panel (when
- *            the essay has been resubmitted and re-graded).
- *   Right — Rubric scores + feedback editing panel (EssayReviewPanel).
+ *   Left panel:
+ *     - Essay text placeholder (content endpoint pending)
+ *     - Integrity panel
+ *     - Writing process panel
+ *     - Resubmission comparison panel (when essay has been resubmitted & re-graded)
+ *   Right panel:
+ *     - EssayReviewPanel: rubric scores + feedback editing
  *
  * Data loading:
  *   1. GET /assignments/{assignmentId}              → assignment with rubric_snapshot

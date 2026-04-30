@@ -273,7 +273,7 @@ describe("ResubmissionPanel — score delta display", () => {
       feedback_addressed: null,
     });
     render(<ResubmissionPanel {...makeProps({ comparison })} />);
-    expect(screen.getByText(/No criterion data available/i)).toBeInTheDocument();
+    expect(screen.getByText(/No criteria data available/i)).toBeInTheDocument();
   });
 });
 
