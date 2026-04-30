@@ -646,3 +646,117 @@ class TestAssignRecommendationIntegration:
         resp = client.post(f"/api/v1/recommendations/{_uuid()}/assign")
 
         assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.integration
+class TestDismissRecommendationIntegration:
+    """Integration tests for POST /api/v1/recommendations/{id}/dismiss (M6-09).
+
+    Uses a real PostgreSQL database (via testcontainers).  Tests skip
+    automatically when Docker is unavailable.
+    No student PII in any fixture value.
+    """
+
+    @pytest.mark.asyncio
+    async def test_happy_path_transitions_status_to_dismissed(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /dismiss transitions status from pending_review to dismissed."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_recommendation(db_session, rec_id, teacher_id, student_id=student_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/dismiss")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        data = body["data"]
+        assert data["id"] == str(rec_id)
+        assert data["status"] == "dismissed"
+
+        # Confirm DB reflects the new status.
+        result = await db_session.execute(
+            text("SELECT status FROM instruction_recommendations WHERE id = :id"),
+            {"id": str(rec_id)},
+        )
+        row = result.fetchone()
+        assert row is not None
+        assert row.status == "dismissed"
+
+        # Confirm audit log entry was written with correct state transition.
+        result = await db_session.execute(
+            text(
+                "SELECT action, before_value, after_value "
+                "FROM audit_logs "
+                "WHERE entity_type = 'instruction_recommendation' "
+                "  AND entity_id = :eid"
+            ),
+            {"eid": str(rec_id)},
+        )
+        audit_rows = result.fetchall()
+        assert len(audit_rows) == 1
+        assert audit_rows[0].action == "recommendation_dismissed"
+        assert audit_rows[0].before_value == {"status": "pending_review"}
+        assert audit_rows[0].after_value == {"status": "dismissed"}
+
+    @pytest.mark.asyncio
+    async def test_accepted_recommendation_returns_409(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /dismiss on an accepted recommendation returns 409 Conflict."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_recommendation(
+            db_session, rec_id, teacher_id, student_id=student_id, status="accepted"
+        )
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/dismiss")
+
+        assert resp.status_code == 409, resp.text
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
+        """POST /dismiss on another teacher's recommendation returns 404 (RLS pattern).
+
+        With the ``WHERE id = ? AND teacher_id = ?`` query, cross-tenant rows are
+        invisible to Teacher B at the DB level.  A cross-tenant ID and a
+        nonexistent ID are therefore indistinguishable — both return 404.
+        """
+        teacher_a_id = _uuid()
+        teacher_b_id = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_a_id)
+        await _seed_teacher(db_session, teacher_b_id)
+        await _seed_student(db_session, student_id, teacher_a_id)
+        await _seed_recommendation(db_session, rec_id, teacher_a_id, student_id=student_id)
+
+        client = _client_for(teacher_b_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{rec_id}/dismiss")
+
+        assert resp.status_code == 404, resp.text
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_recommendation_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /dismiss on a nonexistent recommendation ID returns 404."""
+        teacher_id = _uuid()
+        await _seed_teacher(db_session, teacher_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/recommendations/{_uuid()}/dismiss")
+
+        assert resp.status_code == 404, resp.text
