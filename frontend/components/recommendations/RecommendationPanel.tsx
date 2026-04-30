@@ -599,7 +599,12 @@ function GenerateForm({ studentId, onGenerated }: GenerateFormProps) {
             value={durationMinutes}
             onChange={(e) => {
               const n = Number(e.target.value);
-              if (n >= MIN_DURATION_MINUTES && n <= MAX_DURATION_MINUTES) setDurationMinutes(n);
+              if (!Number.isNaN(n)) setDurationMinutes(n);
+            }}
+            onBlur={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isNaN(n) || n < MIN_DURATION_MINUTES) setDurationMinutes(MIN_DURATION_MINUTES);
+              else if (n > MAX_DURATION_MINUTES) setDurationMinutes(MAX_DURATION_MINUTES);
             }}
             disabled={generateMutation.isPending}
             className="w-24 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"

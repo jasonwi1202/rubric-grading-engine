@@ -66,6 +66,11 @@ logger = logging.getLogger(__name__)
 _GAP_THRESHOLD = 0.6
 
 
+def _rowcount(result: Any) -> int:
+    """Return the rowcount from a SQLAlchemy CursorResult returned by an UPDATE."""
+    return cast("CursorResult[Any]", result).rowcount
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -554,7 +559,7 @@ async def assign_recommendation(
         )
         .values(status="accepted")
     )
-    if cast("CursorResult[Any]", update_result).rowcount == 0:
+    if _rowcount(update_result) == 0:
         # Concurrent request already transitioned the row; re-fetch current state.
         await db.refresh(rec)
         return rec
@@ -637,7 +642,7 @@ async def dismiss_recommendation(
         )
         .values(status="dismissed")
     )
-    if cast("CursorResult[Any]", update_result).rowcount == 0:
+    if _rowcount(update_result) == 0:
         # Concurrent request already transitioned the row; re-fetch current state.
         await db.refresh(rec)
         # If now dismissed (concurrent dismiss), return idempotently.

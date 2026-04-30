@@ -30,7 +30,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -397,11 +397,10 @@ describe("RecommendationPanel — dismiss flow", () => {
     );
     await user.click(screen.getByRole("button", { name: /^dismiss$/i }));
 
-    // The confirmation dialog is now open; find the confirm button within it.
+    // The confirmation dialog is now open; confirm via the "Dismiss" button inside it.
     const dialog = screen.getByRole("dialog", { name: /dismiss this recommendation/i });
-    const confirmBtn = dialog.querySelector("button:last-child");
-    expect(confirmBtn).toBeTruthy();
-    await user.click(confirmBtn as HTMLElement);
+    const confirmBtn = within(dialog).getByRole("button", { name: /^dismiss$/i });
+    await user.click(confirmBtn);
 
     await waitFor(() => {
       expect(mockDismissRecommendation).toHaveBeenCalledWith("rec-001");
@@ -424,10 +423,10 @@ describe("RecommendationPanel — dismiss flow", () => {
     );
     await user.click(screen.getByRole("button", { name: /^dismiss$/i }));
 
-    // The confirmation dialog is now open; find the confirm button within it.
+    // The confirmation dialog is now open; confirm via the "Dismiss" button inside it.
     const dialog = screen.getByRole("dialog", { name: /dismiss this recommendation/i });
-    const confirmBtn = dialog.querySelector("button:last-child");
-    await user.click(confirmBtn as HTMLElement);
+    const confirmBtn = within(dialog).getByRole("button", { name: /^dismiss$/i });
+    await user.click(confirmBtn);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
