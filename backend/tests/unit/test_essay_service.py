@@ -949,3 +949,47 @@ class TestResubmitEssay:
             )
 
         assert resp.version_number == 11
+
+    @pytest.mark.asyncio
+    async def test_commit_integrity_error_raises_conflict_and_cleans_up_s3(self) -> None:
+        """IntegrityError on commit → ConflictError + S3 cleanup + rollback."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.exceptions import ConflictError
+        from app.services.essay import resubmit_essay
+
+        teacher_id = uuid.uuid4()
+        essay_id = uuid.uuid4()
+        assignment_id = uuid.uuid4()
+
+        db = self._make_db()
+        essay_result, essay_obj = self._make_essay_ownership_result(essay_id, teacher_id)
+        essay_obj.assignment_id = assignment_id
+        assignment_result, _ = self._make_assignment_result(
+            assignment_id, teacher_id, resubmission_enabled=True
+        )
+        ver_stats_result = self._make_ver_stats_result(ver_count=1, max_ver=1)
+
+        db.execute = AsyncMock(
+            side_effect=[essay_result, assignment_result, ver_stats_result]
+        )
+        # Simulate a concurrent write that already inserted the same version_number.
+        db.commit = AsyncMock(side_effect=IntegrityError(None, None, Exception()))
+
+        with (
+            patch("app.services.essay.validate_mime_type", return_value="text/plain"),
+            patch("app.services.essay.upload_file"),
+            patch("app.services.essay.extract_text", return_value="Revised essay content"),
+            patch("app.services.essay.delete_file") as mock_delete,
+            pytest.raises(ConflictError),
+        ):
+            await resubmit_essay(
+                db=db,
+                teacher_id=teacher_id,
+                essay_id=essay_id,
+                filename="revised.txt",
+                data=b"Revised essay content for integrity error test.",
+            )
+
+        db.rollback.assert_called_once()
+        mock_delete.assert_called_once()

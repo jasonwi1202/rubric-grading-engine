@@ -1519,7 +1519,7 @@ async def resubmit_essay(
 
     # 7. Extract text; clean up S3 object on failure.
     try:
-        raw_text = extract_text(data, mime_type)
+        raw_text = await loop.run_in_executor(None, extract_text, data, mime_type)
     except Exception as exc:
         logger.exception(
             "Text extraction failed for resubmission; cleaning up S3 object",
@@ -1558,9 +1558,26 @@ async def resubmit_essay(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
+        try:
+            await loop.run_in_executor(None, delete_file, s3_key)
+        except Exception as cleanup_exc:
+            logger.exception(
+                "S3 cleanup after resubmission commit failure also failed",
+                extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
+            )
         raise ConflictError(
             "A concurrent resubmission created the same version number. Please retry."
         ) from exc
+    except Exception:
+        await db.rollback()
+        try:
+            await loop.run_in_executor(None, delete_file, s3_key)
+        except Exception as cleanup_exc:
+            logger.exception(
+                "S3 cleanup after resubmission commit failure also failed",
+                extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
+            )
+        raise
     await db.refresh(version)
 
     logger.info(

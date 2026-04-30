@@ -15,10 +15,15 @@ requests from computing the same ``max(version_number) + 1``.  This
 constraint acts as a last-resort safety net if the row lock is somehow
 bypassed (e.g., a Celery task or a future code path that skips the lock),
 and will surface as a 409 ``ConflictError`` rather than a silent duplicate.
+
+Zero-downtime: ``CREATE UNIQUE INDEX CONCURRENTLY`` builds the index without
+holding a table-level lock; the constraint is then attached from the index
+instantly via ``ALTER TABLE … ADD CONSTRAINT … USING INDEX``.
 """
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -27,27 +32,39 @@ down_revision: str | None = "029_instruction_recommendations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_INDEX_NAME = "uq_essay_versions_essay_id_version_number"
+# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+# Setting this to False tells Alembic to run this migration outside the default
+# per-migration transaction so the concurrent index build succeeds.
+transaction_per_migration = False
+
+_INDEX_NAME = "ix_uq_essay_versions_essay_id_version_number"
 _CONSTRAINT_NAME = "uq_essay_versions_essay_id_version_number"
+_TABLE = "essay_versions"
 
 
 def upgrade() -> None:
-    # Create the supporting index concurrently (no table lock on existing rows).
-    op.create_index(
-        _INDEX_NAME,
-        "essay_versions",
-        ["essay_id", "version_number"],
-        unique=True,
-        postgresql_concurrently=True,
-    )
-    # Attach the unique constraint backed by the index just created.
-    op.create_unique_constraint(
-        _CONSTRAINT_NAME,
-        "essay_versions",
-        ["essay_id", "version_number"],
+    # Build the unique index concurrently so the table is not locked.
+    # autocommit_block() ensures the statement runs outside any transaction,
+    # which is required by PostgreSQL for CONCURRENTLY index operations.
+    with op.get_context().autocommit_block():
+        op.execute(
+            sa.text(
+                f"CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {_INDEX_NAME} "
+                f"ON {_TABLE} (essay_id, version_number)"
+            )
+        )
+    # Attach the constraint to the pre-built index (instant, no lock).
+    # ALTER TABLE ... ADD CONSTRAINT ... USING INDEX is the correct DDL form;
+    # SQLAlchemy's create_unique_constraint does not support postgresql_using_index.
+    op.execute(
+        sa.text(
+            f"ALTER TABLE {_TABLE} ADD CONSTRAINT {_CONSTRAINT_NAME} "
+            f"UNIQUE USING INDEX {_INDEX_NAME}"
+        )
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint(_CONSTRAINT_NAME, "essay_versions", type_="unique")
-    op.drop_index(_INDEX_NAME, table_name="essay_versions")
+    op.drop_constraint(_CONSTRAINT_NAME, _TABLE, type_="unique")
+    with op.get_context().autocommit_block():
+        op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}"))
