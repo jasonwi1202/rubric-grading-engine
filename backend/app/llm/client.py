@@ -458,9 +458,9 @@ async def call_revision_comparison(
     """Analyse a revised essay to detect whether prior feedback was addressed.
 
     The revised essay text is always placed in the ``user`` role.  The feedback
-    items list (criterion IDs + teacher-written feedback strings) is injected
-    into the system prompt.  Teacher-written feedback may contain student
-    identifiers or other sensitive information — it must never be logged.
+    items list (criterion IDs + AI-generated feedback strings from
+    ``CriterionScore.ai_feedback``) is injected into the system prompt.
+    Feedback text may contain sensitive information — it must never be logged.
 
     Args:
         feedback_items_json: JSON-encoded list of

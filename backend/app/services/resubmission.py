@@ -60,12 +60,12 @@ _WORD_COUNT_DELTA_ABS: int = 5
 
 
 def _jaccard_similarity(text_a: str, text_b: str) -> float:
-    """Compute Jaccard similarity of the word bags of two texts.
+    """Compute Jaccard similarity of the word sets of two texts.
 
     Jaccard similarity = |A ∩ B| / |A ∪ B| where A and B are the sets of
-    (lowercased) words in each text.  Returns 1.0 when both texts are empty
-    (they are trivially identical — no words in either set differ) or when
-    they are identical in vocabulary.
+    (lowercased) unique words in each text.  Returns 1.0 when both texts are
+    empty (they are trivially identical — no words in either set differ) or
+    when they are identical in vocabulary.
 
     Args:
         text_a: First plain-text string.
