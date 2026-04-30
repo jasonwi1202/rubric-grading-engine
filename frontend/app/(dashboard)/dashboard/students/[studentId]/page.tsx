@@ -456,7 +456,7 @@ export default function StudentProfilePage() {
               {student?.skill_profile?.assignment_count === 1
                 ? "assignment"
                 : "assignments"}
-              {strengths.length > 0 && (
+              {(student?.skill_profile?.assignment_count ?? 0) > 0 && (
                 <> · Upward skill trends may reflect resubmission progress</>
               )}
             </p>

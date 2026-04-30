@@ -229,7 +229,10 @@ describe("ResubmissionPanel — score delta display", () => {
         {...makeProps({ comparison: makeComparison({ total_score_delta: 0 }) })}
       />,
     );
-    expect(screen.getAllByText("0").length).toBeGreaterThan(0);
+    // The total score delta badge is labelled with aria-label containing the delta value
+    const deltaBadge = screen.getByLabelText(/Total score delta: 0/i);
+    expect(deltaBadge).toBeInTheDocument();
+    expect(deltaBadge).toHaveTextContent("0");
   });
 
   it("renders criterion delta rows with base → revised scores", () => {
@@ -241,11 +244,15 @@ describe("ResubmissionPanel — score delta display", () => {
     expect(within(thesisItem).getByText("4")).toBeInTheDocument();
   });
 
-  it("shows criterion delta values with colour coding", () => {
+  it("shows criterion delta values in criterion delta rows", () => {
     render(<ResubmissionPanel {...makeProps()} />);
-    // Criterion "Thesis" delta = +1 → should show "+1"
-    const list = screen.getByRole("list", { name: /Criterion score changes/i });
-    expect(within(list).getAllByText("+1").length).toBeGreaterThan(0);
+    // Each criterion delta row has an aria-label "Score delta: ..."
+    // Both Thesis (3→4) and Evidence (2→3) have delta=+1 in the default fixture
+    const allDeltaBadges = screen.getAllByLabelText(/Score delta: \+1/i);
+    expect(allDeltaBadges).toHaveLength(2);
+    allDeltaBadges.forEach((badge) => {
+      expect(badge).toHaveTextContent("+1");
+    });
   });
 
   it("falls back to criterion_id when criterion not in criteria map", () => {
@@ -289,15 +296,21 @@ describe("ResubmissionPanel — low-effort warning", () => {
 });
 
 describe("ResubmissionPanel — feedback-addressed indicators", () => {
-  it("shows 'Feedback addressed' indicator for addressed criterion", () => {
+  it("shows 'Feedback addressed' indicator for addressed criterion (crit-001)", () => {
     render(<ResubmissionPanel {...makeProps()} />);
-    const allText = screen.getAllByText(/Feedback addressed/i);
-    expect(allText.length).toBeGreaterThan(0);
+    // crit-001 (Thesis) has addressed=true — the button name contains "addressed"
+    // and is present within the Thesis criterion item
+    const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
+    const thesisItem = within(criterionList).getByText(/Thesis/i).closest("li")!;
+    expect(within(thesisItem).getByRole("button", { name: /Feedback addressed/i })).toBeInTheDocument();
   });
 
-  it("shows 'Feedback not addressed' indicator for unaddressed criterion", () => {
+  it("shows 'Feedback not addressed' indicator for unaddressed criterion (crit-002)", () => {
     render(<ResubmissionPanel {...makeProps()} />);
-    expect(screen.getByText(/Feedback not addressed/i)).toBeInTheDocument();
+    // crit-002 (Evidence) has addressed=false
+    const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
+    const evidenceItem = within(criterionList).getByText(/Evidence/i).closest("li")!;
+    expect(within(evidenceItem).getByRole("button", { name: /Feedback not addressed/i })).toBeInTheDocument();
   });
 
   it("expands feedback detail when indicator button is clicked", async () => {

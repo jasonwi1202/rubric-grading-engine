@@ -184,7 +184,10 @@ export default function EssayReviewPage() {
       try {
         return await getRevisionComparison(essayId);
       } catch (err) {
-        if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+        // 404 = essay not yet resubmitted and re-graded — treat as "no comparison".
+        // Other errors (403 = forbidden, 5xx = server error) propagate so the
+        // error boundary can surface them rather than silently hiding them.
+        if (err instanceof ApiError && err.status === 404) {
           return null;
         }
         throw err;
