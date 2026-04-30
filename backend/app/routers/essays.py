@@ -332,8 +332,8 @@ async def resubmit_essay_endpoint(
 
     Response body: ``{"data": ResubmitEssayResponse}``
 
-    Returns 403 if the essay belongs to a different teacher.
-    Returns 404 if the essay does not exist.
+    Returns 404 if the essay does not exist or is not visible to the
+    authenticated teacher.
     Returns 409 if resubmission is disabled or the limit has been reached.
     Returns 422 if the file MIME type is not allowed or the file is too large.
     """

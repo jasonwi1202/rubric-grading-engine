@@ -379,10 +379,14 @@ class TestResubmitEssayIntegration:
         assert body.get("error", {}).get("code") == "RESUBMISSION_LIMIT_REACHED"
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_403(
+    async def test_cross_teacher_returns_404(
         self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
-        """Teacher B cannot resubmit an essay belonging to Teacher A."""
+        """Teacher B cannot resubmit an essay belonging to Teacher A.
+
+        ``essays`` has FORCE RLS: cross-tenant IDs are DB-invisible, so the
+        endpoint returns 404 (not 403) for cross-teacher access.
+        """
         teacher_a_id = _uuid()
         teacher_b_id = _uuid()
         class_id = _uuid()
@@ -422,7 +426,7 @@ class TestResubmitEssayIntegration:
                 files={field: (filename, data, "text/plain")},
             )
 
-        assert resp.status_code == 403, resp.text
+        assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
     async def test_essay_not_found_returns_404(

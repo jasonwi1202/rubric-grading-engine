@@ -556,14 +556,14 @@ class TestResubmitEssay:
         assert resp.status_code == 404
         assert resp.json()["error"]["code"] == "NOT_FOUND"
 
-    def test_cross_teacher_returns_403(self) -> None:
+    def test_cross_teacher_returns_404(self) -> None:
         teacher = _make_teacher()
         app = _app_with_teacher(teacher)
 
         with patch(
             "app.routers.essays.resubmit_essay",
             new_callable=AsyncMock,
-            side_effect=ForbiddenError("Forbidden."),
+            side_effect=NotFoundError("Essay not found."),
         ):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.post(
@@ -571,8 +571,8 @@ class TestResubmitEssay:
                 files=[("file", ("revised.txt", BytesIO(b"text"), "text/plain"))],
             )
 
-        assert resp.status_code == 403
-        assert resp.json()["error"]["code"] == "FORBIDDEN"
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
 
     def test_resubmission_disabled_returns_409(self) -> None:
         from app.exceptions import ResubmissionDisabledError

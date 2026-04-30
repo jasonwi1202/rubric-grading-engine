@@ -32,10 +32,11 @@ down_revision: str | None = "029_instruction_recommendations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
-# Setting this to False tells Alembic to run this migration outside the default
-# per-migration transaction so the concurrent index build succeeds.
-transaction_per_migration = False
+# CREATE/DROP INDEX CONCURRENTLY cannot run inside a transaction block.
+# This migration relies on op.get_context().autocommit_block() around those
+# statements rather than a per-migration transaction override.
+# (env.py always uses transaction_per_migration=True; a module-level variable
+# would not be read by it.)
 
 _INDEX_NAME = "ix_uq_essay_versions_essay_id_version_number"
 _CONSTRAINT_NAME = "uq_essay_versions_essay_id_version_number"

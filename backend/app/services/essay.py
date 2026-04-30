@@ -1460,12 +1460,9 @@ async def resubmit_essay(
     )
     essay = essay_result.scalar_one_or_none()
     if essay is None:
-        essay_exists_result = await db.execute(
-            select(Essay.id).where(Essay.id == essay_id)
-        )
-        if essay_exists_result.scalar_one_or_none() is None:
-            raise NotFoundError("Essay not found.")
-        raise ForbiddenError("You do not have access to this essay.")
+        # essays has FORCE RLS: cross-tenant IDs are indistinguishable from
+        # missing ones at the DB level, so we return 404 in both cases.
+        raise NotFoundError("Essay not found.")
 
     # 3. Load the assignment — teacher_id is already enforced by the JOIN above;
     #    re-assert it here as defence-in-depth.

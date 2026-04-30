@@ -832,25 +832,23 @@ class TestResubmitEssay:
             )
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_raises_forbidden(self) -> None:
+    async def test_cross_teacher_raises_not_found(self) -> None:
         from app.services.essay import resubmit_essay
 
         teacher_id = uuid.uuid4()
         essay_id = uuid.uuid4()
 
         db = self._make_db()
-        # First call: tenant-scoped JOIN returns None (essay belongs to a
-        # different teacher, so teacher_id filter excludes it).
+        # The tenant-scoped JOIN returns None because the essay belongs to a
+        # different teacher.  FORCE RLS makes cross-tenant IDs indistinguishable
+        # from missing ones, so the service raises NotFoundError (404) in both cases.
         join_result = MagicMock()
         join_result.scalar_one_or_none = MagicMock(return_value=None)
-        # Second call: existence check finds the essay (it exists → 403, not 404).
-        exists_result = MagicMock()
-        exists_result.scalar_one_or_none = MagicMock(return_value=essay_id)
-        db.execute = AsyncMock(side_effect=[join_result, exists_result])
+        db.execute = AsyncMock(return_value=join_result)
 
         with (
             patch("app.services.essay.validate_mime_type", return_value="text/plain"),
-            pytest.raises(ForbiddenError),
+            pytest.raises(NotFoundError),
         ):
             await resubmit_essay(
                 db=db,
