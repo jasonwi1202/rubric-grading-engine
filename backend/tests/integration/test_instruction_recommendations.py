@@ -26,7 +26,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.dependencies import get_current_teacher, get_db
 from app.llm.parsers import ParsedInstructionResponse, ParsedRecommendation
@@ -67,18 +71,26 @@ def _make_teacher_orm(teacher_id: uuid.UUID) -> MagicMock:
     return teacher
 
 
-def _client_for(teacher_id: uuid.UUID, db_session: AsyncSession) -> TestClient:
-    """Return a TestClient with auth and DB overridden for the given teacher."""
+def _client_for(teacher_id: uuid.UUID, pg_dsn: str) -> TestClient:
+    """Return a TestClient with auth and DB overridden for the given teacher.
+
+    The DB override creates a *fresh* engine and AsyncSession per request from
+    the DSN string.  Using the session-scoped AsyncEngine directly would bind
+    asyncpg connections to the pytest-asyncio event loop, which differs from
+    the anyio loop that TestClient runs under, causing a 'Future attached to a
+    different loop' RuntimeError.
+    """
     teacher_orm = _make_teacher_orm(teacher_id)
     app = create_app()
     app.dependency_overrides[get_current_teacher] = lambda: teacher_orm
 
     async def _get_test_db() -> AsyncGenerator[AsyncSession, None]:
-        # Set the tenant context so RLS policies see the right teacher
-        await db_session.execute(
-            text(f"SET app.current_teacher_id = '{teacher_id}'")
-        )
-        yield db_session
+        engine = create_async_engine(pg_dsn, echo=False)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await session.execute(text(f"SET app.current_teacher_id = '{teacher_id}'"))
+            yield session
+        await engine.dispose()
 
     app.dependency_overrides[get_db] = _get_test_db
     return TestClient(app, raise_server_exceptions=False)
@@ -138,7 +150,7 @@ async def _seed_skill_profile(
         text(
             "INSERT INTO student_skill_profiles "
             "(id, teacher_id, student_id, skill_scores, assignment_count) "
-            "VALUES (:id, :tid, :sid, :scores::jsonb, 3) ON CONFLICT DO NOTHING"
+            "VALUES (:id, :tid, :sid, CAST(:scores AS jsonb), 3) ON CONFLICT DO NOTHING"
         ),
         {
             "id": str(_uuid()),
@@ -185,7 +197,7 @@ async def _seed_group(
         text(
             "INSERT INTO student_groups "
             "(id, teacher_id, class_id, skill_key, label, student_ids, student_count, stability) "
-            "VALUES (:id, :tid, :cid, :sk, :label, :sids::jsonb, :cnt, 'persistent') "
+            "VALUES (:id, :tid, :cid, :sk, :label, CAST(:sids AS jsonb), :cnt, 'persistent') "
             "ON CONFLICT DO NOTHING"
         ),
         {
@@ -210,7 +222,7 @@ async def _seed_group(
 class TestGenerateStudentRecommendationsIntegration:
     @pytest.mark.asyncio
     async def test_happy_path_persists_recommendation_to_db(
-        self, db_session: AsyncSession
+        self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
         """POSTing to the generate endpoint writes a row to instruction_recommendations."""
         teacher_id = _uuid()
@@ -220,7 +232,7 @@ class TestGenerateStudentRecommendationsIntegration:
         await _seed_student(db_session, student_id, teacher_id)
         await _seed_skill_profile(db_session, student_id, teacher_id)
 
-        client = _client_for(teacher_id, db_session)
+        client = _client_for(teacher_id, pg_dsn)
 
         with patch(
             "app.services.instruction_recommendation.call_instruction",
@@ -258,7 +270,7 @@ class TestGenerateStudentRecommendationsIntegration:
 
     @pytest.mark.asyncio
     async def test_cross_teacher_student_returns_403(
-        self, db_session: AsyncSession
+        self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
         """Teacher B cannot generate recommendations for Teacher A's student."""
         teacher_a_id = _uuid()
@@ -270,7 +282,7 @@ class TestGenerateStudentRecommendationsIntegration:
         await _seed_student(db_session, student_id, teacher_a_id)
 
         # Teacher B attempts to POST to Teacher A's student
-        client = _client_for(teacher_b_id, db_session)
+        client = _client_for(teacher_b_id, pg_dsn)
         with patch(
             "app.services.instruction_recommendation.call_instruction",
             new_callable=AsyncMock,
@@ -293,7 +305,7 @@ class TestGenerateStudentRecommendationsIntegration:
 class TestListStudentRecommendationsIntegration:
     @pytest.mark.asyncio
     async def test_returns_persisted_recommendations(
-        self, db_session: AsyncSession
+        self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
         """GET returns rows that were previously written for the student."""
         teacher_id = _uuid()
@@ -309,7 +321,7 @@ class TestListStudentRecommendationsIntegration:
                 "INSERT INTO instruction_recommendations "
                 "(id, teacher_id, student_id, group_id, grade_level, prompt_version, "
                 "recommendations, evidence_summary, status) "
-                "VALUES (:id, :tid, :sid, NULL, :gl, :pv, :recs::jsonb, :ev, :st)"
+                "VALUES (:id, :tid, :sid, NULL, :gl, :pv, CAST(:recs AS jsonb), :ev, :st)"
             ),
             {
                 "id": str(rec_id),
@@ -334,7 +346,7 @@ class TestListStudentRecommendationsIntegration:
         )
         await db_session.commit()
 
-        client = _client_for(teacher_id, db_session)
+        client = _client_for(teacher_id, pg_dsn)
         resp = client.get(f"/api/v1/students/{student_id}/recommendations")
 
         assert resp.status_code == 200, resp.text
@@ -347,7 +359,7 @@ class TestListStudentRecommendationsIntegration:
 
     @pytest.mark.asyncio
     async def test_cross_teacher_student_returns_403(
-        self, db_session: AsyncSession
+        self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
         """Teacher B cannot list recommendations for Teacher A's student."""
         teacher_a_id = _uuid()
@@ -358,7 +370,7 @@ class TestListStudentRecommendationsIntegration:
         await _seed_teacher(db_session, teacher_b_id)
         await _seed_student(db_session, student_id, teacher_a_id)
 
-        client = _client_for(teacher_b_id, db_session)
+        client = _client_for(teacher_b_id, pg_dsn)
         resp = client.get(f"/api/v1/students/{student_id}/recommendations")
 
         assert resp.status_code == 403, resp.text
@@ -373,7 +385,7 @@ class TestListStudentRecommendationsIntegration:
 class TestGenerateGroupRecommendationsIntegration:
     @pytest.mark.asyncio
     async def test_happy_path_persists_recommendation_to_db(
-        self, db_session: AsyncSession
+        self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
         """POSTing to the group endpoint writes a row to instruction_recommendations."""
         teacher_id = _uuid()
@@ -384,7 +396,7 @@ class TestGenerateGroupRecommendationsIntegration:
         await _seed_class(db_session, class_id, teacher_id)
         await _seed_group(db_session, group_id, class_id, teacher_id)
 
-        client = _client_for(teacher_id, db_session)
+        client = _client_for(teacher_id, pg_dsn)
 
         with patch(
             "app.services.instruction_recommendation.call_instruction",
@@ -420,7 +432,7 @@ class TestGenerateGroupRecommendationsIntegration:
 
     @pytest.mark.asyncio
     async def test_cross_teacher_group_returns_403(
-        self, db_session: AsyncSession
+        self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
         """Teacher B cannot generate recommendations for Teacher A's group."""
         teacher_a_id = _uuid()
@@ -433,7 +445,7 @@ class TestGenerateGroupRecommendationsIntegration:
         await _seed_class(db_session, class_id, teacher_a_id)
         await _seed_group(db_session, group_id, class_id, teacher_a_id)
 
-        client = _client_for(teacher_b_id, db_session)
+        client = _client_for(teacher_b_id, pg_dsn)
         with patch(
             "app.services.instruction_recommendation.call_instruction",
             new_callable=AsyncMock,

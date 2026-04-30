@@ -48,9 +48,10 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -304,10 +305,12 @@ async def compute_and_persist_groups(
     # The lock is released automatically when the transaction commits.
     # ------------------------------------------------------------------
     await db.execute(
-        select(Class.id).where(
+        select(Class.id)
+        .where(
             Class.id == class_id,
             Class.teacher_id == teacher_id,
-        ).with_for_update()
+        )
+        .with_for_update()
     )
 
     # Load previous active skill keys AFTER acquiring the lock so stability
@@ -316,18 +319,14 @@ async def compute_and_persist_groups(
     # lock creates a window where a concurrent task can commit new groups
     # between the snapshot and the lock, causing incorrect new/persistent/
     # exited labels for the race winner.
-    previous_active_skill_keys = await _load_existing_active_skill_keys(
-        db, teacher_id, class_id
-    )
+    previous_active_skill_keys = await _load_existing_active_skill_keys(db, teacher_id, class_id)
 
     # Apply stability to the pre-computed clusters using the locked snapshot.
     groups = [
         {
             **cluster,
             "stability": (
-                "persistent"
-                if cluster["skill_key"] in previous_active_skill_keys
-                else "new"
+                "persistent" if cluster["skill_key"] in previous_active_skill_keys else "new"
             ),
         }
         for cluster in raw_clusters
@@ -514,7 +513,7 @@ async def list_class_groups(
             label=group.label,
             student_count=group.student_count,
             students=students_in_group,
-            stability=group.stability,
+            stability=group.stability,  # type: ignore[arg-type]
             computed_at=group.computed_at,
         )
 
@@ -587,9 +586,7 @@ async def update_group_members(
 
     # Deduplicate while preserving order; then intersect with active enrollments
     # to prevent adding a teacher-owned student from a different class.
-    enrolled_ids: set[uuid.UUID] = set(
-        await _load_enrolled_student_ids(db, class_id, teacher_id)
-    )
+    enrolled_ids: set[uuid.UUID] = set(await _load_enrolled_student_ids(db, class_id, teacher_id))
     seen: set[uuid.UUID] = set()
     unique_ids_uuid: list[uuid.UUID] = []
     for sid in student_ids:
@@ -625,7 +622,7 @@ async def update_group_members(
             stability=new_stability,
         )
     )
-    if update_result.rowcount == 0:
+    if cast("CursorResult[Any]", update_result).rowcount == 0:
         await db.rollback()
         raise NotFoundError("Group not found.")
     await db.commit()

@@ -183,15 +183,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text("DROP POLICY IF EXISTS tenant_isolation ON teacher_worklist_items")
-    )
-    op.execute(
-        sa.text("ALTER TABLE teacher_worklist_items NO FORCE ROW LEVEL SECURITY")
-    )
-    op.execute(
-        sa.text("ALTER TABLE teacher_worklist_items DISABLE ROW LEVEL SECURITY")
-    )
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON teacher_worklist_items"))
+    op.execute(sa.text("ALTER TABLE teacher_worklist_items NO FORCE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE teacher_worklist_items DISABLE ROW LEVEL SECURITY"))
 
     with op.get_context().autocommit_block():
         op.drop_index(

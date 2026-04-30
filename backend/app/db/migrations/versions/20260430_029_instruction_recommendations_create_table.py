@@ -178,12 +178,8 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # 3. Enable RLS — FORCE so the policy applies to the table owner too
     # ------------------------------------------------------------------
-    op.execute(
-        sa.text("ALTER TABLE instruction_recommendations ENABLE ROW LEVEL SECURITY")
-    )
-    op.execute(
-        sa.text("ALTER TABLE instruction_recommendations FORCE ROW LEVEL SECURITY")
-    )
+    op.execute(sa.text("ALTER TABLE instruction_recommendations ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE instruction_recommendations FORCE ROW LEVEL SECURITY"))
     op.execute(
         sa.text("""
         CREATE POLICY tenant_isolation ON instruction_recommendations
@@ -196,21 +192,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text(
-            "DROP POLICY IF EXISTS tenant_isolation ON instruction_recommendations"
-        )
-    )
-    op.execute(
-        sa.text(
-            "ALTER TABLE instruction_recommendations NO FORCE ROW LEVEL SECURITY"
-        )
-    )
-    op.execute(
-        sa.text(
-            "ALTER TABLE instruction_recommendations DISABLE ROW LEVEL SECURITY"
-        )
-    )
+    op.execute(sa.text("DROP POLICY IF EXISTS tenant_isolation ON instruction_recommendations"))
+    op.execute(sa.text("ALTER TABLE instruction_recommendations NO FORCE ROW LEVEL SECURITY"))
+    op.execute(sa.text("ALTER TABLE instruction_recommendations DISABLE ROW LEVEL SECURITY"))
 
     with op.get_context().autocommit_block():
         op.drop_index(

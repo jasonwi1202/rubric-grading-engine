@@ -360,8 +360,8 @@ class TestCheckPersistentGap:
             teacher_id,
             {
                 "evidence": _skill_entry(avg_score=0.40, trend="stable"),  # below threshold
-                "thesis": _skill_entry(avg_score=0.85, trend="stable"),    # above threshold
-                "voice": _skill_entry(avg_score=0.55, trend="stable"),     # below threshold
+                "thesis": _skill_entry(avg_score=0.85, trend="stable"),  # above threshold
+                "voice": _skill_entry(avg_score=0.55, trend="stable"),  # below threshold
             },
             assignment_count=3,
         )
@@ -918,9 +918,7 @@ class TestCompleteWorklistItem:
         # Second execute: the UPDATE
         update_result = MagicMock()
         update_result.rowcount = 1
-        db.execute = AsyncMock(
-            side_effect=list(db.execute.side_effect) + [update_result]
-        )
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
 
         result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
         assert result is item
@@ -991,9 +989,7 @@ class TestSnoozeWorklistItem:
         db = _make_db_for_load(item)
         update_result = MagicMock()
         update_result.rowcount = 1
-        db.execute = AsyncMock(
-            side_effect=list(db.execute.side_effect) + [update_result]
-        )
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
         custom_date = datetime.now(UTC) + timedelta(days=14)
 
         result = await snooze_worklist_item(
@@ -1014,9 +1010,7 @@ class TestSnoozeWorklistItem:
         db = _make_db_for_load(item)
         update_result = MagicMock()
         update_result.rowcount = 1
-        db.execute = AsyncMock(
-            side_effect=list(db.execute.side_effect) + [update_result]
-        )
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
 
         result = await snooze_worklist_item(
             db, item_id=item.id, teacher_id=teacher_id, snoozed_until=None
@@ -1070,9 +1064,7 @@ class TestDismissWorklistItem:
         db = _make_db_for_load(item)
         update_result = MagicMock()
         update_result.rowcount = 1
-        db.execute = AsyncMock(
-            side_effect=list(db.execute.side_effect) + [update_result]
-        )
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
 
         result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
         assert result is item

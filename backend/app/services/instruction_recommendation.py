@@ -95,9 +95,7 @@ async def _assert_group_owned_by(
         NotFoundError:  Group does not exist.
         ForbiddenError: Group belongs to a different teacher.
     """
-    result = await db.execute(
-        select(StudentGroup).where(StudentGroup.id == group_id)
-    )
+    result = await db.execute(select(StudentGroup).where(StudentGroup.id == group_id))
     group = result.scalar_one_or_none()
     if group is None:
         raise NotFoundError("Student group not found.")
@@ -153,8 +151,7 @@ def _build_evidence_summary(
             avg = entry.get("avg_score", 0.0)
             trend = entry.get("trend", "stable")
             return (
-                f"Skill gap detected in '{skill_key}': "
-                f"average score {avg:.0%}, trend is {trend}."
+                f"Skill gap detected in '{skill_key}': average score {avg:.0%}, trend is {trend}."
             )
         return f"Skill dimension '{skill_key}' requested but no profile data found."
 
@@ -167,9 +164,7 @@ def _build_evidence_summary(
         return "No skill gaps detected below the performance threshold."
 
     gaps.sort(key=lambda kv: kv[1].get("avg_score", 1.0))
-    parts = [
-        f"'{key}' ({data.get('avg_score', 0.0):.0%})" for key, data in gaps
-    ]
+    parts = [f"'{key}' ({data.get('avg_score', 0.0):.0%})" for key, data in gaps]
     return f"Skill gaps detected in: {', '.join(parts)}."
 
 
@@ -276,8 +271,7 @@ async def generate_student_recommendations(
     skill_scores: dict[str, Any] = profile.skill_scores or {}
     if not skill_scores:
         raise ValidationError(
-            "Student skill profile has no data yet. "
-            "Grade at least one assignment first.",
+            "Student skill profile has no data yet. Grade at least one assignment first.",
             field="student_id",
         )
 

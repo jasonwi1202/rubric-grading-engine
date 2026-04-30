@@ -98,17 +98,13 @@ class TestGenerateStudentRecommendationsEndpoint:
     def test_happy_path_returns_201_with_envelope(self):
         teacher = _make_teacher()
         student_id = uuid.uuid4()
-        rec = _make_recommendation_orm(
-            teacher_id=teacher.id, student_id=student_id
-        )
+        rec = _make_recommendation_orm(teacher_id=teacher.id, student_id=student_id)
         with patch(
             "app.routers.students.generate_student_recommendations",
             new_callable=AsyncMock,
             return_value=rec,
         ):
-            resp = _client(teacher).post(
-                self._url(student_id), json=self._payload()
-            )
+            resp = _client(teacher).post(self._url(student_id), json=self._payload())
         assert resp.status_code == 201
         body = resp.json()
         assert "data" in body
@@ -130,7 +126,9 @@ class TestGenerateStudentRecommendationsEndpoint:
             captured.append(kwargs)
             return rec
 
-        with patch("app.routers.students.generate_student_recommendations", side_effect=mock_generate):
+        with patch(
+            "app.routers.students.generate_student_recommendations", side_effect=mock_generate
+        ):
             resp = _client(teacher).post(
                 self._url(student_id),
                 json=self._payload(skill_key="thesis"),
@@ -149,7 +147,9 @@ class TestGenerateStudentRecommendationsEndpoint:
             captured.append(kwargs)
             return rec
 
-        with patch("app.routers.students.generate_student_recommendations", side_effect=mock_generate):
+        with patch(
+            "app.routers.students.generate_student_recommendations", side_effect=mock_generate
+        ):
             resp = _client(teacher).post(
                 self._url(student_id),
                 json=self._payload(worklist_item_id=str(worklist_item_id)),
@@ -164,9 +164,7 @@ class TestGenerateStudentRecommendationsEndpoint:
             new_callable=AsyncMock,
             side_effect=NotFoundError("Student not found."),
         ):
-            resp = _client(teacher).post(
-                self._url(), json=self._payload()
-            )
+            resp = _client(teacher).post(self._url(), json=self._payload())
         assert resp.status_code == 404
 
     def test_forbidden_returns_403(self):
@@ -176,9 +174,7 @@ class TestGenerateStudentRecommendationsEndpoint:
             new_callable=AsyncMock,
             side_effect=ForbiddenError("You do not have access to this student."),
         ):
-            resp = _client(teacher).post(
-                self._url(), json=self._payload()
-            )
+            resp = _client(teacher).post(self._url(), json=self._payload())
         assert resp.status_code == 403
 
     def test_no_profile_data_returns_422(self):
@@ -188,9 +184,7 @@ class TestGenerateStudentRecommendationsEndpoint:
             new_callable=AsyncMock,
             side_effect=ValidationError("No skill profile data.", field="student_id"),
         ):
-            resp = _client(teacher).post(
-                self._url(), json=self._payload()
-            )
+            resp = _client(teacher).post(self._url(), json=self._payload())
         assert resp.status_code == 422
 
     def test_llm_service_unavailable_returns_503(self):
@@ -200,15 +194,11 @@ class TestGenerateStudentRecommendationsEndpoint:
             new_callable=AsyncMock,
             side_effect=LLMError("LLM unavailable"),
         ):
-            resp = _client(teacher).post(
-                self._url(), json=self._payload()
-            )
+            resp = _client(teacher).post(self._url(), json=self._payload())
         assert resp.status_code == 503
 
     def test_unauthenticated_returns_401(self):
-        resp = _anon_client().post(
-            self._url(), json=self._payload()
-        )
+        resp = _anon_client().post(self._url(), json=self._payload())
         assert resp.status_code == 401
 
     def test_invalid_duration_returns_422(self):
@@ -221,9 +211,7 @@ class TestGenerateStudentRecommendationsEndpoint:
 
     def test_missing_grade_level_returns_422(self):
         teacher = _make_teacher()
-        resp = _client(teacher).post(
-            self._url(), json={"duration_minutes": 20}
-        )
+        resp = _client(teacher).post(self._url(), json={"duration_minutes": 20})
         assert resp.status_code == 422
 
 
@@ -316,17 +304,13 @@ class TestGenerateGroupRecommendationsEndpoint:
         teacher = _make_teacher()
         class_id = uuid.uuid4()
         group_id = uuid.uuid4()
-        rec = _make_recommendation_orm(
-            teacher_id=teacher.id, group_id=group_id, student_id=None
-        )
+        rec = _make_recommendation_orm(teacher_id=teacher.id, group_id=group_id, student_id=None)
         with patch(
             "app.routers.classes.generate_group_recommendations",
             new_callable=AsyncMock,
             return_value=rec,
         ):
-            resp = _client(teacher).post(
-                self._url(class_id, group_id), json=self._payload()
-            )
+            resp = _client(teacher).post(self._url(class_id, group_id), json=self._payload())
         assert resp.status_code == 201
         body = resp.json()
         assert "data" in body

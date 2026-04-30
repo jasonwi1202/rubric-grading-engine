@@ -531,7 +531,6 @@ class TestPatchClassGroup:
         assert class_id in call_args.args
         assert group_id in call_args.args
         # student_ids is the last positional arg — a list of UUIDs
-        assert any(
-            isinstance(arg, list) and sid in arg
-            for arg in call_args.args
-        ), f"Expected student UUID {sid} in one of the positional list args"
+        assert any(isinstance(arg, list) and sid in arg for arg in call_args.args), (
+            f"Expected student UUID {sid} in one of the positional list args"
+        )
