@@ -455,3 +455,91 @@ def parse_instruction_response(raw_content: str) -> ParsedInstructionResponse:
         )
 
     return ParsedInstructionResponse(recommendations=recommendations)
+
+
+# ---------------------------------------------------------------------------
+# Revision comparison response (M6-11)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ParsedCriterionAssessment:
+    """Assessment of whether a single criterion's feedback was addressed.
+
+    Attributes:
+        criterion_id: UUID string matching the rubric criterion.
+        addressed: ``True`` when the revision meaningfully addresses the
+            feedback given on the prior submission.
+        detail: One-sentence explanation from the LLM.
+    """
+
+    criterion_id: str
+    addressed: bool
+    detail: str
+
+
+@dataclass
+class ParsedRevisionResponse:
+    """Fully validated LLM revision comparison response.
+
+    Attributes:
+        criterion_assessments: Per-criterion addressed/not-addressed judgments.
+    """
+
+    criterion_assessments: list[ParsedCriterionAssessment] = field(default_factory=list)
+
+
+def parse_revision_response(raw_content: str) -> ParsedRevisionResponse:
+    """Parse and validate a raw LLM revision comparison response.
+
+    Args:
+        raw_content: The raw string content from the LLM response.
+
+    Returns:
+        A ``ParsedRevisionResponse``.
+
+    Raises:
+        LLMParseError: If ``raw_content`` is not valid JSON or is missing
+            the required ``criterion_assessments`` field.
+    """
+    try:
+        data = json.loads(raw_content)
+    except json.JSONDecodeError as exc:
+        raise LLMParseError("LLM revision response is not valid JSON") from exc
+
+    if not isinstance(data, dict):
+        raise LLMParseError("LLM revision response must be a JSON object")
+
+    if "criterion_assessments" not in data:
+        raise LLMParseError("LLM revision response missing 'criterion_assessments' field")
+
+    if not isinstance(data["criterion_assessments"], list):
+        raise LLMParseError("criterion_assessments must be a JSON array")
+
+    assessments: list[ParsedCriterionAssessment] = []
+    for item in data["criterion_assessments"]:
+        if not isinstance(item, dict):
+            continue
+        cid = str(item.get("criterion_id", "")).strip()
+        if not cid:
+            continue
+        addressed_raw = item.get("addressed", False)
+        # Accept boolean or specific string values from the LLM.
+        # For any other type (e.g., dict, list, int) default to False rather
+        # than using bool() which would silently mark unexpected values as True.
+        if isinstance(addressed_raw, bool):
+            addressed = addressed_raw
+        elif isinstance(addressed_raw, str):
+            addressed = addressed_raw.lower() in {"true", "yes", "1"}
+        else:
+            addressed = False
+        detail = str(item.get("detail", "")).strip() or "No detail provided."
+        assessments.append(
+            ParsedCriterionAssessment(
+                criterion_id=cid,
+                addressed=addressed,
+                detail=detail,
+            )
+        )
+
+    return ParsedRevisionResponse(criterion_assessments=assessments)

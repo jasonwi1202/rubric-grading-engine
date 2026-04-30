@@ -258,3 +258,50 @@ class ProcessSignalsResponse(BaseModel):
     paste_events: list[PasteEventResponse]
     rapid_completion_events: list[RapidCompletionEventResponse]
     computed_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Revision comparison — M6-11
+# ---------------------------------------------------------------------------
+
+
+class CriterionDeltaResponse(BaseModel):
+    """Score delta for a single rubric criterion between two essay versions."""
+
+    criterion_id: uuid.UUID
+    base_score: int
+    revised_score: int
+    delta: int
+
+
+class FeedbackAddressedItemResponse(BaseModel):
+    """LLM assessment of whether a single criterion's feedback was addressed."""
+
+    criterion_id: uuid.UUID
+    feedback_given: str
+    addressed: bool
+    detail: str
+
+
+class RevisionComparisonResponse(BaseModel):
+    """Response for ``GET /essays/{essayId}/revision-comparison``.
+
+    Carries the criterion-level score deltas, low-effort flag, and optional
+    LLM-based feedback-addressed analysis for the most recent resubmission.
+    """
+
+    id: uuid.UUID
+    essay_id: uuid.UUID
+    base_version_id: uuid.UUID
+    revised_version_id: uuid.UUID
+    base_grade_id: uuid.UUID
+    revised_grade_id: uuid.UUID
+    total_score_delta: float
+    criterion_deltas: list[CriterionDeltaResponse]
+    is_low_effort: bool
+    low_effort_reasons: list[str]
+    # Null when LLM analysis was skipped or failed.
+    feedback_addressed: list[FeedbackAddressedItemResponse] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

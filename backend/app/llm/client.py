@@ -39,9 +39,11 @@ from app.llm.parsers import (
     ParsedFeedbackResponse,
     ParsedGradingResponse,
     ParsedInstructionResponse,
+    ParsedRevisionResponse,
     parse_feedback_response,
     parse_grading_response,
     parse_instruction_response,
+    parse_revision_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -447,7 +449,79 @@ async def call_embedding(text: str) -> list[float]:
     raise last_exc or LLMError("Embedding call failed after retries")
 
 
-# ---------------------------------------------------------------------------
+async def call_revision_comparison(
+    *,
+    feedback_items_json: str,
+    revised_essay_text: str,
+    prompt_version: str = "v1",
+) -> ParsedRevisionResponse:
+    """Analyse a revised essay to detect whether prior feedback was addressed.
+
+    The revised essay text is always placed in the ``user`` role.  The feedback
+    items list (criterion IDs + AI-generated feedback strings from
+    ``CriterionScore.ai_feedback``) is injected into the system prompt.
+    Feedback text may contain sensitive information — it must never be logged.
+
+    Args:
+        feedback_items_json: JSON-encoded list of
+            ``{criterion_id, feedback}`` objects from the base grade's
+            criterion scores.
+        revised_essay_text: The plain-text content of the revised essay.
+        prompt_version: Prompt module version to use (default: ``"v1"``).
+
+    Returns:
+        A validated ``ParsedRevisionResponse``.
+
+    Raises:
+        LLMParseError: If the response cannot be parsed after one retry.
+        LLMError: On timeout or unrecoverable API failure.
+
+    Security note:
+        Revised essay text is placed in the ``user`` role only — never
+        interpolated into the system prompt.  The system prompt instructs
+        the model to ignore directives found in the essay content.
+        Feedback text must not be logged as it may contain sensitive information.
+    """
+    if _is_fake_mode():
+        import json as _json  # noqa: PLC0415
+
+        try:
+            items = _json.loads(feedback_items_json)
+        except Exception:
+            items = []
+        assessments = []
+        from app.llm.parsers import ParsedCriterionAssessment  # noqa: PLC0415
+
+        for item in items:
+            if isinstance(item, dict) and "criterion_id" in item:
+                assessments.append(
+                    ParsedCriterionAssessment(
+                        criterion_id=str(item["criterion_id"]),
+                        addressed=True,
+                        detail="Deterministic test: feedback assumed addressed in fake LLM mode.",
+                    )
+                )
+        return ParsedRevisionResponse(criterion_assessments=assessments)
+
+    module = _load_prompt_module("revision", prompt_version)
+    client = _get_openai_client()
+    model = settings.openai_grading_model
+
+    messages: list[dict[str, str]] = module.build_messages(feedback_items_json, revised_essay_text)
+    raw = await _chat_with_retry(client, model, messages)
+
+    try:
+        return parse_revision_response(raw)
+    except LLMParseError:
+        logger.warning(
+            "LLM revision parse failed on first attempt; retrying with corrective prompt",
+        )
+        retry_messages = module.build_retry_messages(feedback_items_json, revised_essay_text)
+        retry_raw = await _chat_with_retry(client, model, retry_messages)
+        return parse_revision_response(retry_raw)
+
+
+
 # Type alias exported for consumers
 # ---------------------------------------------------------------------------
 
@@ -456,8 +530,10 @@ __all__ = [
     "call_feedback",
     "call_instruction",
     "call_embedding",
+    "call_revision_comparison",
     "CriterionInfo",
     "ParsedGradingResponse",
     "ParsedFeedbackResponse",
     "ParsedInstructionResponse",
+    "ParsedRevisionResponse",
 ]

@@ -348,4 +348,88 @@ async def grade_essay(
         "Essay graded successfully",
         extra={"essay_id": str(essay_id), "grade_id": str(grade.id)},
     )
+
+    # ------------------------------------------------------------------
+    # 11. For resubmissions (version > 1), compute and persist the
+    #     revision comparison.  This is best-effort: a failure here must
+    #     not roll back the grade that was just committed.
+    # ------------------------------------------------------------------
+    if essay_version.version_number > 1:
+        await _compute_revision_comparison_best_effort(
+            db=db,
+            essay_id=essay_id,
+            revised_version=essay_version,
+            revised_grade_id=grade.id,
+        )
+
     return grade
+
+
+async def _compute_revision_comparison_best_effort(
+    db: AsyncSession,
+    *,
+    essay_id: uuid.UUID,
+    revised_version: EssayVersion,
+    revised_grade_id: uuid.UUID,
+) -> None:
+    """Compute a revision comparison after grading a resubmitted essay version.
+
+    Loads the immediately preceding version's grade, then delegates to
+    :func:`app.services.resubmission.compute_revision_comparison`.
+
+    This function is best-effort: any exception is caught and logged so that
+    the already-committed grade is not affected.
+
+    Args:
+        db: Async database session.
+        essay_id: UUID of the parent Essay.
+        revised_version: The just-graded EssayVersion (version_number > 1).
+        revised_grade_id: UUID of the just-committed Grade.
+    """
+    from app.services.resubmission import (  # noqa: PLC0415 — lazy import to avoid circular deps
+        compute_revision_comparison,
+    )
+
+    try:
+        base_version_number = revised_version.version_number - 1
+
+        # Load the immediately preceding EssayVersion.
+        base_version_result = await db.execute(
+            select(EssayVersion).where(
+                EssayVersion.essay_id == essay_id,
+                EssayVersion.version_number == base_version_number,
+            )
+        )
+        base_version = base_version_result.scalar_one_or_none()
+        if base_version is None:
+            logger.warning(
+                "Base version not found for revision comparison; skipping",
+                extra={"essay_id": str(essay_id), "base_version_number": base_version_number},
+            )
+            return
+
+        # Load the grade for the base version.
+        base_grade_result = await db.execute(
+            select(Grade).where(Grade.essay_version_id == base_version.id)
+        )
+        base_grade = base_grade_result.scalar_one_or_none()
+        if base_grade is None:
+            logger.warning(
+                "Base grade not found for revision comparison; skipping",
+                extra={"essay_id": str(essay_id)},
+            )
+            return
+
+        await compute_revision_comparison(
+            db,
+            essay_id=essay_id,
+            base_version_id=base_version.id,
+            revised_version_id=revised_version.id,
+            base_grade_id=base_grade.id,
+            revised_grade_id=revised_grade_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Revision comparison computation failed; grade is still committed",
+            extra={"essay_id": str(essay_id), "error_type": type(exc).__name__},
+        )
