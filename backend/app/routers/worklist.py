@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
 
 from app.db.session import AsyncSession, get_db
@@ -76,8 +76,9 @@ async def get_worklist_endpoint(
     """Return all active worklist items for the authenticated teacher.
 
     Items are ordered by urgency descending (most urgent first).  Snoozed
-    items whose ``snoozed_until`` timestamp has passed are re-surfaced as
-    active.  Completed and dismissed items are excluded.
+    items whose ``snoozed_until`` timestamp has passed are included in the
+    response alongside active items (they still carry ``status='snoozed'``).
+    Completed and dismissed items are excluded.
 
     Response body: ``{"data": {"teacher_id": "...", "items": [...], "total_count": N, "generated_at": "..."}}``
     """
@@ -136,7 +137,7 @@ async def complete_worklist_item_endpoint(
 )
 async def snooze_worklist_item_endpoint(
     item_id: uuid.UUID,
-    body: SnoozeWorklistItemRequest,
+    body: SnoozeWorklistItemRequest = Body(default_factory=SnoozeWorklistItemRequest),
     teacher: User = Depends(get_current_teacher),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:

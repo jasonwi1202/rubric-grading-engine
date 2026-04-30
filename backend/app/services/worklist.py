@@ -121,7 +121,7 @@ def _trigger_order_case_expr() -> object:
     use this helper to avoid duplicating the mapping.
     """
     return case(
-        {v: k for k, v in _TRIGGER_ORDER.items()},
+        _TRIGGER_ORDER,
         value=TeacherWorklistItem.trigger_type,
         else_=99,
     )
@@ -934,14 +934,28 @@ async def _load_worklist_item(
     """
     from app.exceptions import ForbiddenError, NotFoundError  # noqa: PLC0415
 
-    result = await db.execute(
-        select(TeacherWorklistItem).where(TeacherWorklistItem.id == item_id)
+    # Step 1: lightweight existence + ownership check (distinguishes 404 vs 403
+    # even when RLS filters rows by teacher_id at the DB level).
+    ownership_result = await db.execute(
+        select(TeacherWorklistItem.id, TeacherWorklistItem.teacher_id).where(
+            TeacherWorklistItem.id == item_id
+        )
     )
-    item = result.scalar_one_or_none()
-    if item is None:
+    ownership_row = ownership_result.one_or_none()
+    if ownership_row is None:
         raise NotFoundError(f"Worklist item {item_id} not found.")
-    if item.teacher_id != teacher_id:
+    if ownership_row.teacher_id != teacher_id:
         raise ForbiddenError("You do not have access to this worklist item.")
+
+    # Step 2: fetch full row with both filters to satisfy the tenant-isolation
+    # requirement that every DB fetch includes teacher_id in the query itself.
+    result = await db.execute(
+        select(TeacherWorklistItem).where(
+            TeacherWorklistItem.id == item_id,
+            TeacherWorklistItem.teacher_id == teacher_id,
+        )
+    )
+    item = result.scalar_one()
     return item
 
 
