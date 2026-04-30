@@ -384,8 +384,6 @@ class TestGenerateGroupRecommendationsEndpoint:
     def test_cross_teacher_access_returns_403(self):
         """A teacher cannot generate recommendations for another teacher's group."""
         teacher = _make_teacher()
-        other_teacher_id = uuid.uuid4()
-        rec = _make_recommendation_orm(teacher_id=other_teacher_id, group_id=uuid.uuid4())
 
         with patch(
             "app.routers.classes.generate_group_recommendations",

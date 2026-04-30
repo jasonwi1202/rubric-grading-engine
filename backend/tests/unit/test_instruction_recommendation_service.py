@@ -245,7 +245,6 @@ class TestGenerateStudentRecommendations:
     async def test_happy_path_returns_recommendation(self):
         db = AsyncMock()
         profile = _make_profile()
-        persisted_rec = _make_persisted_rec()
 
         # _assert_student_owned_by: student exists, teacher matches
         student_row = MagicMock()
@@ -268,7 +267,7 @@ class TestGenerateStudentRecommendations:
             new_callable=AsyncMock,
             return_value=_parsed_instruction_response(),
         ):
-            rec = await generate_student_recommendations(
+            await generate_student_recommendations(
                 db,
                 _T_ID,
                 _S_ID,

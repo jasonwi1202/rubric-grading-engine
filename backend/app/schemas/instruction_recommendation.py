@@ -165,7 +165,7 @@ class GenerateGroupRecommendationRequest(BaseModel):
 
 
 def recommendation_response_from_orm(
-    rec: "InstructionRecommendation",
+    rec: InstructionRecommendation,
 ) -> InstructionRecommendationResponse:
     """Build an :class:`InstructionRecommendationResponse` from an ORM row.
 
@@ -184,6 +184,6 @@ def recommendation_response_from_orm(
         prompt_version=rec.prompt_version,
         recommendations=[RecommendationItemResponse(**item) for item in items],
         evidence_summary=rec.evidence_summary,
-        status=rec.status,
+        status=RecommendationStatus(rec.status),
         created_at=rec.created_at,
     )
