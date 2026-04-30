@@ -49,6 +49,7 @@ from app.models.audit_log import AuditLog
 from app.models.class_ import Class
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.grade import ConfidenceLevel, CriterionScore, Grade, StrictnessLevel
+
 logger = logging.getLogger(__name__)
 
 

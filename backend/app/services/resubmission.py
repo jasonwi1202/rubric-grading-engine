@@ -242,12 +242,12 @@ async def compute_revision_comparison(
     base_scores_result = await db.execute(
         select(CriterionScore).where(CriterionScore.grade_id == base_grade_id)
     )
-    base_criterion_scores: list[CriterionScore] = base_scores_result.scalars().all()
+    base_criterion_scores: list[CriterionScore] = list(base_scores_result.scalars().all())
 
     revised_scores_result = await db.execute(
         select(CriterionScore).where(CriterionScore.grade_id == revised_grade_id)
     )
-    revised_criterion_scores: list[CriterionScore] = revised_scores_result.scalars().all()
+    revised_criterion_scores: list[CriterionScore] = list(revised_scores_result.scalars().all())
 
     # ------------------------------------------------------------------
     # 3. Compute score deltas.
