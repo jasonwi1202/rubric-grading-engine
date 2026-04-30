@@ -396,13 +396,14 @@ describe("RecommendationPanel — dismiss flow", () => {
       screen.getByRole("button", { name: /^dismiss$/i }),
     );
     await user.click(screen.getByRole("button", { name: /^dismiss$/i }));
-    await user.click(
-      screen.getByRole("button", { name: /^dismiss$/i, hidden: false }),
-    );
 
-    // Wait for the mutation to be called — dismiss button inside dialog confirms
+    // The confirmation dialog is now open; find the confirm button within it.
+    const dialog = screen.getByRole("dialog", { name: /dismiss this recommendation/i });
+    const confirmBtn = dialog.querySelector("button:last-child");
+    expect(confirmBtn).toBeTruthy();
+    await user.click(confirmBtn as HTMLElement);
+
     await waitFor(() => {
-      // The dialog confirm button text is "Dismiss"
       expect(mockDismissRecommendation).toHaveBeenCalledWith("rec-001");
     });
   });
@@ -422,10 +423,11 @@ describe("RecommendationPanel — dismiss flow", () => {
       screen.getByRole("button", { name: /^dismiss$/i }),
     );
     await user.click(screen.getByRole("button", { name: /^dismiss$/i }));
-    // Click the confirm button in dialog (also labeled "Dismiss")
-    const dismissButtons = screen.getAllByRole("button", { name: /^dismiss$/i });
-    // The last "Dismiss" button in DOM is the confirm button in the dialog
-    await user.click(dismissButtons[dismissButtons.length - 1]);
+
+    // The confirmation dialog is now open; find the confirm button within it.
+    const dialog = screen.getByRole("dialog", { name: /dismiss this recommendation/i });
+    const confirmBtn = dialog.querySelector("button:last-child");
+    await user.click(confirmBtn as HTMLElement);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();

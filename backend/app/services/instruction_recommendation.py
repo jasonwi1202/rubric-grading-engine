@@ -625,10 +625,8 @@ async def dismiss_recommendation(
     if rec.status == "accepted":
         raise ConflictError("Cannot dismiss a recommendation that has already been assigned.")
 
-    # Idempotent — already dismissed, nothing to do.
-    if rec.status == "dismissed":
-        return rec
-
+    # Attempt atomic conditional UPDATE: only transitions if still pending_review.
+    # This prevents duplicate audit entries when two concurrent requests race.
     before_status = rec.status
     update_result = await db.execute(
         update(InstructionRecommendation)
@@ -640,7 +638,12 @@ async def dismiss_recommendation(
         .values(status="dismissed")
     )
     if cast("CursorResult[Any]", update_result).rowcount == 0:
+        # Concurrent request already transitioned the row; re-fetch current state.
         await db.refresh(rec)
+        # If now dismissed (concurrent dismiss), return idempotently.
+        # If now accepted (concurrent assign), raise conflict.
+        if rec.status == "accepted":
+            raise ConflictError("Cannot dismiss a recommendation that has already been assigned.")
         return rec
 
     audit = AuditLog(

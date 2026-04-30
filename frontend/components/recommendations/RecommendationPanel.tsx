@@ -74,6 +74,8 @@ const GRADE_LEVEL_OPTIONS = [
 ];
 
 const DEFAULT_DURATION_MINUTES = 20;
+const MIN_DURATION_MINUTES = 5;
+const MAX_DURATION_MINUTES = 120;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -279,6 +281,7 @@ interface RecommendationCardProps {
   onAssigned: () => void;
   onDismissed: () => void;
   anyPending: boolean;
+  onPendingChange: (isPending: boolean) => void;
 }
 
 function RecommendationCard({
@@ -286,8 +289,13 @@ function RecommendationCard({
   onAssigned,
   onDismissed,
   anyPending,
+  onPendingChange,
 }: RecommendationCardProps) {
   const [mode, setMode] = useState<CardMode>("view");
+  // Track which mode triggered the accept confirmation so Cancel restores correctly.
+  // "view" → Accept opens confirm from view mode; Cancel → view
+  // "modify" → "Assign modified" opens confirm from modify mode; Cancel → modify
+  const [preConfirmMode, setPreConfirmMode] = useState<"view" | "modify">("view");
   const [editedItems, setEditedItems] = useState<RecommendationItemResponse[]>(
     rec.recommendations,
   );
@@ -296,6 +304,8 @@ function RecommendationCard({
 
   const assignMutation = useMutation({
     mutationFn: () => assignRecommendation(rec.id),
+    onMutate: () => onPendingChange(true),
+    onSettled: () => onPendingChange(false),
     onSuccess: () => {
       setMode("view");
       onAssigned();
@@ -304,6 +314,8 @@ function RecommendationCard({
 
   const dismissMutation = useMutation({
     mutationFn: () => dismissRecommendation(rec.id),
+    onMutate: () => onPendingChange(true),
+    onSettled: () => onPendingChange(false),
     onSuccess: () => {
       setMode("view");
       onDismissed();
@@ -424,7 +436,10 @@ function RecommendationCard({
               <>
                 <button
                   type="button"
-                  onClick={() => setMode("confirm-accept")}
+                  onClick={() => {
+                    setPreConfirmMode("view");
+                    setMode("confirm-accept");
+                  }}
                   disabled={anyPending || isPending}
                   className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -453,7 +468,10 @@ function RecommendationCard({
               <>
                 <button
                   type="button"
-                  onClick={() => setMode("confirm-accept")}
+                  onClick={() => {
+                    setPreConfirmMode("modify");
+                    setMode("confirm-accept");
+                  }}
                   disabled={isPending}
                   className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -480,7 +498,7 @@ function RecommendationCard({
           message="This recommendation will be recorded as assigned. This action cannot be undone."
           confirmLabel="Confirm assignment"
           onConfirm={() => assignMutation.mutate()}
-          onCancel={() => setMode(mode === "confirm-accept" ? "view" : "modify")}
+          onCancel={() => setMode(preConfirmMode)}
           isPending={isPending}
         />
       )}
@@ -576,12 +594,12 @@ function GenerateForm({ studentId, onGenerated }: GenerateFormProps) {
           <input
             id={`${formId}-duration`}
             type="number"
-            min={5}
-            max={120}
+            min={MIN_DURATION_MINUTES}
+            max={MAX_DURATION_MINUTES}
             value={durationMinutes}
             onChange={(e) => {
               const n = Number(e.target.value);
-              if (n >= 5 && n <= 120) setDurationMinutes(n);
+              if (n >= MIN_DURATION_MINUTES && n <= MAX_DURATION_MINUTES) setDurationMinutes(n);
             }}
             disabled={generateMutation.isPending}
             className="w-24 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
@@ -622,6 +640,10 @@ interface RecommendationPanelProps {
  */
 export function RecommendationPanel({ studentId }: RecommendationPanelProps) {
   const queryClient = useQueryClient();
+  // Track how many cards currently have a mutation in-flight.
+  // When > 0, all cards disable their action buttons.
+  const [pendingCount, setPendingCount] = useState(0);
+  const anyPending = pendingCount > 0;
 
   const { data: recs, isLoading, isError } = useQuery({
     queryKey: ["student-recommendations", studentId],
@@ -633,6 +655,10 @@ export function RecommendationPanel({ studentId }: RecommendationPanelProps) {
     void queryClient.invalidateQueries({
       queryKey: ["student-recommendations", studentId],
     });
+  }
+
+  function handlePendingChange(isPending: boolean) {
+    setPendingCount((n) => Math.max(0, isPending ? n + 1 : n - 1));
   }
 
   if (isLoading) {
@@ -691,7 +717,8 @@ export function RecommendationPanel({ studentId }: RecommendationPanelProps) {
               rec={rec}
               onAssigned={invalidate}
               onDismissed={invalidate}
-              anyPending={false}
+              anyPending={anyPending}
+              onPendingChange={handlePendingChange}
             />
           ))}
         </ul>
