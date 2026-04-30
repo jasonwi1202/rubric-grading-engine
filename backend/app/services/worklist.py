@@ -51,10 +51,10 @@ import math
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import case, delete, insert, nulls_first, select
+from sqlalchemy import case, delete, insert, nulls_first, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assignment import Assignment
@@ -110,6 +110,21 @@ _TRIGGER_ORDER: dict[str, int] = {
     "persistent_gap": 2,
     "high_inconsistency": 3,
 }
+
+
+def _trigger_order_case_expr() -> object:
+    """Return a SQLAlchemy CASE expression for deterministic trigger-type ordering.
+
+    Produces the same ordering used by :func:`_rank_items` so that DB queries
+    return rows in the identical sequence to the in-memory sort.  Both
+    :func:`compute_and_persist_worklist` and :func:`get_worklist_for_teacher`
+    use this helper to avoid duplicating the mapping.
+    """
+    return case(
+        _TRIGGER_ORDER,
+        value=TeacherWorklistItem.trigger_type,
+        else_=99,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -812,11 +827,6 @@ async def compute_and_persist_worklist(
 
     # Reload inserted rows with the same deterministic ordering as _rank_items:
     # urgency desc → trigger_type order → skill_key (NULLs first, then alpha) → student_id.
-    trigger_order_expr = case(
-        {v: k for k, v in enumerate(("regression", "non_responder", "persistent_gap", "high_inconsistency"))},
-        value=TeacherWorklistItem.trigger_type,
-        else_=99,
-    )
     result = await db.execute(
         select(TeacherWorklistItem)
         .where(
@@ -826,7 +836,7 @@ async def compute_and_persist_worklist(
         )
         .order_by(
             TeacherWorklistItem.urgency.desc(),
-            trigger_order_expr,
+            _trigger_order_case_expr(),
             nulls_first(TeacherWorklistItem.skill_key.asc()),
             TeacherWorklistItem.student_id.asc(),
         )
@@ -841,3 +851,315 @@ async def compute_and_persist_worklist(
         },
     )
     return persisted
+
+
+# ---------------------------------------------------------------------------
+# Worklist item management (M6-05 — API actions)
+# ---------------------------------------------------------------------------
+
+#: Default snooze duration when no ``snoozed_until`` is provided.
+_DEFAULT_SNOOZE_DAYS: int = 7
+
+
+async def get_worklist_for_teacher(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+) -> list[TeacherWorklistItem]:
+    """Return the ranked active (and currently-active snoozed) worklist items.
+
+    Returns ``active`` items and ``snoozed`` items whose ``snoozed_until`` is in
+    the past (i.e. have been un-snoozed by the passage of time).  Items with
+    ``status`` of ``'completed'`` or ``'dismissed'`` are excluded.
+
+    Items are ordered identically to :func:`compute_and_persist_worklist`:
+    urgency descending, then trigger type, then skill_key, then student_id.
+
+    Tenant isolation: query is scoped to ``teacher_id``.
+
+    Args:
+        db:         Async database session.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        Ordered list of :class:`TeacherWorklistItem` ORM rows.
+    """
+    now = datetime.now(UTC)
+    result = await db.execute(
+        select(TeacherWorklistItem)
+        .where(
+            TeacherWorklistItem.teacher_id == teacher_id,
+            TeacherWorklistItem.status.in_(["active", "snoozed"]),
+            # Include active items unconditionally, and snoozed items only when
+            # their snooze window has elapsed.  Treat NULL snoozed_until as
+            # expired (e.g. data integrity gap) so the item is never hidden
+            # forever.
+            (
+                (TeacherWorklistItem.status == "active")
+                | (
+                    (TeacherWorklistItem.status == "snoozed")
+                    & (
+                        TeacherWorklistItem.snoozed_until.is_(None)
+                        | (TeacherWorklistItem.snoozed_until <= now)
+                    )
+                )
+            ),
+        )
+        .order_by(
+            TeacherWorklistItem.urgency.desc(),
+            _trigger_order_case_expr(),
+            nulls_first(TeacherWorklistItem.skill_key.asc()),
+            TeacherWorklistItem.student_id.asc(),
+        )
+    )
+    items = list(result.scalars().all())
+    logger.info(
+        "Worklist fetched",
+        extra={"teacher_id": str(teacher_id), "item_count": len(items)},
+    )
+    return items
+
+
+async def _load_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> TeacherWorklistItem:
+    """Load a single worklist item, enforcing tenant isolation.
+
+    Issues a single ``SELECT … WHERE id = ? AND teacher_id = ?`` query so that
+    the ``teacher_id`` predicate is always present in every DB fetch (per the
+    project's tenant-isolation requirement).
+
+    .. note::
+        With a FORCE RLS policy keyed on ``app.current_teacher_id``, the DB
+        already filters rows to the authenticated teacher before this predicate
+        is evaluated, so a cross-tenant ``item_id`` and a genuinely missing
+        ``item_id`` are indistinguishable at the DB level — both return no row.
+        The endpoint therefore returns 404 in both cases.  This is by design:
+        returning a different status for cross-tenant IDs would leak information
+        about whether a resource exists for another teacher.
+
+    Args:
+        db:         Async database session.
+        item_id:    UUID of the worklist item.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        The :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`: Item does not exist or is not
+            accessible to the authenticated teacher.
+    """
+    from app.exceptions import NotFoundError  # noqa: PLC0415
+
+    result = await db.execute(
+        select(TeacherWorklistItem).where(
+            TeacherWorklistItem.id == item_id,
+            TeacherWorklistItem.teacher_id == teacher_id,
+        )
+    )
+    item = result.scalar_one_or_none()
+    if item is None:
+        raise NotFoundError(f"Worklist item {item_id} not found.")
+    return item
+
+
+async def complete_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> TeacherWorklistItem:
+    """Mark a worklist item as completed.
+
+    Sets ``status='completed'`` and ``completed_at=now()``.  Idempotent: if the
+    item is already ``'completed'`` it is returned unchanged.
+
+    Only ``active`` and ``snoozed`` items may be completed.  Attempting to
+    complete a ``dismissed`` item raises
+    :class:`~app.exceptions.InvalidStateTransitionError`.
+
+    Tenant isolation: ``teacher_id`` is checked against the item's owner.
+
+    Args:
+        db:         Async database session.
+        item_id:    UUID of the worklist item.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        Updated :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`:  Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.InvalidStateTransitionError`: Item is in a
+            terminal state (``dismissed``) that cannot transition to
+            ``completed``.
+    """
+    from app.exceptions import InvalidStateTransitionError  # noqa: PLC0415
+
+    item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status == "dismissed":
+        raise InvalidStateTransitionError(
+            f"Cannot complete a dismissed worklist item (id={item_id})."
+        )
+    if item.status != "completed":
+        now = datetime.now(UTC)
+        result = await db.execute(
+            update(TeacherWorklistItem)
+            .where(
+                TeacherWorklistItem.id == item_id,
+                TeacherWorklistItem.teacher_id == teacher_id,
+                TeacherWorklistItem.status.in_(("active", "snoozed")),
+            )
+            .values(status="completed", completed_at=now)
+        )
+        if result.rowcount == 0:
+            # A concurrent request moved the item to a terminal state between
+            # our load and this UPDATE.  Refresh and surface the new state.
+            await db.refresh(item)
+            if item.status == "dismissed":
+                raise InvalidStateTransitionError(
+                    f"Cannot complete a dismissed worklist item (id={item_id})."
+                )
+            # Concurrently completed — fall through (idempotent).
+        else:
+            await db.commit()
+            await db.refresh(item)
+    logger.info(
+        "Worklist item completed",
+        extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
+    )
+    return item
+
+
+async def snooze_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    snoozed_until: datetime | None = None,
+) -> TeacherWorklistItem:
+    """Snooze a worklist item until a specified datetime.
+
+    Sets ``status='snoozed'`` and persists ``snoozed_until``.  When
+    ``snoozed_until`` is ``None``, defaults to
+    :data:`_DEFAULT_SNOOZE_DAYS` days from now.
+
+    Only ``active`` and ``snoozed`` items may be snoozed.  Attempting to snooze
+    a ``completed`` or ``dismissed`` item raises
+    :class:`~app.exceptions.InvalidStateTransitionError`.
+
+    Tenant isolation: ``teacher_id`` is checked against the item's owner.
+
+    Args:
+        db:           Async database session.
+        item_id:      UUID of the worklist item.
+        teacher_id:   UUID of the authenticated teacher.
+        snoozed_until: Datetime until which the item should be hidden.
+                       Defaults to 7 days from now.
+
+    Returns:
+        Updated :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`:  Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.InvalidStateTransitionError`: Item is in a
+            terminal state (``completed`` or ``dismissed``) that cannot be
+            snoozed.
+    """
+    from app.exceptions import InvalidStateTransitionError  # noqa: PLC0415
+
+    item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status in ("completed", "dismissed"):
+        raise InvalidStateTransitionError(
+            f"Cannot snooze a {item.status} worklist item (id={item_id})."
+        )
+    if snoozed_until is None:
+        snoozed_until = datetime.now(UTC) + timedelta(days=_DEFAULT_SNOOZE_DAYS)
+    result = await db.execute(
+        update(TeacherWorklistItem)
+        .where(
+            TeacherWorklistItem.id == item_id,
+            TeacherWorklistItem.teacher_id == teacher_id,
+            TeacherWorklistItem.status.in_(("active", "snoozed")),
+        )
+        .values(status="snoozed", snoozed_until=snoozed_until)
+    )
+    if result.rowcount != 1:
+        # A concurrent request moved the item to a terminal state.
+        await db.rollback()
+        raise InvalidStateTransitionError(
+            f"Cannot snooze worklist item (id={item_id}) from its current state."
+        )
+    await db.commit()
+    await db.refresh(item)
+    logger.info(
+        "Worklist item snoozed",
+        extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
+    )
+    return item
+
+
+async def dismiss_worklist_item(
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> TeacherWorklistItem:
+    """Dismiss a worklist item permanently.
+
+    Sets ``status='dismissed'``.  Idempotent: already-dismissed items are
+    returned unchanged.
+
+    Only ``active`` and ``snoozed`` items may be dismissed.  Attempting to
+    dismiss a ``completed`` item raises
+    :class:`~app.exceptions.InvalidStateTransitionError`.
+
+    Tenant isolation: ``teacher_id`` is checked against the item's owner.
+
+    Args:
+        db:         Async database session.
+        item_id:    UUID of the worklist item.
+        teacher_id: UUID of the authenticated teacher.
+
+    Returns:
+        Updated :class:`TeacherWorklistItem` ORM row.
+
+    Raises:
+        :class:`~app.exceptions.NotFoundError`:  Item does not exist.
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.InvalidStateTransitionError`: Item is in a
+            terminal state (``completed``) that cannot be dismissed.
+    """
+    from app.exceptions import InvalidStateTransitionError  # noqa: PLC0415
+
+    item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status == "completed":
+        raise InvalidStateTransitionError(
+            f"Cannot dismiss a completed worklist item (id={item_id})."
+        )
+    if item.status != "dismissed":
+        result = await db.execute(
+            update(TeacherWorklistItem)
+            .where(
+                TeacherWorklistItem.id == item_id,
+                TeacherWorklistItem.teacher_id == teacher_id,
+                TeacherWorklistItem.status.in_(("active", "snoozed")),
+            )
+            .values(status="dismissed")
+        )
+        if result.rowcount:
+            await db.commit()
+            await db.refresh(item)
+        else:
+            # A concurrent request moved the item to a terminal state.
+            await db.refresh(item)
+            if item.status == "completed":
+                raise InvalidStateTransitionError(
+                    f"Cannot dismiss a completed worklist item (id={item_id})."
+                )
+    logger.info(
+        "Worklist item dismissed",
+        extra={"item_id": str(item_id), "teacher_id": str(teacher_id)},
+    )
+    return item

@@ -354,3 +354,61 @@ class TestGradeTenantIsolation:
             )
 
         _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Worklist — complete / snooze / dismiss
+# ---------------------------------------------------------------------------
+
+
+class TestWorklistTenantIsolation:
+    def test_complete_worklist_item_returns_403_for_another_teachers_item(self) -> None:
+        teacher_b = _make_teacher()
+        other_item_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.worklist.complete_worklist_item",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("worklist item not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/worklist/{other_item_id}/complete")
+
+        _assert_403(resp)
+
+    def test_snooze_worklist_item_returns_403_for_another_teachers_item(self) -> None:
+        teacher_b = _make_teacher()
+        other_item_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.worklist.snooze_worklist_item",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("worklist item not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/worklist/{other_item_id}/snooze", json={})
+
+        _assert_403(resp)
+
+    def test_dismiss_worklist_item_returns_403_for_another_teachers_item(self) -> None:
+        teacher_b = _make_teacher()
+        other_item_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.worklist.dismiss_worklist_item",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("worklist item not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.delete(f"/api/v1/worklist/{other_item_id}")
+
+        _assert_403(resp)

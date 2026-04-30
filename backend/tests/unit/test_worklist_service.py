@@ -64,7 +64,9 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.services.worklist import (
     _GAP_MIN_ASSIGNMENTS,
@@ -799,3 +801,426 @@ class TestThresholdConstants:
 
     def test_non_responder_improvement_threshold(self) -> None:
         assert _NON_RESPONDER_IMPROVEMENT_THRESHOLD == 0.05
+
+
+# ---------------------------------------------------------------------------
+# Tests — get_worklist_for_teacher / complete / snooze / dismiss (M6-05)
+# ---------------------------------------------------------------------------
+
+
+def _make_worklist_item_orm(
+    teacher_id: uuid.UUID | None = None,
+    item_id: uuid.UUID | None = None,
+    status: str = "active",
+    trigger_type: str = "regression",
+) -> MagicMock:
+    """Build a mock TeacherWorklistItem ORM object."""
+    from app.models.worklist import TeacherWorklistItem  # noqa: PLC0415
+
+    item = MagicMock(spec=TeacherWorklistItem)
+    item.id = item_id or uuid.uuid4()
+    item.teacher_id = teacher_id or uuid.uuid4()
+    item.student_id = uuid.uuid4()
+    item.trigger_type = trigger_type
+    item.skill_key = "evidence"
+    item.urgency = 4
+    item.suggested_action = "Review recent essay with student."
+    item.details = {}
+    item.status = status
+    item.snoozed_until = None
+    item.completed_at = None
+    item.generated_at = MagicMock()
+    item.created_at = MagicMock()
+    return item
+
+
+def _make_ownership_row(teacher_id: uuid.UUID, item_id: uuid.UUID) -> MagicMock:
+    """Build a mock row for the lightweight ownership query (id + teacher_id)."""
+    row = MagicMock()
+    row.id = item_id
+    row.teacher_id = teacher_id
+    return row
+
+
+def _make_db_for_load(
+    item: MagicMock,
+    ownership_teacher_id: uuid.UUID | None = None,
+) -> MagicMock:
+    """Build an AsyncMock db whose first execute returns the item (single-step load).
+
+    With the simplified ``_load_worklist_item`` implementation, a single
+    ``SELECT … WHERE id = ? AND teacher_id = ?`` is issued.  The result's
+    ``scalar_one_or_none()`` either returns the ORM row (matched) or ``None``
+    (not found / cross-tenant).
+
+    If ``ownership_teacher_id`` is provided and differs from ``item.teacher_id``,
+    the mock simulates the cross-tenant / not-found path (returns ``None``).
+    Otherwise it returns ``item``.
+    """
+    from unittest.mock import AsyncMock  # noqa: PLC0415
+
+    actual_teacher = ownership_teacher_id if ownership_teacher_id is not None else item.teacher_id
+    load_result = MagicMock()
+    if actual_teacher != item.teacher_id:
+        load_result.scalar_one_or_none.return_value = None
+    else:
+        load_result.scalar_one_or_none.return_value = item
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[load_result])
+    return db
+
+
+class TestGetWorklistForTeacher:
+    """Tests for ``worklist.get_worklist_for_teacher``."""
+
+    @pytest.mark.asyncio
+    async def test_returns_items_for_teacher(self) -> None:
+        from app.services.worklist import get_worklist_for_teacher
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id)
+
+        db = MagicMock()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [item]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        items = await get_worklist_for_teacher(db, teacher_id=teacher_id)
+        assert items == [item]
+        db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_items(self) -> None:
+        from app.services.worklist import get_worklist_for_teacher
+
+        teacher_id = uuid.uuid4()
+
+        db = MagicMock()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(return_value=result_mock)
+
+        items = await get_worklist_for_teacher(db, teacher_id=teacher_id)
+        assert items == []
+
+
+class TestCompleteWorklistItem:
+    """Tests for ``worklist.complete_worklist_item``."""
+
+    @pytest.mark.asyncio
+    async def test_marks_item_completed(self) -> None:
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
+        db = _make_db_for_load(item)
+        # Second execute: the UPDATE
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(
+            side_effect=list(db.execute.side_effect) + [update_result]
+        )
+
+        result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once_with(item)
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_already_completed(self) -> None:
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="completed")
+        db = _make_db_for_load(item)
+
+        result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        # No UPDATE should be executed (only 1 select from _load_worklist_item)
+        assert db.execute.await_count == 1
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_missing_item(self) -> None:
+        from app.exceptions import NotFoundError
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=load_result)
+
+        with pytest.raises(NotFoundError):
+            await complete_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_cross_tenant_item(self) -> None:
+        """Cross-tenant access returns NotFoundError (indistinguishable from 404 under RLS)."""
+        from app.exceptions import NotFoundError
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+
+        # Simulate the DB returning no row because RLS / teacher_id filter
+        # excludes the cross-tenant item.
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=load_result)
+
+        with pytest.raises(NotFoundError):
+            await complete_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
+
+
+class TestSnoozeWorklistItem:
+    """Tests for ``worklist.snooze_worklist_item``."""
+
+    @pytest.mark.asyncio
+    async def test_snoozes_item_with_custom_date(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(
+            side_effect=list(db.execute.side_effect) + [update_result]
+        )
+        custom_date = datetime.now(UTC) + timedelta(days=14)
+
+        result = await snooze_worklist_item(
+            db, item_id=item.id, teacher_id=teacher_id, snoozed_until=custom_date
+        )
+        assert result is item
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once_with(item)
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_seven_days_when_snoozed_until_none(self) -> None:
+        from app.services.worklist import _DEFAULT_SNOOZE_DAYS, snooze_worklist_item
+
+        assert _DEFAULT_SNOOZE_DAYS == 7
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(
+            side_effect=list(db.execute.side_effect) + [update_result]
+        )
+
+        result = await snooze_worklist_item(
+            db, item_id=item.id, teacher_id=teacher_id, snoozed_until=None
+        )
+        assert result is item
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_missing_item(self) -> None:
+        from app.exceptions import NotFoundError
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=load_result)
+
+        with pytest.raises(NotFoundError):
+            await snooze_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_cross_tenant_item(self) -> None:
+        """Cross-tenant access returns NotFoundError (indistinguishable from 404 under RLS)."""
+        from app.exceptions import NotFoundError
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=load_result)
+
+        with pytest.raises(NotFoundError):
+            await snooze_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
+
+
+class TestDismissWorklistItem:
+    """Tests for ``worklist.dismiss_worklist_item``."""
+
+    @pytest.mark.asyncio
+    async def test_dismisses_item(self) -> None:
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="active")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(
+            side_effect=list(db.execute.side_effect) + [update_result]
+        )
+
+        result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once_with(item)
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_already_dismissed(self) -> None:
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="dismissed")
+        db = _make_db_for_load(item)
+
+        result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        # No UPDATE: only the 1 select from _load_worklist_item
+        assert db.execute.await_count == 1
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_missing_item(self) -> None:
+        from app.exceptions import NotFoundError
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=load_result)
+
+        with pytest.raises(NotFoundError):
+            await dismiss_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
+
+    @pytest.mark.asyncio
+    async def test_raises_not_found_for_cross_tenant_item(self) -> None:
+        """Cross-tenant access returns NotFoundError (indistinguishable from 404 under RLS)."""
+        from app.exceptions import NotFoundError
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+
+        load_result = MagicMock()
+        load_result.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=load_result)
+
+        with pytest.raises(NotFoundError):
+            await dismiss_worklist_item(db, item_id=item_id, teacher_id=teacher_id)
+
+
+# ---------------------------------------------------------------------------
+# Tests — terminal-state transition guards
+# ---------------------------------------------------------------------------
+
+
+class TestTerminalStateGuards:
+    """Verify that completed/dismissed states are terminal and cannot be re-transitioned."""
+
+    # --- complete_worklist_item ---
+
+    @pytest.mark.asyncio
+    async def test_complete_raises_for_dismissed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="dismissed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_complete_succeeds_for_snoozed_item(self) -> None:
+        """Snoozed items are not terminal and can be completed."""
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="snoozed")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
+
+        result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        db.commit.assert_awaited_once()
+
+    # --- snooze_worklist_item ---
+
+    @pytest.mark.asyncio
+    async def test_snooze_raises_for_completed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="completed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await snooze_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_snooze_raises_for_dismissed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="dismissed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await snooze_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    # --- dismiss_worklist_item ---
+
+    @pytest.mark.asyncio
+    async def test_dismiss_raises_for_completed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="completed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dismiss_succeeds_for_snoozed_item(self) -> None:
+        """Snoozed items are not terminal and can be dismissed."""
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="snoozed")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
+
+        result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        db.commit.assert_awaited_once()
