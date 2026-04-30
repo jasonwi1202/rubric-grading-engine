@@ -171,9 +171,10 @@ function WorklistItemCard({
           {/* Suggested action */}
           <p className="mt-1 text-sm text-gray-600">{item.suggested_action}</p>
 
-          {/* Student profile link */}
+        {/* Student profile link — accessible name uses no PII, only UUID in href */}
           <a
             href={`/dashboard/students/${item.student_id}`}
+            aria-label={`View student profile (ID: ${item.student_id})`}
             className="mt-1 inline-block text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             View student profile →
@@ -325,7 +326,19 @@ export function WorklistPanel() {
           <select
             id="filter-trigger"
             value={triggerFilter}
-            onChange={(e) => setTriggerFilter(e.target.value as TriggerType | "all")}
+            onChange={(e) => {
+              const v = e.target.value;
+              const valid: Array<TriggerType | "all"> = [
+                "all",
+                "regression",
+                "non_responder",
+                "persistent_gap",
+                "high_inconsistency",
+              ];
+              if (valid.includes(v as TriggerType | "all")) {
+                setTriggerFilter(v as TriggerType | "all");
+              }
+            }}
             className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">All action types</option>
@@ -365,9 +378,17 @@ export function WorklistPanel() {
           <select
             id="filter-urgency"
             value={urgencyFilter === "all" ? "all" : String(urgencyFilter)}
-            onChange={(e) =>
-              setUrgencyFilter(e.target.value === "all" ? "all" : Number(e.target.value))
-            }
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "all") {
+                setUrgencyFilter("all");
+              } else {
+                const n = Number(v);
+                if (n >= 1 && n <= 4) {
+                  setUrgencyFilter(n);
+                }
+              }
+            }}
             className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">All urgency levels</option>

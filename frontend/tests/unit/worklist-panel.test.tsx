@@ -229,6 +229,7 @@ describe("WorklistPanel — loading state", () => {
   it("shows loading skeleton while fetching", () => {
     mockGetWorklist.mockReturnValue(new Promise(() => {})); // never resolves
     render(<WorklistPanel />, { wrapper });
+    // Loading skeleton: aria-busy container with animated placeholders
     expect(document.querySelector("[aria-busy='true']")).toBeTruthy();
   });
 });
@@ -334,6 +335,8 @@ describe("WorklistPanel — item rendering", () => {
     await waitFor(() => {
       const link = screen.getByRole("link", { name: /view student profile/i });
       expect(link).toHaveAttribute("href", "/dashboard/students/stu-abc-123");
+      // Link text must not contain student name or other PII
+      expect(link.textContent).toBe("View student profile →");
     });
   });
 });
