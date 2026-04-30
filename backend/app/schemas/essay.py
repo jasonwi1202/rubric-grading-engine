@@ -234,7 +234,6 @@ class ResubmitEssayResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-
 class ProcessSignalsResponse(BaseModel):
     """Response for ``GET /essays/{essayId}/process-signals``.
 

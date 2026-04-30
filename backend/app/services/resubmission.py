@@ -63,15 +63,17 @@ def _jaccard_similarity(text_a: str, text_b: str) -> float:
     """Compute Jaccard similarity of the word bags of two texts.
 
     Jaccard similarity = |A ∩ B| / |A ∪ B| where A and B are the sets of
-    (lowercased) words in each text.  Returns 0.0 when both texts are empty,
-    1.0 when they are identical.
+    (lowercased) words in each text.  Returns 1.0 when both texts are empty
+    (they are trivially identical — no words in either set differ) or when
+    they are identical in vocabulary.
 
     Args:
         text_a: First plain-text string.
         text_b: Second plain-text string.
 
     Returns:
-        A float in [0.0, 1.0].
+        A float in [0.0, 1.0].  1.0 means identical word sets; 0.0 means
+        completely disjoint sets.
     """
     words_a = set(text_a.lower().split())
     words_b = set(text_b.lower().split())
@@ -262,6 +264,14 @@ async def compute_revision_comparison(
     criterion_deltas: list[dict[str, Any]] = []
     for base_cs in base_criterion_scores:
         revised_cs = revised_by_criterion.get(base_cs.rubric_criterion_id)
+        if revised_cs is None:
+            logger.warning(
+                "Revised grade missing criterion score; using 0 for delta calculation",
+                extra={
+                    "essay_id": str(essay_id),
+                    "criterion_id": str(base_cs.rubric_criterion_id),
+                },
+            )
         revised_score = revised_cs.final_score if revised_cs is not None else 0
         criterion_deltas.append(
             {
@@ -295,17 +305,15 @@ async def compute_revision_comparison(
                 feedback_items_json=feedback_items_json,
                 revised_essay_text=revised_version.content,
             )
+            # Build an O(1) lookup so the list comprehension below is O(N+M)
+            # rather than the O(N*M) linear search that next(...) would produce.
+            feedback_by_criterion_id: dict[str, str] = {
+                item["criterion_id"]: item["feedback"] for item in feedback_items
+            }
             feedback_addressed = [
                 {
                     "criterion_id": assessment.criterion_id,
-                    "feedback_given": next(
-                        (
-                            item["feedback"]
-                            for item in feedback_items
-                            if item["criterion_id"] == assessment.criterion_id
-                        ),
-                        "",
-                    ),
+                    "feedback_given": feedback_by_criterion_id.get(assessment.criterion_id, ""),
                     "addressed": assessment.addressed,
                     "detail": assessment.detail,
                 }
