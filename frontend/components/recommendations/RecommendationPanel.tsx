@@ -93,6 +93,13 @@ function errorMessage(err: unknown): string {
   return "An error occurred. Please try again.";
 }
 
+/** Clamp a raw numeric input value to the allowed duration range. */
+function clampDuration(value: number): number {
+  if (Number.isNaN(value) || value < MIN_DURATION_MINUTES) return MIN_DURATION_MINUTES;
+  if (value > MAX_DURATION_MINUTES) return MAX_DURATION_MINUTES;
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -601,11 +608,7 @@ function GenerateForm({ studentId, onGenerated }: GenerateFormProps) {
               const n = Number(e.target.value);
               if (!Number.isNaN(n)) setDurationMinutes(n);
             }}
-            onBlur={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isNaN(n) || n < MIN_DURATION_MINUTES) setDurationMinutes(MIN_DURATION_MINUTES);
-              else if (n > MAX_DURATION_MINUTES) setDurationMinutes(MAX_DURATION_MINUTES);
-            }}
+            onBlur={(e) => setDurationMinutes(clampDuration(Number(e.target.value)))}
             disabled={generateMutation.isPending}
             className="w-24 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
           />

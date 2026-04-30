@@ -121,7 +121,7 @@ describe("RecommendationPanel — loading state", () => {
   it("shows loading skeleton while fetching", () => {
     mockListStudentRecommendations.mockReturnValue(new Promise(() => {}));
     render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
-    expect(document.querySelector("[aria-busy='true']")).toBeTruthy();
+    expect(document.querySelector("[aria-busy='true']")).toBeInTheDocument();
   });
 });
 

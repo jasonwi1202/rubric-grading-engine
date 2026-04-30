@@ -316,6 +316,7 @@ Append-only record of every consequential action. Never updated or deleted.
 | Admin | `teacher_account_deactivated` | `user` | |
 | Email | `email_sent` | `user` | `after_value`: `{"email_type": "<type>"}` — records transactional and lifecycle email deliveries |
 | Instruction | `recommendation_assigned` | `instruction_recommendation` | `before_value`: `{"status": "<previous_status>"}` before assign; `after_value`: `{"status": "accepted"}` |
+| Instruction | `recommendation_dismissed` | `instruction_recommendation` | `before_value`: `{"status": "<previous_status>"}` before dismiss; `after_value`: `{"status": "dismissed"}` |
 
 ---
 
