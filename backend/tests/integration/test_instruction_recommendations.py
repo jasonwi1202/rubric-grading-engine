@@ -544,7 +544,7 @@ class TestAssignRecommendationIntegration:
         assert row is not None
         assert row.status == "accepted"
 
-        # Confirm audit log entry was written.
+        # Confirm audit log entry was written with correct state transition.
         result = await db_session.execute(
             text(
                 "SELECT action, before_value, after_value "
@@ -557,6 +557,8 @@ class TestAssignRecommendationIntegration:
         audit_rows = result.fetchall()
         assert len(audit_rows) == 1
         assert audit_rows[0].action == "recommendation_assigned"
+        assert audit_rows[0].before_value == {"status": "pending_review"}
+        assert audit_rows[0].after_value == {"status": "accepted"}
 
     @pytest.mark.asyncio
     async def test_idempotent_when_already_accepted(
