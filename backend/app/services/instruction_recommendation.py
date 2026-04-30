@@ -17,7 +17,9 @@ LLM integration:
   - The :func:`~app.llm.client.call_instruction` function sends a system
     prompt that explicitly instructs the model to ignore directives in the
     profile data (prompt injection defense).
-  - LLM responses are fully validated by the parser before any DB write.
+  - LLM responses are parsed and validated against the instruction response
+    schema before any DB write; the parser accepts empty recommendation lists
+    and blank field values, so callers should not assume non-empty output.
   - The ``prompt_version`` field on each persisted row records which version
     of the instruction prompt was used.
 

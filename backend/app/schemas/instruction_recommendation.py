@@ -92,7 +92,10 @@ class InstructionRecommendationResponse(BaseModel):
         description="Instruction prompt version used to generate this set."
     )
     recommendations: list[RecommendationItemResponse] = Field(
-        description="Validated list of recommended activities."
+        description=(
+            "List of recommended activities parsed from the LLM response.  "
+            "May be empty if the model returned no items."
+        )
     )
     evidence_summary: str = Field(
         description=(

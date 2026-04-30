@@ -140,6 +140,11 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
+        sa.CheckConstraint(
+            "(student_id IS NOT NULL AND group_id IS NULL)"
+            " OR (student_id IS NULL AND group_id IS NOT NULL)",
+            name="ck_instruction_recommendations_context_exclusive",
+        ),
     )
 
     # ------------------------------------------------------------------

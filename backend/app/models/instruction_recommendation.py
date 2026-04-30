@@ -28,7 +28,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -40,6 +40,13 @@ class InstructionRecommendation(Base):
     """One AI-generated instruction recommendation set for a student or group."""
 
     __tablename__ = "instruction_recommendations"
+    __table_args__ = (
+        CheckConstraint(
+            "(student_id IS NOT NULL AND group_id IS NULL)"
+            " OR (student_id IS NULL AND group_id IS NOT NULL)",
+            name="ck_instruction_recommendations_context_exclusive",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
