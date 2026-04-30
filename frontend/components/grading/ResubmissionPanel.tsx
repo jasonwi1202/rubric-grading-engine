@@ -42,7 +42,9 @@ import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 
 /** Format an ISO datetime string as a short date + time, e.g. "Apr 30, 2:15 PM". */
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "Date unavailable";
+  return date.toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -103,7 +105,11 @@ function VersionButton({
     >
       <p className="font-semibold">{label}</p>
       <p className="mt-0.5 text-gray-500">{formatDate(submittedAt)}</p>
-      <p className="mt-0.5 text-gray-400">{wordCount.toLocaleString()} words</p>
+      {wordCount > 0 ? (
+        <p className="mt-0.5 text-gray-400">{wordCount.toLocaleString()} words</p>
+      ) : (
+        <p className="mt-0.5 text-gray-300">Word count unavailable</p>
+      )}
     </button>
   );
 }

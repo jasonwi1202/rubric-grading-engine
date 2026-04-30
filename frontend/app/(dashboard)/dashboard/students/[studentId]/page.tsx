@@ -197,13 +197,13 @@ function HistoryRow({ item }: { item: AssignmentHistoryItem }) {
         <p className="mt-0.5 text-xs text-gray-500">{date}</p>
         {/* Link to the essay review page — the review page shows the
             ResubmissionPanel automatically when a revision comparison exists
-            for this essay. */}
+            for this essay. The link text includes the assignment title to be
+            unique across all rows for screen-reader navigation. */}
         <Link
           href={`/dashboard/assignments/${item.assignment_id}/review/${item.essay_id}`}
           className="mt-0.5 inline-block text-xs text-gray-400 underline hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
-          aria-label={`View essay review for ${item.assignment_title}`}
         >
-          View essay review
+          View review for {item.assignment_title}
         </Link>
       </div>
       <div className="shrink-0 text-right">

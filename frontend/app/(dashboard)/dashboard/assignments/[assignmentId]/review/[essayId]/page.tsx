@@ -216,6 +216,9 @@ export default function EssayReviewPage() {
     setLocalGrade(updatedGrade);
     // Also update the React Query cache so any other consumers see the update
     queryClient.setQueryData(["grade", essayId], updatedGrade);
+    // Invalidate the revision comparison so criterion deltas and total_score_delta
+    // stay in sync with the new grade after a score override, feedback edit, or lock.
+    queryClient.invalidateQueries({ queryKey: ["revision-comparison", essayId] });
   };
 
   const handleIntegrityUpdate = (updatedReport: IntegrityReportResponse) => {
