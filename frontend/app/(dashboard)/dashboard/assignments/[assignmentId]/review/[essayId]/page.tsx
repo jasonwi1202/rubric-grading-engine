@@ -177,9 +177,9 @@ export default function EssayReviewPage() {
   // Load revision comparison — 404 means the essay has not been resubmitted
   // and re-graded yet; this is treated as "no comparison available" (null),
   // not an error.  The ResubmissionPanel is only rendered when non-null.
-  // Non-404 errors (403 = forbidden, 5xx = server error) are captured in
-  // `revisionError` and shown as a static alert; they do not bubble to an
-  // error boundary because React Query does not throw to boundaries by default.
+  // Non-404 errors (403 = forbidden, 5xx = server error) put the query into
+  // the `revisionIsError` state and are shown as a static alert; they do not
+  // bubble to an error boundary because React Query does not throw to boundaries by default.
   const {
     data: revisionComparison,
     isLoading: revisionLoading,
@@ -220,9 +220,8 @@ export default function EssayReviewPage() {
     setLocalGrade(updatedGrade);
     // Also update the React Query cache so any other consumers see the update
     queryClient.setQueryData(["grade", essayId], updatedGrade);
-    // Invalidate the revision comparison so criterion deltas and total_score_delta
-    // stay in sync with the new grade after a score override, feedback edit, or lock.
-    queryClient.invalidateQueries({ queryKey: ["revision-comparison", essayId] });
+    // Do not invalidate revision-comparison here: it is a historical AI snapshot
+    // persisted at grading time and does not recompute after teacher edits.
   };
 
   const handleIntegrityUpdate = (updatedReport: IntegrityReportResponse) => {
