@@ -178,17 +178,18 @@ describe("ResubmissionPanel — version history strip", () => {
     expect(revisedBtn).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("clicking 'Version 1' sets it as active", async () => {
+  it("clicking 'Version 1' sets it as active and highlights 'Original submission' column", async () => {
     render(<ResubmissionPanel {...makeProps()} />);
-    const originalBtn = screen.getByRole("button", {
-      name: /Version 1/i,
-    });
+    const originalBtn = screen.getByRole("button", { name: /Version 1/i });
     await userEvent.click(originalBtn);
     expect(originalBtn).toHaveAttribute("aria-pressed", "true");
-    const revisedBtn = screen.getByRole("button", {
-      name: /Version 2/i,
-    });
+    const revisedBtn = screen.getByRole("button", { name: /Version 2/i });
     expect(revisedBtn).toHaveAttribute("aria-pressed", "false");
+    // The "Original submission" column heading should now be highlighted (blue text)
+    const originalHeading = screen.getByText(/Original submission/i);
+    expect(originalHeading).toHaveClass("text-blue-700");
+    const revisedHeading = screen.getByText(/Revised submission/i);
+    expect(revisedHeading).not.toHaveClass("text-blue-700");
   });
 
   it("shows version word counts", () => {
@@ -239,9 +240,11 @@ describe("ResubmissionPanel — score delta display", () => {
     render(<ResubmissionPanel {...makeProps()} />);
     // Criterion "Thesis": 3 → 4
     const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
-    const thesisItem = within(criterionList).getByText(/Thesis/i).closest("li")!;
-    expect(within(thesisItem).getByText("3")).toBeInTheDocument();
-    expect(within(thesisItem).getByText("4")).toBeInTheDocument();
+    const thesisText = within(criterionList).getByText(/Thesis/i);
+    const thesisItem = thesisText.closest("li");
+    expect(thesisItem).not.toBeNull();
+    expect(within(thesisItem as HTMLElement).getByText("3")).toBeInTheDocument();
+    expect(within(thesisItem as HTMLElement).getByText("4")).toBeInTheDocument();
   });
 
   it("shows criterion delta values in criterion delta rows", () => {
@@ -301,16 +304,24 @@ describe("ResubmissionPanel — feedback-addressed indicators", () => {
     // crit-001 (Thesis) has addressed=true — the button name contains "addressed"
     // and is present within the Thesis criterion item
     const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
-    const thesisItem = within(criterionList).getByText(/Thesis/i).closest("li")!;
-    expect(within(thesisItem).getByRole("button", { name: /Feedback addressed/i })).toBeInTheDocument();
+    const thesisText = within(criterionList).getByText(/Thesis/i);
+    const thesisItem = thesisText.closest("li");
+    expect(thesisItem).not.toBeNull();
+    expect(
+      within(thesisItem as HTMLElement).getByRole("button", { name: /Feedback addressed/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows 'Feedback not addressed' indicator for unaddressed criterion (crit-002)", () => {
     render(<ResubmissionPanel {...makeProps()} />);
     // crit-002 (Evidence) has addressed=false
     const criterionList = screen.getByRole("list", { name: /Criterion score changes/i });
-    const evidenceItem = within(criterionList).getByText(/Evidence/i).closest("li")!;
-    expect(within(evidenceItem).getByRole("button", { name: /Feedback not addressed/i })).toBeInTheDocument();
+    const evidenceText = within(criterionList).getByText(/Evidence/i);
+    const evidenceItem = evidenceText.closest("li");
+    expect(evidenceItem).not.toBeNull();
+    expect(
+      within(evidenceItem as HTMLElement).getByRole("button", { name: /Feedback not addressed/i }),
+    ).toBeInTheDocument();
   });
 
   it("expands feedback detail when indicator button is clicked", async () => {

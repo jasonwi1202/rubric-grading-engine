@@ -237,15 +237,24 @@ function CriterionDeltaRow({
   );
 }
 
-/** Side-by-side content diff placeholder. */
-function DiffPlaceholder() {
+/** Side-by-side content diff placeholder.
+ *
+ * `activeVersion` drives which column header is highlighted to reflect the
+ * version the teacher has selected via the version strip buttons.  The full
+ * diff content will render here once a dedicated essay content endpoint is
+ * available; for now both columns show a "coming soon" placeholder.
+ */
+function DiffPlaceholder({ activeVersion }: { activeVersion: "base" | "revised" }) {
+  const baseActive = activeVersion === "base";
+  const revisedActive = activeVersion === "revised";
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
       <div className="grid grid-cols-2 divide-x divide-gray-200">
         {/* Base version */}
-        <div>
+        <div className={baseActive ? "ring-2 ring-inset ring-blue-400 rounded-l-lg" : ""}>
           <div className="border-b border-gray-200 px-3 py-2">
-            <p className="text-xs font-semibold text-gray-600">
+            <p className={`text-xs font-semibold ${baseActive ? "text-blue-700" : "text-gray-600"}`}>
               Original submission
             </p>
           </div>
@@ -271,9 +280,9 @@ function DiffPlaceholder() {
         </div>
 
         {/* Revised version */}
-        <div>
+        <div className={revisedActive ? "ring-2 ring-inset ring-blue-400 rounded-r-lg" : ""}>
           <div className="border-b border-gray-200 px-3 py-2">
-            <p className="text-xs font-semibold text-gray-600">
+            <p className={`text-xs font-semibold ${revisedActive ? "text-blue-700" : "text-gray-600"}`}>
               Revised submission
             </p>
           </div>
@@ -415,7 +424,7 @@ export function ResubmissionPanel({
       )}
 
       {/* ── Side-by-side diff placeholder ────────────────────────────── */}
-      <DiffPlaceholder />
+      <DiffPlaceholder activeVersion={activeVersion} />
 
       {/* ── Total score delta ─────────────────────────────────────────── */}
       <ScoreDeltaSummary delta={comparison.total_score_delta} />
