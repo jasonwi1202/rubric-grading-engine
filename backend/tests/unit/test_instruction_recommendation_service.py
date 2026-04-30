@@ -695,16 +695,29 @@ class TestAssignRecommendation:
 
     @pytest.mark.asyncio
     async def test_happy_path_transitions_to_accepted(self):
-        """pending_review → accepted: status updated, audit row added, commit called."""
+        """pending_review → accepted: audit row added, commit called."""
         db = AsyncMock()
         rec = self._make_rec_orm(status="pending_review")
 
+        # Simulate db.refresh updating rec.status (as it would from the real DB).
+        async def _refresh(obj: object) -> None:
+            if obj is rec:
+                rec.status = "accepted"
+
+        # Two db.execute calls:
+        # 1. SELECT with WHERE id AND teacher_id → returns rec
+        # 2. UPDATE WHERE status='pending_review' → rowcount = 1
+        update_result = MagicMock()
+        update_result.rowcount = 1
         db.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=rec))
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
+                update_result,
+            ]
         )
         db.add = MagicMock()
         db.commit = AsyncMock()
-        db.refresh = AsyncMock(side_effect=lambda obj: None)
+        db.refresh = AsyncMock(side_effect=_refresh)
 
         result = await assign_recommendation(db, _T_ID, _REC_ID)
 
@@ -764,15 +777,19 @@ class TestAssignRecommendation:
             await assign_recommendation(db, _T_ID, _REC_ID)
 
     @pytest.mark.asyncio
-    async def test_wrong_teacher_raises_forbidden(self):
-        """Recommendation owned by a different teacher raises ForbiddenError."""
-        db = AsyncMock()
-        other_teacher_id = uuid.uuid4()
-        rec = self._make_rec_orm(status="pending_review", teacher_id=other_teacher_id)
+    async def test_wrong_teacher_raises_not_found(self):
+        """Recommendation owned by a different teacher returns NotFoundError (RLS behavior).
 
+        With FORCE RLS enforced at the DB level, cross-tenant rows are invisible.
+        The single ``WHERE id = ? AND teacher_id = ?`` query returns no row, so
+        both nonexistent IDs and cross-tenant IDs raise NotFoundError (404).
+        """
+        db = AsyncMock()
+        # With the RLS-pattern query (WHERE id AND teacher_id), no row is returned
+        # for a cross-tenant ID — the DB filters it out before the service sees it.
         db.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=rec))
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None))
         )
 
-        with pytest.raises(ForbiddenError):
+        with pytest.raises(NotFoundError, match="not found"):
             await assign_recommendation(db, _T_ID, _REC_ID)

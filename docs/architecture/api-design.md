@@ -909,6 +909,74 @@ The pre-signed URL is valid for 15 minutes. Returns 409 if the export is not yet
 
 ---
 
+### Instruction Recommendations
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/students/{studentId}/recommendations` | Generate AI instruction recommendations from a student's skill profile |
+| GET | `/students/{studentId}/recommendations` | List persisted recommendation sets for a student (newest-first) |
+| POST | `/classes/{classId}/groups/{groupId}/recommendations` | Generate AI recommendations targeting a class skill-gap group |
+| POST | `/recommendations/{recommendationId}/assign` | Teacher-confirmed assignment of an instruction recommendation (human-in-the-loop) |
+
+**POST /students/{studentId}/recommendations body:**
+```json
+{
+  "grade_level": "Grade 8",
+  "duration_minutes": 20,
+  "skill_key": "evidence",
+  "worklist_item_id": "uuid"
+}
+```
+
+`skill_key` and `worklist_item_id` are optional.  `duration_minutes` must be between 5 and 120.
+
+**POST /students/{studentId}/recommendations response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "teacher_id": "uuid",
+    "student_id": "uuid",
+    "group_id": null,
+    "worklist_item_id": null,
+    "skill_key": "evidence",
+    "grade_level": "Grade 8",
+    "prompt_version": "instruction-v1",
+    "recommendations": [
+      {
+        "skill_dimension": "evidence",
+        "title": "Evidence Workshop",
+        "description": "Practice integrating and citing evidence.",
+        "estimated_minutes": 20,
+        "strategy_type": "guided_practice"
+      }
+    ],
+    "evidence_summary": "Skill gap in 'evidence': average score 40%, trend stable.",
+    "status": "pending_review",
+    "created_at": "2026-04-30T00:00:00Z"
+  }
+}
+```
+
+Returns 404 if the student does not exist, 403 if it belongs to a different teacher, 422 if the student has no skill profile data or the request body is invalid, 503 if the LLM is unavailable.
+
+**POST /classes/{classId}/groups/{groupId}/recommendations** — identical body and response shape.  Returns 404 if the group or class does not exist, 403 if cross-teacher access.
+
+**POST /recommendations/{recommendationId}/assign response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "accepted",
+    ...
+  }
+}
+```
+
+Transitions the recommendation from `pending_review` → `accepted`.  Idempotent when already `accepted`.  Returns 404 if the recommendation does not exist or belongs to a different teacher (indistinguishable under FORCE RLS), 409 if it is in `dismissed` state.
+
+---
+
 ### Worklist
 
 | Method | Path | Description |

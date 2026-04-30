@@ -519,9 +519,7 @@ class TestAssignRecommendationIntegration:
 
         await _seed_teacher(db_session, teacher_id)
         await _seed_student(db_session, student_id, teacher_id)
-        await _seed_recommendation(
-            db_session, rec_id, teacher_id, student_id=student_id
-        )
+        await _seed_recommendation(db_session, rec_id, teacher_id, student_id=student_id)
 
         client = _client_for(teacher_id, pg_dsn)
         resp = client.post(f"/api/v1/recommendations/{rec_id}/assign")
@@ -535,9 +533,7 @@ class TestAssignRecommendationIntegration:
 
         # Confirm DB reflects the new status.
         result = await db_session.execute(
-            text(
-                "SELECT status FROM instruction_recommendations WHERE id = :id"
-            ),
+            text("SELECT status FROM instruction_recommendations WHERE id = :id"),
             {"id": str(rec_id)},
         )
         row = result.fetchone()
@@ -564,7 +560,7 @@ class TestAssignRecommendationIntegration:
     async def test_idempotent_when_already_accepted(
         self, db_session: AsyncSession, pg_dsn: str
     ) -> None:
-        """POST /assign is idempotent: calling twice on an accepted rec returns 200."""
+        """POST /assign is idempotent: calling on an accepted rec returns 200 without duplicate audit entries."""
         teacher_id = _uuid()
         student_id = _uuid()
         rec_id = _uuid()
@@ -581,6 +577,19 @@ class TestAssignRecommendationIntegration:
         assert resp.status_code == 200, resp.text
         data = resp.json()["data"]
         assert data["status"] == "accepted"
+
+        # Idempotency guarantee: no audit row should be written for an already-accepted rec.
+        result = await db_session.execute(
+            text(
+                "SELECT COUNT(*) AS cnt FROM audit_logs "
+                "WHERE entity_type = 'instruction_recommendation' "
+                "  AND entity_id = :eid"
+            ),
+            {"eid": str(rec_id)},
+        )
+        row = result.fetchone()
+        assert row is not None
+        assert row.cnt == 0, "No audit entry should be written when rec is already accepted"
 
     @pytest.mark.asyncio
     async def test_dismissed_recommendation_returns_409(
@@ -603,10 +612,13 @@ class TestAssignRecommendationIntegration:
         assert resp.status_code == 409, resp.text
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_403(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
-        """Teacher B cannot assign Teacher A's recommendation."""
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
+        """Teacher B cannot see Teacher A's recommendation — returns 404 (RLS behavior).
+
+        With FORCE RLS keyed on ``app.current_teacher_id``, Teacher A's rows are
+        invisible to Teacher B at the DB level.  A cross-tenant ID and a
+        nonexistent ID are therefore indistinguishable — both return 404.
+        """
         teacher_a_id = _uuid()
         teacher_b_id = _uuid()
         student_id = _uuid()
@@ -615,14 +627,12 @@ class TestAssignRecommendationIntegration:
         await _seed_teacher(db_session, teacher_a_id)
         await _seed_teacher(db_session, teacher_b_id)
         await _seed_student(db_session, student_id, teacher_a_id)
-        await _seed_recommendation(
-            db_session, rec_id, teacher_a_id, student_id=student_id
-        )
+        await _seed_recommendation(db_session, rec_id, teacher_a_id, student_id=student_id)
 
         client = _client_for(teacher_b_id, pg_dsn)
         resp = client.post(f"/api/v1/recommendations/{rec_id}/assign")
 
-        assert resp.status_code == 403, resp.text
+        assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
     async def test_nonexistent_recommendation_returns_404(

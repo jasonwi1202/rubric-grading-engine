@@ -419,15 +419,16 @@ class TestAssignRecommendationEndpoint:
             resp = _client(teacher).post(self._url())
         assert resp.status_code == 404
 
-    def test_forbidden_returns_403(self):
+    def test_cross_tenant_returns_404(self):
+        """Cross-teacher access returns 404 (RLS behavior: cross-tenant == not found)."""
         teacher = _make_teacher()
         with patch(
             "app.routers.recommendations.assign_recommendation",
             new_callable=AsyncMock,
-            side_effect=ForbiddenError("You do not have access to this recommendation."),
+            side_effect=NotFoundError("Instruction recommendation not found."),
         ):
             resp = _client(teacher).post(self._url())
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_dismissed_returns_409(self):
         from app.exceptions import ConflictError
