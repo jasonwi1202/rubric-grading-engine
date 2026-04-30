@@ -222,20 +222,44 @@ function ConfirmDialog({
   isPending,
   isDestructive = false,
 }: ConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
 
-  // Return focus to cancel button on open; close on Escape.
+  // Move focus into the dialog on open.
   useEffect(() => {
     cancelRef.current?.focus();
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onCancel();
+  }, []);
+
+  // Trap focus within the dialog and close on Escape.
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onCancel();
+      return;
+    }
+    if (e.key === "Tab" && dialogRef.current) {
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])",
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
+  }
 
   const confirmClass = isDestructive
     ? "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500"
@@ -247,8 +271,9 @@ function ConfirmDialog({
       aria-modal="true"
       aria-labelledby={titleId}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onKeyDown={handleKeyDown}
     >
-      <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-xl">
+      <div ref={dialogRef} className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-xl">
         <h2 id={titleId} className="mb-2 text-base font-semibold text-gray-900">
           {title}
         </h2>
@@ -473,6 +498,9 @@ function RecommendationCard({
 
             {mode === "modify" && (
               <>
+                <p className="w-full mb-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  Edits above are for your planning reference and are not saved to the record.
+                </p>
                 <button
                   type="button"
                   onClick={() => {
@@ -482,7 +510,7 @@ function RecommendationCard({
                   disabled={isPending}
                   className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Assign modified
+                  Assign
                 </button>
                 <button
                   type="button"
@@ -603,12 +631,16 @@ function GenerateForm({ studentId, onGenerated }: GenerateFormProps) {
             type="number"
             min={MIN_DURATION_MINUTES}
             max={MAX_DURATION_MINUTES}
+            step={1}
             value={durationMinutes}
             onChange={(e) => {
-              const n = Number(e.target.value);
+              const n = parseInt(e.target.value, 10);
               if (!Number.isNaN(n)) setDurationMinutes(n);
             }}
-            onBlur={(e) => setDurationMinutes(clampDuration(Number(e.target.value)))}
+            onBlur={(e) => {
+              const n = parseInt(e.target.value, 10);
+              if (!Number.isNaN(n)) setDurationMinutes(clampDuration(n));
+            }}
             disabled={generateMutation.isPending}
             className="w-24 rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
           />

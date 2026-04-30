@@ -91,7 +91,7 @@ Every teacher's data must be completely isolated from every other teacher's. A t
 - Tasks validate ownership before loading any entity
 
 ### Audit and Testing
-- Integration tests explicitly verify cross-teacher access returns 403, not 404
+- Integration tests verify cross-teacher access is rejected. Resources on tables with `FORCE ROW LEVEL SECURITY` (e.g. `instruction_recommendations`) return 404 for cross-tenant IDs because the row is invisible at the database level — a cross-tenant ID and a nonexistent ID are indistinguishable. All other tenant-scoped resources return 403.
 - A dedicated security test suite (`tests/security/`) tests all tenant isolation boundaries
 
 ---

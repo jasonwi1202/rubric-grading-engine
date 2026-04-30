@@ -16,7 +16,7 @@
  * - RecommendationPanel: Dismiss button shows confirmation dialog
  * - RecommendationPanel: Dismiss confirmation calls dismissRecommendation on confirm
  * - RecommendationPanel: Modify button enters edit mode with editable fields
- * - RecommendationPanel: "Assign modified" from modify mode shows confirmation dialog
+ * - RecommendationPanel: Assign button in modify mode shows confirmation dialog
  * - RecommendationPanel: Cancel in modify mode restores view mode
  * - RecommendationPanel: buttons disabled while assignRecommendation is pending
  * - RecommendationPanel: shows error alert when assignRecommendation fails
@@ -30,7 +30,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -462,7 +462,7 @@ describe("RecommendationPanel — modify flow", () => {
     expect(descTextarea).toBeInTheDocument();
   });
 
-  it("'Assign modified' button shows confirmation dialog", async () => {
+  it("Assign button in modify mode shows confirmation dialog", async () => {
     const user = userEvent.setup();
     mockListStudentRecommendations.mockResolvedValue([makeRecommendation()]);
     render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
@@ -472,7 +472,7 @@ describe("RecommendationPanel — modify flow", () => {
     );
     await user.click(screen.getByRole("button", { name: /^modify$/i }));
     await user.click(
-      screen.getByRole("button", { name: /assign modified/i }),
+      screen.getByRole("button", { name: /^assign$/i }),
     );
 
     expect(
@@ -573,7 +573,6 @@ describe("RecommendationPanel — generate form", () => {
 
 describe("RecommendationPanel — duration clamping on blur", () => {
   it("clamps value below minimum (5) up to 5 on blur", async () => {
-    const user = userEvent.setup();
     mockListStudentRecommendations.mockResolvedValue([]);
     render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
 
@@ -582,9 +581,8 @@ describe("RecommendationPanel — duration clamping on blur", () => {
     );
 
     const input = screen.getByRole("spinbutton", { name: /target duration/i });
-    await user.clear(input);
-    await user.type(input, "2");
-    await user.tab(); // trigger onBlur
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.blur(input);
 
     await waitFor(() => {
       expect((input as HTMLInputElement).value).toBe("5");
@@ -592,7 +590,6 @@ describe("RecommendationPanel — duration clamping on blur", () => {
   });
 
   it("clamps value above maximum (120) down to 120 on blur", async () => {
-    const user = userEvent.setup();
     mockListStudentRecommendations.mockResolvedValue([]);
     render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
 
@@ -601,9 +598,8 @@ describe("RecommendationPanel — duration clamping on blur", () => {
     );
 
     const input = screen.getByRole("spinbutton", { name: /target duration/i });
-    await user.clear(input);
-    await user.type(input, "200");
-    await user.tab(); // trigger onBlur
+    fireEvent.change(input, { target: { value: "200" } });
+    fireEvent.blur(input);
 
     await waitFor(() => {
       expect((input as HTMLInputElement).value).toBe("120");
@@ -611,7 +607,6 @@ describe("RecommendationPanel — duration clamping on blur", () => {
   });
 
   it("leaves in-range value (30) unchanged on blur", async () => {
-    const user = userEvent.setup();
     mockListStudentRecommendations.mockResolvedValue([]);
     render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
 
@@ -620,9 +615,8 @@ describe("RecommendationPanel — duration clamping on blur", () => {
     );
 
     const input = screen.getByRole("spinbutton", { name: /target duration/i });
-    await user.clear(input);
-    await user.type(input, "30");
-    await user.tab();
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.blur(input);
 
     await waitFor(() => {
       expect((input as HTMLInputElement).value).toBe("30");
