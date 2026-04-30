@@ -1,7 +1,11 @@
-"""Unit tests for instruction recommendation router endpoints (M6-07).
+"""Unit tests for instruction recommendation router endpoints (M6-07/M6-08).
 
 Tests cover HTTP layer concerns — status codes, response envelope shape,
-exception-to-HTTP mapping, auth enforcement, and cross-teacher 403 isolation.
+exception-to-HTTP mapping, auth enforcement, and cross-teacher isolation.
+Cross-teacher behavior varies by endpoint: generation/list endpoints return 403
+(ForbiddenError from the service); the /assign endpoint returns 404 because it
+uses the RLS-pattern query (WHERE id AND teacher_id) and cross-tenant rows are
+indistinguishable from nonexistent rows under FORCE RLS.
 All service calls are mocked; no real DB or LLM is used.
 No student PII in fixtures.
 
@@ -9,6 +13,7 @@ Endpoints under test:
   POST /api/v1/students/{studentId}/recommendations   — generate for student profile
   GET  /api/v1/students/{studentId}/recommendations   — list persisted recs
   POST /api/v1/classes/{classId}/groups/{groupId}/recommendations — generate for group
+  POST /api/v1/recommendations/{recommendationId}/assign — teacher-confirmed assignment (M6-08)
 """
 
 from __future__ import annotations
@@ -376,3 +381,71 @@ class TestGenerateGroupRecommendationsEndpoint:
         ):
             resp = _client(teacher).post(self._url(), json=self._payload())
         assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/recommendations/{recommendationId}/assign (M6-08)
+# ---------------------------------------------------------------------------
+
+
+class TestAssignRecommendationEndpoint:
+    _path = "/api/v1/recommendations/{recommendation_id}/assign"
+
+    def _url(self, recommendation_id: uuid.UUID | None = None) -> str:
+        return self._path.format(recommendation_id=recommendation_id or uuid.uuid4())
+
+    def test_happy_path_returns_200_with_envelope(self):
+        teacher = _make_teacher()
+        rec_id = uuid.uuid4()
+        rec = _make_recommendation_orm(
+            rec_id=rec_id, teacher_id=teacher.id, student_id=uuid.uuid4(), status="accepted"
+        )
+        with patch(
+            "app.routers.recommendations.assign_recommendation",
+            new_callable=AsyncMock,
+            return_value=rec,
+        ):
+            resp = _client(teacher).post(self._url(rec_id))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "data" in body
+        data = body["data"]
+        assert data["id"] == str(rec_id)
+        assert data["status"] == "accepted"
+
+    def test_not_found_returns_404(self):
+        teacher = _make_teacher()
+        with patch(
+            "app.routers.recommendations.assign_recommendation",
+            new_callable=AsyncMock,
+            side_effect=NotFoundError("Instruction recommendation not found."),
+        ):
+            resp = _client(teacher).post(self._url())
+        assert resp.status_code == 404
+
+    def test_cross_tenant_returns_404(self):
+        """Cross-teacher access returns 404 (RLS behavior: cross-tenant == not found)."""
+        teacher = _make_teacher()
+        with patch(
+            "app.routers.recommendations.assign_recommendation",
+            new_callable=AsyncMock,
+            side_effect=NotFoundError("Instruction recommendation not found."),
+        ):
+            resp = _client(teacher).post(self._url())
+        assert resp.status_code == 404
+
+    def test_dismissed_returns_409(self):
+        from app.exceptions import ConflictError
+
+        teacher = _make_teacher()
+        with patch(
+            "app.routers.recommendations.assign_recommendation",
+            new_callable=AsyncMock,
+            side_effect=ConflictError("Cannot assign a dismissed recommendation."),
+        ):
+            resp = _client(teacher).post(self._url())
+        assert resp.status_code == 409
+
+    def test_unauthenticated_returns_401(self):
+        resp = _anon_client().post(self._url())
+        assert resp.status_code == 401

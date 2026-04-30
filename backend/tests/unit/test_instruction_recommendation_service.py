@@ -49,6 +49,7 @@ from app.llm.parsers import ParsedInstructionResponse, ParsedRecommendation
 from app.services.instruction_recommendation import (
     _build_evidence_summary,
     _filter_skill_profile_for_prompt,
+    assign_recommendation,
     generate_group_recommendations,
     generate_student_recommendations,
     list_student_recommendations,
@@ -672,3 +673,123 @@ class TestListStudentRecommendations:
         )
         with pytest.raises(ForbiddenError):
             await list_student_recommendations(db, _T_ID, _S_ID)
+
+
+# ---------------------------------------------------------------------------
+# assign_recommendation (M6-08)
+# ---------------------------------------------------------------------------
+
+
+class TestAssignRecommendation:
+    """Unit tests for :func:`assign_recommendation`.
+
+    All DB calls are mocked — no real database or LLM used.
+    """
+
+    def _make_rec_orm(self, status: str = "pending_review", teacher_id: uuid.UUID = _T_ID):
+        rec = MagicMock()
+        rec.id = _REC_ID
+        rec.teacher_id = teacher_id
+        rec.status = status
+        return rec
+
+    @pytest.mark.asyncio
+    async def test_happy_path_transitions_to_accepted(self):
+        """pending_review → accepted: audit row added, commit called."""
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="pending_review")
+
+        # Simulate db.refresh updating rec.status (as it would from the real DB).
+        async def _refresh(obj: object) -> None:
+            if obj is rec:
+                rec.status = "accepted"
+
+        # Two db.execute calls:
+        # 1. SELECT with WHERE id AND teacher_id → returns rec
+        # 2. UPDATE WHERE status='pending_review' → rowcount = 1
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
+                update_result,
+            ]
+        )
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock(side_effect=_refresh)
+
+        result = await assign_recommendation(db, _T_ID, _REC_ID)
+
+        assert rec.status == "accepted"
+        db.add.assert_called_once()
+        audit = db.add.call_args[0][0]
+        assert audit.action == "recommendation_assigned"
+        assert audit.before_value == {"status": "pending_review"}
+        assert audit.after_value == {"status": "accepted"}
+        assert audit.teacher_id == _T_ID
+        assert audit.entity_id == _REC_ID
+        db.commit.assert_awaited_once()
+        assert result is rec
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_already_accepted(self):
+        """Calling assign on an already-accepted rec returns it without side effects."""
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="accepted")
+
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=rec))
+        )
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        result = await assign_recommendation(db, _T_ID, _REC_ID)
+
+        db.add.assert_not_called()
+        db.commit.assert_not_awaited()
+        assert result is rec
+
+    @pytest.mark.asyncio
+    async def test_dismissed_raises_conflict_error(self):
+        """Dismissed recommendations cannot be assigned (ConflictError)."""
+        from app.exceptions import ConflictError
+
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="dismissed")
+
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=rec))
+        )
+
+        with pytest.raises(ConflictError, match="dismissed"):
+            await assign_recommendation(db, _T_ID, _REC_ID)
+
+    @pytest.mark.asyncio
+    async def test_not_found_raises_not_found_error(self):
+        """Non-existent recommendation ID raises NotFoundError."""
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        )
+
+        with pytest.raises(NotFoundError, match="not found"):
+            await assign_recommendation(db, _T_ID, _REC_ID)
+
+    @pytest.mark.asyncio
+    async def test_wrong_teacher_raises_not_found(self):
+        """Recommendation owned by a different teacher returns NotFoundError (RLS behavior).
+
+        With FORCE RLS enforced at the DB level, cross-tenant rows are invisible.
+        The single ``WHERE id = ? AND teacher_id = ?`` query returns no row, so
+        both nonexistent IDs and cross-tenant IDs raise NotFoundError (404).
+        """
+        db = AsyncMock()
+        # With the RLS-pattern query (WHERE id AND teacher_id), no row is returned
+        # for a cross-tenant ID — the DB filters it out before the service sees it.
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        )
+
+        with pytest.raises(NotFoundError, match="not found"):
+            await assign_recommendation(db, _T_ID, _REC_ID)

@@ -1,4 +1,4 @@
-"""Instruction recommendation service (M6-07).
+"""Instruction recommendation service (M6-07/M6-08).
 
 Business logic for generating, persisting, and retrieving AI-powered
 instruction recommendations from student skill profiles or class skill-gap
@@ -11,6 +11,8 @@ Public API:
     a class skill-gap group's shared skill gap and persist the result.
   - ``list_student_recommendations``     — return all persisted recommendation
     sets for a student (newest-first).
+  - ``assign_recommendation``            — record the teacher's explicit
+    confirmation to assign a recommendation (status → 'accepted').
 
 LLM integration:
   - Only aggregate skill profile data is sent to the LLM — no essay content.
@@ -25,7 +27,9 @@ LLM integration:
 
 Tenant isolation:
   Every function accepts ``teacher_id`` and includes it in every query.
-  Cross-teacher access raises :exc:`~app.exceptions.ForbiddenError`.
+  For ``assign_recommendation``, cross-tenant access returns 404 (not 403) —
+  matching the RLS pattern used by the worklist service.  For generation
+  functions, cross-teacher access raises :exc:`~app.exceptions.ForbiddenError`.
 
 FERPA:
   No student PII (names, essay content, raw scores) is written to log
@@ -38,14 +42,16 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ForbiddenError, NotFoundError, ValidationError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.llm.client import call_instruction
 from app.llm.prompts.instruction_v1 import VERSION as INSTRUCTION_PROMPT_VERSION
+from app.models.audit_log import AuditLog
 from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.student import Student
 from app.models.student_group import StudentGroup
@@ -474,3 +480,100 @@ async def list_student_recommendations(
         .order_by(InstructionRecommendation.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def assign_recommendation(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    recommendation_id: uuid.UUID,
+) -> InstructionRecommendation:
+    """Record the teacher's explicit confirmation to assign an instruction recommendation.
+
+    Transitions the recommendation status from ``'pending_review'`` to
+    ``'accepted'`` and writes an audit log entry.
+
+    Idempotent: if the recommendation is already ``'accepted'``, it is returned
+    unchanged without writing a second audit entry.
+
+    Tenant isolation:
+        Uses a single ``SELECT … WHERE id = ? AND teacher_id = ?`` query —
+        matching the RLS pattern used by :func:`worklist._load_worklist_item`.
+        With FORCE RLS enabled, cross-tenant rows are invisible at the DB level,
+        so a cross-tenant ID and a nonexistent ID are indistinguishable.  Both
+        raise :exc:`~app.exceptions.NotFoundError` (404), which avoids leaking
+        whether a resource exists for another teacher.
+
+    Concurrency:
+        Uses a conditional ``UPDATE … WHERE status = 'pending_review'`` to
+        atomically perform the transition.  If two concurrent requests race,
+        only one will see a rowcount of 1 and write the audit entry; the other
+        will fall through as idempotent.
+
+    Args:
+        db:                Async database session.
+        teacher_id:        Authenticated teacher's UUID (tenant scope).
+        recommendation_id: Recommendation to assign.
+
+    Returns:
+        The updated :class:`~app.models.instruction_recommendation.InstructionRecommendation` row.
+
+    Raises:
+        NotFoundError:  Recommendation not found or not accessible to this teacher.
+        ConflictError:  Recommendation has been dismissed and cannot be assigned.
+    """
+    # Single query with teacher_id predicate — RLS-consistent pattern.
+    # Cross-tenant and nonexistent IDs both return None → 404.
+    result = await db.execute(
+        select(InstructionRecommendation).where(
+            InstructionRecommendation.id == recommendation_id,
+            InstructionRecommendation.teacher_id == teacher_id,
+        )
+    )
+    rec = result.scalar_one_or_none()
+    if rec is None:
+        raise NotFoundError("Instruction recommendation not found.")
+
+    if rec.status == "dismissed":
+        raise ConflictError("Cannot assign a dismissed recommendation.")
+
+    # Idempotent — already accepted, nothing to do.
+    if rec.status == "accepted":
+        return rec
+
+    # Atomic conditional UPDATE: only transitions if still pending_review.
+    # This prevents duplicate audit entries when two concurrent POSTs race.
+    before_status = rec.status
+    update_result = await db.execute(
+        update(InstructionRecommendation)
+        .where(
+            InstructionRecommendation.id == recommendation_id,
+            InstructionRecommendation.teacher_id == teacher_id,
+            InstructionRecommendation.status == "pending_review",
+        )
+        .values(status="accepted")
+    )
+    if cast("CursorResult[Any]", update_result).rowcount == 0:
+        # Concurrent request already transitioned the row; re-fetch current state.
+        await db.refresh(rec)
+        return rec
+
+    audit = AuditLog(
+        teacher_id=teacher_id,
+        entity_type="instruction_recommendation",
+        entity_id=recommendation_id,
+        action="recommendation_assigned",
+        before_value={"status": before_status},
+        after_value={"status": "accepted"},
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(rec)
+
+    logger.info(
+        "Instruction recommendation assigned",
+        extra={
+            "recommendation_id": str(recommendation_id),
+            "teacher_id": str(teacher_id),
+        },
+    )
+    return rec
