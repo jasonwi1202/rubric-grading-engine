@@ -200,11 +200,13 @@ async def compute_revision_comparison(
         - Only entity IDs appear in log output.
     """
     # ------------------------------------------------------------------
-    # 1. Load essay versions.
+    # 1. Load essay versions — scoped to the parent essay_id to catch
+    #    caller bugs where a version from a different essay is passed.
     # ------------------------------------------------------------------
     ver_result = await db.execute(
         select(EssayVersion).where(
-            EssayVersion.id.in_([base_version_id, revised_version_id])
+            EssayVersion.id.in_([base_version_id, revised_version_id]),
+            EssayVersion.essay_id == essay_id,
         )
     )
     versions_by_id: dict[uuid.UUID, EssayVersion] = {
@@ -221,16 +223,24 @@ async def compute_revision_comparison(
         raise NotFoundError("Essay version(s) not found for revision comparison.")
 
     # ------------------------------------------------------------------
-    # 2. Load grades and criterion scores.
+    # 2. Load grades and criterion scores — each grade is scoped to its
+    #    expected essay_version_id to prevent cross-version inconsistency.
     # ------------------------------------------------------------------
-    grades_result = await db.execute(
-        select(Grade).where(Grade.id.in_([base_grade_id, revised_grade_id]))
+    base_grade_result = await db.execute(
+        select(Grade).where(
+            Grade.id == base_grade_id,
+            Grade.essay_version_id == base_version_id,
+        )
     )
-    grades_by_id: dict[uuid.UUID, Grade] = {
-        g.id: g for g in grades_result.scalars().all()
-    }
-    base_grade = grades_by_id.get(base_grade_id)
-    revised_grade = grades_by_id.get(revised_grade_id)
+    base_grade = base_grade_result.scalar_one_or_none()
+
+    revised_grade_result = await db.execute(
+        select(Grade).where(
+            Grade.id == revised_grade_id,
+            Grade.essay_version_id == revised_version_id,
+        )
+    )
+    revised_grade = revised_grade_result.scalar_one_or_none()
 
     if base_grade is None or revised_grade is None:
         logger.warning(
@@ -401,10 +411,18 @@ async def get_revision_comparison(
     if essay is None:
         raise NotFoundError("Essay not found.")
 
-    # Load the most recent comparison.
+    # Load the most recent comparison — also scoped via the same FK chain so
+    # an unscoped RevisionComparison can never be returned even if the essay
+    # check above were bypassed.
     comparison_result = await db.execute(
         select(RevisionComparison)
-        .where(RevisionComparison.essay_id == essay_id)
+        .join(Essay, RevisionComparison.essay_id == Essay.id)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(
+            RevisionComparison.essay_id == essay_id,
+            Class.teacher_id == teacher_id,
+        )
         .order_by(RevisionComparison.created_at.desc())
         .limit(1)
     )

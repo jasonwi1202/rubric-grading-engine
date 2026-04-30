@@ -291,6 +291,26 @@ class TestParseRevisionResponse:
         result = parse_revision_response(raw)
         assert result.criterion_assessments == []
 
+    def test_unexpected_addressed_type_defaults_to_false(self) -> None:
+        """Non-bool, non-str addressed values (e.g., dict, list) default to False."""
+        cid = str(_make_uuid())
+        for bad_value in [{}, [], 0, 1, 99]:
+            raw = json.dumps(
+                {
+                    "criterion_assessments": [
+                        {"criterion_id": cid, "addressed": bad_value, "detail": "Detail."}
+                    ]
+                }
+            )
+            result = parse_revision_response(raw)
+            # A non-bool non-str value must never silently evaluate to True.
+            if bad_value:
+                assert result.criterion_assessments[0].addressed is False, (
+                    f"Expected False for addressed={bad_value!r}"
+                )
+            else:
+                assert result.criterion_assessments[0].addressed is False
+
     def test_multiple_assessments(self) -> None:
         cid1, cid2 = str(_make_uuid()), str(_make_uuid())
         raw = json.dumps(
@@ -325,16 +345,20 @@ def _make_db_for_comparison(
     db.add = MagicMock()
 
     # execute() calls in order:
-    # 1. Load essay versions (IN clause → two rows)
-    # 2. Load grades (IN clause → two rows)
-    # 3. Load base criterion scores
-    # 4. Load revised criterion scores
+    # 1. Load essay versions (IN clause + essay_id → two rows via scalars().all())
+    # 2. Load base grade (id + version_id match → scalar_one_or_none())
+    # 3. Load revised grade (id + version_id match → scalar_one_or_none())
+    # 4. Load base criterion scores (grade_id → scalars().all())
+    # 5. Load revised criterion scores (grade_id → scalars().all())
 
     r_versions = MagicMock()
     r_versions.scalars.return_value.all.return_value = [base_version, revised_version]
 
-    r_grades = MagicMock()
-    r_grades.scalars.return_value.all.return_value = [base_grade, revised_grade]
+    r_base_grade = MagicMock()
+    r_base_grade.scalar_one_or_none.return_value = base_grade
+
+    r_revised_grade = MagicMock()
+    r_revised_grade.scalar_one_or_none.return_value = revised_grade
 
     r_base_cs = MagicMock()
     r_base_cs.scalars.return_value.all.return_value = base_criterion_scores
@@ -342,7 +366,9 @@ def _make_db_for_comparison(
     r_revised_cs = MagicMock()
     r_revised_cs.scalars.return_value.all.return_value = revised_criterion_scores
 
-    db.execute = AsyncMock(side_effect=[r_versions, r_grades, r_base_cs, r_revised_cs])
+    db.execute = AsyncMock(
+        side_effect=[r_versions, r_base_grade, r_revised_grade, r_base_cs, r_revised_cs]
+    )
     return db
 
 

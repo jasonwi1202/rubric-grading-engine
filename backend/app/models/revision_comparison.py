@@ -75,6 +75,7 @@ class RevisionComparison(Base):
             name="fk_revision_comparisons_essay_versions_revised",
         ),
         nullable=False,
+        index=True,
     )
     base_grade_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

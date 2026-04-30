@@ -524,13 +524,15 @@ def parse_revision_response(raw_content: str) -> ParsedRevisionResponse:
         if not cid:
             continue
         addressed_raw = item.get("addressed", False)
-        # Accept boolean or truthy string values from the LLM.
+        # Accept boolean or specific string values from the LLM.
+        # For any other type (e.g., dict, list, int) default to False rather
+        # than using bool() which would silently mark unexpected values as True.
         if isinstance(addressed_raw, bool):
             addressed = addressed_raw
         elif isinstance(addressed_raw, str):
             addressed = addressed_raw.lower() in {"true", "yes", "1"}
         else:
-            addressed = bool(addressed_raw)
+            addressed = False
         detail = str(item.get("detail", "")).strip() or "No detail provided."
         assessments.append(
             ParsedCriterionAssessment(
