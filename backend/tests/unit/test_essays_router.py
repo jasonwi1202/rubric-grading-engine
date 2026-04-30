@@ -488,7 +488,7 @@ class TestResubmitEssay:
         essay_id: uuid.UUID | None = None,
         assignment_id: uuid.UUID | None = None,
         version_number: int = 2,
-    ) -> "ResubmitEssayResponse":
+    ) -> ResubmitEssayResponse:
         eid = essay_id or uuid.uuid4()
         return ResubmitEssayResponse(
             essay_id=eid,
