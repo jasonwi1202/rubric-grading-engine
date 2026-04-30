@@ -568,8 +568,67 @@ describe("RecommendationPanel — generate form", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sort order
+// Duration clamping (exercises clampDuration via onBlur)
 // ---------------------------------------------------------------------------
+
+describe("RecommendationPanel — duration clamping on blur", () => {
+  it("clamps value below minimum (5) up to 5 on blur", async () => {
+    const user = userEvent.setup();
+    mockListStudentRecommendations.mockResolvedValue([]);
+    render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
+
+    await waitFor(() =>
+      screen.getByRole("spinbutton", { name: /target duration/i }),
+    );
+
+    const input = screen.getByRole("spinbutton", { name: /target duration/i });
+    await user.clear(input);
+    await user.type(input, "2");
+    await user.tab(); // trigger onBlur
+
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("5");
+    });
+  });
+
+  it("clamps value above maximum (120) down to 120 on blur", async () => {
+    const user = userEvent.setup();
+    mockListStudentRecommendations.mockResolvedValue([]);
+    render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
+
+    await waitFor(() =>
+      screen.getByRole("spinbutton", { name: /target duration/i }),
+    );
+
+    const input = screen.getByRole("spinbutton", { name: /target duration/i });
+    await user.clear(input);
+    await user.type(input, "200");
+    await user.tab(); // trigger onBlur
+
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("120");
+    });
+  });
+
+  it("leaves in-range value (30) unchanged on blur", async () => {
+    const user = userEvent.setup();
+    mockListStudentRecommendations.mockResolvedValue([]);
+    render(<RecommendationPanel studentId={STUDENT_ID} />, { wrapper });
+
+    await waitFor(() =>
+      screen.getByRole("spinbutton", { name: /target duration/i }),
+    );
+
+    const input = screen.getByRole("spinbutton", { name: /target duration/i });
+    await user.clear(input);
+    await user.type(input, "30");
+    await user.tab();
+
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("30");
+    });
+  });
+});
 
 describe("RecommendationPanel — sort order", () => {
   it("pending_review items appear before accepted and dismissed", async () => {

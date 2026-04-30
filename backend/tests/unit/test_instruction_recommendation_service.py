@@ -1,4 +1,4 @@
-"""Unit tests for app/services/instruction_recommendation.py (M6-07).
+"""Unit tests for app/services/instruction_recommendation.py (M6-07/M6-08/M6-09).
 
 Tests cover:
 - ``generate_student_recommendations``:
@@ -25,6 +25,20 @@ Tests cover:
   - raises NotFoundError when student not found
   - raises ForbiddenError when student belongs to another teacher
 
+- ``assign_recommendation`` (M6-08):
+  - happy path transitions pending_review → accepted; audit row written
+  - idempotent when already accepted
+  - dismissed status raises ConflictError
+  - nonexistent ID raises NotFoundError
+  - cross-teacher ID raises NotFoundError (RLS pattern)
+
+- ``dismiss_recommendation`` (M6-09):
+  - happy path transitions pending_review → dismissed; audit row written
+  - idempotent when already dismissed
+  - accepted status raises ConflictError
+  - nonexistent ID raises NotFoundError
+  - race condition: concurrent assign wins → raises ConflictError after refresh
+
 - ``_build_evidence_summary``:
   - single skill_key produces targeted summary
   - missing skill_key in profile produces fallback text
@@ -50,6 +64,7 @@ from app.services.instruction_recommendation import (
     _build_evidence_summary,
     _filter_skill_profile_for_prompt,
     assign_recommendation,
+    dismiss_recommendation,
     generate_group_recommendations,
     generate_student_recommendations,
     list_student_recommendations,
@@ -793,3 +808,144 @@ class TestAssignRecommendation:
 
         with pytest.raises(NotFoundError, match="not found"):
             await assign_recommendation(db, _T_ID, _REC_ID)
+
+
+# ---------------------------------------------------------------------------
+# dismiss_recommendation (M6-09)
+# ---------------------------------------------------------------------------
+
+
+class TestDismissRecommendation:
+    """Unit tests for :func:`dismiss_recommendation`.
+
+    All DB calls are mocked — no real database or LLM used.
+    """
+
+    def _make_rec_orm(self, status: str = "pending_review", teacher_id: uuid.UUID = _T_ID):
+        rec = MagicMock()
+        rec.id = _REC_ID
+        rec.teacher_id = teacher_id
+        rec.status = status
+        return rec
+
+    @pytest.mark.asyncio
+    async def test_happy_path_transitions_to_dismissed(self):
+        """pending_review → dismissed: audit row added, commit called."""
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="pending_review")
+
+        async def _refresh(obj: object) -> None:
+            if obj is rec:
+                rec.status = "dismissed"
+
+        update_result = MagicMock()
+        update_result.rowcount = 1
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
+                update_result,
+            ]
+        )
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock(side_effect=_refresh)
+
+        result = await dismiss_recommendation(db, _T_ID, _REC_ID)
+
+        assert rec.status == "dismissed"
+        db.add.assert_called_once()
+        audit = db.add.call_args[0][0]
+        assert audit.action == "recommendation_dismissed"
+        assert audit.before_value == {"status": "pending_review"}
+        assert audit.after_value == {"status": "dismissed"}
+        assert audit.teacher_id == _T_ID
+        assert audit.entity_id == _REC_ID
+        db.commit.assert_awaited_once()
+        assert result is rec
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_already_dismissed(self):
+        """Dismissing an already-dismissed rec returns it without side effects."""
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="dismissed")
+
+        update_result = MagicMock()
+        update_result.rowcount = 0
+
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
+                update_result,
+            ]
+        )
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock(side_effect=lambda obj: None)
+
+        result = await dismiss_recommendation(db, _T_ID, _REC_ID)
+
+        db.add.assert_not_called()
+        db.commit.assert_not_awaited()
+        assert result is rec
+
+    @pytest.mark.asyncio
+    async def test_accepted_raises_conflict_error(self):
+        """Accepted recommendations cannot be dismissed (ConflictError)."""
+        from app.exceptions import ConflictError
+
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="accepted")
+
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=rec))
+        )
+
+        with pytest.raises(ConflictError, match="assigned"):
+            await dismiss_recommendation(db, _T_ID, _REC_ID)
+
+    @pytest.mark.asyncio
+    async def test_not_found_raises_not_found_error(self):
+        """Non-existent recommendation ID raises NotFoundError."""
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        )
+
+        with pytest.raises(NotFoundError, match="not found"):
+            await dismiss_recommendation(db, _T_ID, _REC_ID)
+
+    @pytest.mark.asyncio
+    async def test_race_condition_concurrent_assign_raises_conflict(self):
+        """If a concurrent request assigns the rec before dismiss completes, raise ConflictError.
+
+        Scenario:
+        1. SELECT returns pending_review rec
+        2. Concurrent request runs assign_recommendation → status → 'accepted'
+        3. Our UPDATE WHERE status='pending_review' touches 0 rows (rowcount=0)
+        4. db.refresh re-fetches the now-'accepted' state
+        5. dismiss_recommendation raises ConflictError
+        """
+        from app.exceptions import ConflictError
+
+        db = AsyncMock()
+        rec = self._make_rec_orm(status="pending_review")
+
+        async def _refresh_to_accepted(obj: object) -> None:
+            if obj is rec:
+                rec.status = "accepted"
+
+        update_result = MagicMock()
+        update_result.rowcount = 0
+
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
+                update_result,
+            ]
+        )
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock(side_effect=_refresh_to_accepted)
+
+        with pytest.raises(ConflictError, match="assigned"):
+            await dismiss_recommendation(db, _T_ID, _REC_ID)
