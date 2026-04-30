@@ -889,12 +889,18 @@ async def get_worklist_for_teacher(
         .where(
             TeacherWorklistItem.teacher_id == teacher_id,
             TeacherWorklistItem.status.in_(["active", "snoozed"]),
-            # Exclude snoozed items that haven't expired yet.
+            # Include active items unconditionally, and snoozed items only when
+            # their snooze window has elapsed.  Treat NULL snoozed_until as
+            # expired (e.g. data integrity gap) so the item is never hidden
+            # forever.
             (
                 (TeacherWorklistItem.status == "active")
                 | (
                     (TeacherWorklistItem.status == "snoozed")
-                    & (TeacherWorklistItem.snoozed_until <= now)
+                    & (
+                        TeacherWorklistItem.snoozed_until.is_(None)
+                        | (TeacherWorklistItem.snoozed_until <= now)
+                    )
                 )
             ),
         )
@@ -920,6 +926,18 @@ async def _load_worklist_item(
 ) -> TeacherWorklistItem:
     """Load a single worklist item, enforcing tenant isolation.
 
+    Uses a two-step query: step 1 checks existence and ownership via a
+    lightweight ``SELECT id, teacher_id WHERE id = ?``; step 2 fetches the full
+    row with both ``id`` and ``teacher_id`` filters.
+
+    .. note::
+        Under a FORCE RLS policy that filters by ``app.current_teacher_id``,
+        step 1 is also subject to RLS, so cross-tenant item IDs may appear as
+        non-existent (404) rather than forbidden (403).  This is an acceptable
+        design trade-off: revealing that a 404 *might* be a 403 would itself
+        leak tenant information.  All mutation endpoints document 404 as the
+        possible outcome for both missing and cross-tenant items.
+
     Args:
         db:         Async database session.
         item_id:    UUID of the worklist item.
@@ -929,8 +947,10 @@ async def _load_worklist_item(
         The :class:`TeacherWorklistItem` ORM row.
 
     Raises:
-        :class:`~app.exceptions.NotFoundError`: Item does not exist.
-        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.NotFoundError`: Item does not exist (or belongs
+            to a different teacher under FORCE RLS).
+        :class:`~app.exceptions.ForbiddenError`: Item belongs to a different
+            teacher (service-layer check; fired when RLS is not active).
     """
     from app.exceptions import ForbiddenError, NotFoundError  # noqa: PLC0415
 
@@ -969,6 +989,10 @@ async def complete_worklist_item(
     Sets ``status='completed'`` and ``completed_at=now()``.  Idempotent: if the
     item is already ``'completed'`` it is returned unchanged.
 
+    Only ``active`` and ``snoozed`` items may be completed.  Attempting to
+    complete a ``dismissed`` item raises
+    :class:`~app.exceptions.InvalidStateTransitionError`.
+
     Tenant isolation: ``teacher_id`` is checked against the item's owner.
 
     Args:
@@ -982,8 +1006,17 @@ async def complete_worklist_item(
     Raises:
         :class:`~app.exceptions.NotFoundError`:  Item does not exist.
         :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.InvalidStateTransitionError`: Item is in a
+            terminal state (``dismissed``) that cannot transition to
+            ``completed``.
     """
+    from app.exceptions import InvalidStateTransitionError  # noqa: PLC0415
+
     item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status == "dismissed":
+        raise InvalidStateTransitionError(
+            f"Cannot complete a dismissed worklist item (id={item_id})."
+        )
     if item.status != "completed":
         now = datetime.now(UTC)
         await db.execute(
@@ -1015,6 +1048,10 @@ async def snooze_worklist_item(
     ``snoozed_until`` is ``None``, defaults to
     :data:`_DEFAULT_SNOOZE_DAYS` days from now.
 
+    Only ``active`` and ``snoozed`` items may be snoozed.  Attempting to snooze
+    a ``completed`` or ``dismissed`` item raises
+    :class:`~app.exceptions.InvalidStateTransitionError`.
+
     Tenant isolation: ``teacher_id`` is checked against the item's owner.
 
     Args:
@@ -1030,8 +1067,17 @@ async def snooze_worklist_item(
     Raises:
         :class:`~app.exceptions.NotFoundError`:  Item does not exist.
         :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.InvalidStateTransitionError`: Item is in a
+            terminal state (``completed`` or ``dismissed``) that cannot be
+            snoozed.
     """
+    from app.exceptions import InvalidStateTransitionError  # noqa: PLC0415
+
     item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status in ("completed", "dismissed"):
+        raise InvalidStateTransitionError(
+            f"Cannot snooze a {item.status} worklist item (id={item_id})."
+        )
     if snoozed_until is None:
         snoozed_until = datetime.now(UTC) + timedelta(days=_DEFAULT_SNOOZE_DAYS)
     await db.execute(
@@ -1061,6 +1107,10 @@ async def dismiss_worklist_item(
     Sets ``status='dismissed'``.  Idempotent: already-dismissed items are
     returned unchanged.
 
+    Only ``active`` and ``snoozed`` items may be dismissed.  Attempting to
+    dismiss a ``completed`` item raises
+    :class:`~app.exceptions.InvalidStateTransitionError`.
+
     Tenant isolation: ``teacher_id`` is checked against the item's owner.
 
     Args:
@@ -1074,8 +1124,16 @@ async def dismiss_worklist_item(
     Raises:
         :class:`~app.exceptions.NotFoundError`:  Item does not exist.
         :class:`~app.exceptions.ForbiddenError`: Item belongs to a different teacher.
+        :class:`~app.exceptions.InvalidStateTransitionError`: Item is in a
+            terminal state (``completed``) that cannot be dismissed.
     """
+    from app.exceptions import InvalidStateTransitionError  # noqa: PLC0415
+
     item = await _load_worklist_item(db, item_id, teacher_id)
+    if item.status == "completed":
+        raise InvalidStateTransitionError(
+            f"Cannot dismiss a completed worklist item (id={item_id})."
+        )
     if item.status != "dismissed":
         await db.execute(
             update(TeacherWorklistItem)

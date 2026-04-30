@@ -1123,3 +1123,100 @@ class TestDismissWorklistItem:
             await dismiss_worklist_item(
                 db, item_id=item_id, teacher_id=requesting_teacher_id
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests — terminal-state transition guards
+# ---------------------------------------------------------------------------
+
+
+class TestTerminalStateGuards:
+    """Verify that completed/dismissed states are terminal and cannot be re-transitioned."""
+
+    # --- complete_worklist_item ---
+
+    @pytest.mark.asyncio
+    async def test_complete_raises_for_dismissed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="dismissed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_complete_succeeds_for_snoozed_item(self) -> None:
+        """Snoozed items are not terminal and can be completed."""
+        from app.services.worklist import complete_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="snoozed")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
+
+        result = await complete_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        db.commit.assert_awaited_once()
+
+    # --- snooze_worklist_item ---
+
+    @pytest.mark.asyncio
+    async def test_snooze_raises_for_completed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="completed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await snooze_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_snooze_raises_for_dismissed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import snooze_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="dismissed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await snooze_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    # --- dismiss_worklist_item ---
+
+    @pytest.mark.asyncio
+    async def test_dismiss_raises_for_completed_item(self) -> None:
+        from app.exceptions import InvalidStateTransitionError
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="completed")
+        db = _make_db_for_load(item)
+
+        with pytest.raises(InvalidStateTransitionError):
+            await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dismiss_succeeds_for_snoozed_item(self) -> None:
+        """Snoozed items are not terminal and can be dismissed."""
+        from app.services.worklist import dismiss_worklist_item
+
+        teacher_id = uuid.uuid4()
+        item = _make_worklist_item_orm(teacher_id=teacher_id, status="snoozed")
+        db = _make_db_for_load(item)
+        update_result = MagicMock()
+        db.execute = AsyncMock(side_effect=list(db.execute.side_effect) + [update_result])
+
+        result = await dismiss_worklist_item(db, item_id=item.id, teacher_id=teacher_id)
+        assert result is item
+        db.commit.assert_awaited_once()

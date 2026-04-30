@@ -24,6 +24,7 @@ from app.models.user import User
 from app.models.worklist import TeacherWorklistItem
 from app.schemas.worklist import (
     SnoozeWorklistItemRequest,
+    TriggerType,
     WorklistItemResponse,
     WorklistItemStatus,
 )
@@ -47,7 +48,7 @@ def _item_response(item: TeacherWorklistItem) -> WorklistItemResponse:
     return WorklistItemResponse(
         id=item.id,
         student_id=item.student_id,
-        trigger_type=item.trigger_type,  # type: ignore[arg-type]  # ORM stores str; schema expects TriggerType StrEnum (compatible at runtime)
+        trigger_type=TriggerType(item.trigger_type),
         skill_key=item.skill_key,
         urgency=item.urgency,
         suggested_action=item.suggested_action,
@@ -84,8 +85,11 @@ async def get_worklist_endpoint(
     """
     items = await get_worklist_for_teacher(db, teacher_id=teacher.id)
     item_responses = [_item_response(i) for i in items]
+    # Use the most recent generation timestamp across all returned items so
+    # the response accurately reflects when the newest batch was computed,
+    # regardless of which item sorts first by urgency.
     generated_at: datetime = (
-        items[0].generated_at if items else datetime.now(UTC)
+        max(i.generated_at for i in items) if items else datetime.now(UTC)
     )
     payload = {
         "teacher_id": str(teacher.id),

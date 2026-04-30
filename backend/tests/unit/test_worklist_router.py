@@ -321,6 +321,30 @@ class TestSnoozeWorklistItemEndpoint:
         # snoozed_until should be None (let service apply default)
         assert captured_snooze_until == [None]
 
+    def test_snooze_with_body_omitted_entirely_uses_default(self) -> None:
+        """Omitting the request body entirely (no Content-Type) must also succeed."""
+        teacher = _make_teacher()
+        item_id = uuid.uuid4()
+        item = _make_worklist_item(item_id=item_id, teacher_id=teacher.id, status="snoozed")
+        client = _client(teacher)
+        captured_snooze_until: list[object] = []
+
+        async def _mock_snooze(
+            db: object,
+            item_id: uuid.UUID,
+            teacher_id: uuid.UUID,
+            snoozed_until: object = None,
+        ) -> MagicMock:
+            captured_snooze_until.append(snoozed_until)
+            return item
+
+        with patch("app.routers.worklist.snooze_worklist_item", side_effect=_mock_snooze):
+            # Send request with no body and no Content-Type header.
+            resp = client.post(f"/api/v1/worklist/{item_id}/snooze")
+
+        assert resp.status_code == 200
+        assert captured_snooze_until == [None]
+
     def test_requires_auth(self) -> None:
         client = _anon_client()
         resp = client.post(f"/api/v1/worklist/{uuid.uuid4()}/snooze", json={})
