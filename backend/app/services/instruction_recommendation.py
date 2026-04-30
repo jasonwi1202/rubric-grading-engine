@@ -1,4 +1,4 @@
-"""Instruction recommendation service (M6-07/M6-08).
+"""Instruction recommendation service (M6-07/M6-08/M6-09).
 
 Business logic for generating, persisting, and retrieving AI-powered
 instruction recommendations from student skill profiles or class skill-gap
@@ -13,6 +13,8 @@ Public API:
     sets for a student (newest-first).
   - ``assign_recommendation``            — record the teacher's explicit
     confirmation to assign a recommendation (status → 'accepted').
+  - ``dismiss_recommendation``           — record the teacher's explicit
+    dismissal of a recommendation (status → 'dismissed').
 
 LLM integration:
   - Only aggregate skill profile data is sent to the LLM — no essay content.
@@ -62,6 +64,11 @@ logger = logging.getLogger(__name__)
 
 # Gap threshold: a skill with avg_score below this is considered a gap.
 _GAP_THRESHOLD = 0.6
+
+
+def _rowcount(result: Any) -> int:
+    """Return the rowcount from a SQLAlchemy CursorResult returned by an UPDATE."""
+    return cast("CursorResult[Any]", result).rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +559,7 @@ async def assign_recommendation(
         )
         .values(status="accepted")
     )
-    if cast("CursorResult[Any]", update_result).rowcount == 0:
+    if _rowcount(update_result) == 0:
         # Concurrent request already transitioned the row; re-fetch current state.
         await db.refresh(rec)
         return rec
@@ -571,6 +578,97 @@ async def assign_recommendation(
 
     logger.info(
         "Instruction recommendation assigned",
+        extra={
+            "recommendation_id": str(recommendation_id),
+            "teacher_id": str(teacher_id),
+        },
+    )
+    return rec
+
+
+async def dismiss_recommendation(
+    db: AsyncSession,
+    teacher_id: uuid.UUID,
+    recommendation_id: uuid.UUID,
+) -> InstructionRecommendation:
+    """Record the teacher's explicit dismissal of an instruction recommendation.
+
+    Transitions the recommendation status from ``'pending_review'`` to
+    ``'dismissed'`` and writes an audit log entry.
+
+    Idempotent: if the recommendation is already ``'dismissed'``, it is
+    returned unchanged without writing a second audit entry.
+
+    Tenant isolation:
+        Uses a single ``SELECT … WHERE id = ? AND teacher_id = ?`` query —
+        matching the RLS pattern used by :func:`assign_recommendation`.
+        Cross-tenant and nonexistent IDs both raise
+        :exc:`~app.exceptions.NotFoundError` (404).
+
+    Args:
+        db:                Async database session.
+        teacher_id:        Authenticated teacher's UUID (tenant scope).
+        recommendation_id: Recommendation to dismiss.
+
+    Returns:
+        The updated :class:`~app.models.instruction_recommendation.InstructionRecommendation` row.
+
+    Raises:
+        NotFoundError:  Recommendation not found or not accessible to this teacher.
+        ConflictError:  Recommendation has already been assigned and cannot be dismissed.
+    """
+    result = await db.execute(
+        select(InstructionRecommendation).where(
+            InstructionRecommendation.id == recommendation_id,
+            InstructionRecommendation.teacher_id == teacher_id,
+        )
+    )
+    rec = result.scalar_one_or_none()
+    if rec is None:
+        raise NotFoundError("Instruction recommendation not found.")
+
+    if rec.status == "accepted":
+        raise ConflictError("Cannot dismiss a recommendation that has already been assigned.")
+
+    # Idempotent — already dismissed, nothing to do.
+    if rec.status == "dismissed":
+        return rec
+
+    # Attempt atomic conditional UPDATE: only transitions if still pending_review.
+    # This prevents duplicate audit entries when two concurrent requests race.
+    before_status = rec.status
+    update_result = await db.execute(
+        update(InstructionRecommendation)
+        .where(
+            InstructionRecommendation.id == recommendation_id,
+            InstructionRecommendation.teacher_id == teacher_id,
+            InstructionRecommendation.status == "pending_review",
+        )
+        .values(status="dismissed")
+    )
+    if _rowcount(update_result) == 0:
+        # Concurrent request already transitioned the row; re-fetch current state.
+        await db.refresh(rec)
+        # If now dismissed (concurrent dismiss), return idempotently.
+        # If now accepted (concurrent assign), raise conflict.
+        if rec.status == "accepted":
+            raise ConflictError("Cannot dismiss a recommendation that has already been assigned.")
+        return rec
+
+    audit = AuditLog(
+        teacher_id=teacher_id,
+        entity_type="instruction_recommendation",
+        entity_id=recommendation_id,
+        action="recommendation_dismissed",
+        before_value={"status": before_status},
+        after_value={"status": "dismissed"},
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(rec)
+
+    logger.info(
+        "Instruction recommendation dismissed",
         extra={
             "recommendation_id": str(recommendation_id),
             "teacher_id": str(teacher_id),

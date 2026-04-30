@@ -37,6 +37,7 @@ import type {
   SkillTrend,
   AssignmentHistoryItem,
 } from "@/lib/api/students";
+import { RecommendationPanel } from "@/components/recommendations/RecommendationPanel";
 
 // ---------------------------------------------------------------------------
 // Notes form schema — max_length matches backend PatchStudentRequest
@@ -501,6 +502,21 @@ export default function StudentProfilePage() {
             </ul>
           </div>
         )}
+      </section>
+
+      {/* ---- Instruction recommendations ---- */}
+      <section aria-labelledby="recommendations-heading" className="mb-8">
+        <h2
+          id="recommendations-heading"
+          className="mb-1 text-base font-semibold text-gray-900"
+        >
+          Instruction Recommendations
+        </h2>
+        <p className="mb-3 text-xs text-gray-500">
+          AI-generated activities and mini-lessons targeting this student&rsquo;s
+          skill gaps. Review, modify, and confirm before assigning.
+        </p>
+        <RecommendationPanel studentId={studentId} />
       </section>
 
       {/* ---- Teacher notes ---- */}
