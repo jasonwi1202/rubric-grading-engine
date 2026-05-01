@@ -51,17 +51,14 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     page: Page | null;
     /** ID of the first group visible in the Groups tab, set in test 2. */
     firstGroupId: string | null;
-    /** ID of a student removed from the group in test 4, restored in test 5. */
-    removedStudentId: string | null;
-    /** ID of the first worklist item, set in test 6, used in tests 7–9. */
-    worklistItemIds: string[];
+    /** Total active worklist item count observed in test 5, used for boundary checks in tests 6–8. */
+    worklistItemCount: number;
   } = {
     fixture: null,
     context: null,
     page: null,
     firstGroupId: null,
-    removedStudentId: null,
-    worklistItemIds: [],
+    worklistItemCount: 0,
   };
 
   test.beforeAll(async ({ browser }) => {
@@ -107,7 +104,7 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
 
     // The Groups heading should be visible.
     await expect(
-      page.getByRole("heading", { name: /skill.gap groups/i }),
+      page.getByRole("heading", { name: /skill-gap groups/i }),
     ).toBeVisible({ timeout: 10_000 });
 
     // Wait until at least one group card is rendered (the auto-grouping task has
@@ -213,10 +210,6 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
         { timeout: 15_000, intervals: [500, 1000] },
       )
       .toBeLessThan(initialCount);
-
-    // Record one of our student IDs so we can add them back in test 5.
-    // We use the fixture IDs rather than parsing the DOM to avoid PII assertions.
-    state.removedStudentId = state.fixture.student1Id;
   });
 
   // ── Test 4: Add a student back to the group (manual adjustment) ────────────
@@ -305,7 +298,7 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     }
 
     // Record item count for use in subsequent tests.
-    state.worklistItemIds = Array.from({ length: itemCount }, (_, i) => String(i));
+    state.worklistItemCount = itemCount;
   });
 
   // ── Test 6: Snooze a worklist item ─────────────────────────────────────────

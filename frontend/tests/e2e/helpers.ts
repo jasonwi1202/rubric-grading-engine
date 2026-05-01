@@ -1012,23 +1012,27 @@ export interface AutoGroupingFixture {
  * making it likely that students fall below the underperformance threshold and
  * groups / worklist items are generated.
  *
- * Security: no real student PII — all names and content are synthetic.
+ * The assignment is created via seedAssignment which already transitions it to
+ * the 'open' status, so essay uploads are accepted immediately.
+ *
+ * Security:
+ * - No student name in essay text or filename — only the student UUID appears
+ *   in the request body as `student_id`. Filenames become S3 object keys and
+ *   must not carry PII even for synthetic test data.
  */
 async function seedWeakEssay(
   token: string,
   assignmentId: string,
   studentId: string,
-  studentName: string,
 ): Promise<string> {
   const essayText =
-    `${studentName}\n\n` +
     "This essay addresses the given topic. " +
     "Some points are mentioned without elaboration. " +
     "Evidence is lacking. " +
     "The argument is underdeveloped.";
   const blob = new Blob([essayText], { type: "text/plain" });
   const formData = new FormData();
-  formData.append("files", blob, `${studentName}.txt`);
+  formData.append("files", blob, `essay-${studentId}.txt`);
   formData.append("student_id", studentId);
 
   const res = await fetch(
@@ -1143,24 +1147,9 @@ export async function seedAutoGroupingFixture(
     `J6 Assignment A ${ts}`,
   );
 
-  const essay1Id = await seedWeakEssay(
-    token,
-    assignment1Id,
-    student1Id,
-    "Lambda Writer",
-  );
-  const essay2Id = await seedWeakEssay(
-    token,
-    assignment1Id,
-    student2Id,
-    "Mu Writer",
-  );
-  const essay3Id = await seedWeakEssay(
-    token,
-    assignment1Id,
-    student3Id,
-    "Nu Writer",
-  );
+  const essay1Id = await seedWeakEssay(token, assignment1Id, student1Id);
+  const essay2Id = await seedWeakEssay(token, assignment1Id, student2Id);
+  const essay3Id = await seedWeakEssay(token, assignment1Id, student3Id);
 
   await triggerBatchGradingAndWait(
     token,
@@ -1200,24 +1189,9 @@ export async function seedAutoGroupingFixture(
     `J6 Assignment B ${ts}`,
   );
 
-  const essay4Id = await seedWeakEssay(
-    token,
-    assignment2Id,
-    student1Id,
-    "Lambda Writer",
-  );
-  const essay5Id = await seedWeakEssay(
-    token,
-    assignment2Id,
-    student2Id,
-    "Mu Writer",
-  );
-  const essay6Id = await seedWeakEssay(
-    token,
-    assignment2Id,
-    student3Id,
-    "Nu Writer",
-  );
+  const essay4Id = await seedWeakEssay(token, assignment2Id, student1Id);
+  const essay5Id = await seedWeakEssay(token, assignment2Id, student2Id);
+  const essay6Id = await seedWeakEssay(token, assignment2Id, student3Id);
 
   await triggerBatchGradingAndWait(
     token,
