@@ -24,6 +24,7 @@ from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
+from app.exceptions import ValidationError
 from app.models.assignment import Assignment
 from app.models.user import User
 from app.schemas.assignment import AssignmentResponse, PatchAssignmentRequest
@@ -300,12 +301,20 @@ async def patch_assignment_endpoint(
     - ``status``: advance the assignment through the state machine.
       Valid transitions: draft → open → grading → review → complete → returned.
       Invalid transitions return 422.
+    - ``resubmission_enabled``: enable or disable student resubmissions.
+      Must be a boolean; explicitly sending ``null`` returns 422.
 
     Returns 403 if the assignment belongs to a different teacher.
     Returns 404 if the assignment does not exist.
-    Returns 422 if the status transition is not allowed.
+    Returns 422 if the status transition is not allowed, or if
+    ``resubmission_enabled`` is explicitly provided as null.
     """
     fields_set = payload.model_fields_set
+    if "resubmission_enabled" in fields_set and payload.resubmission_enabled is None:
+        raise ValidationError(
+            "resubmission_enabled cannot be null; omit the field to leave it unchanged.",
+            field="resubmission_enabled",
+        )
     assignment = await update_assignment(
         db,
         teacher_id=teacher.id,
@@ -318,6 +327,9 @@ async def patch_assignment_endpoint(
         status=payload.status if "status" in fields_set else None,
         feedback_tone=payload.feedback_tone.value
         if "feedback_tone" in fields_set and payload.feedback_tone is not None
+        else None,
+        resubmission_enabled=payload.resubmission_enabled
+        if "resubmission_enabled" in fields_set
         else None,
     )
     return JSONResponse(
