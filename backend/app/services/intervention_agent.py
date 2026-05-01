@@ -116,10 +116,7 @@ def _trigger_reason(trigger_type: str, skill_key: str | None, details: dict[str,
     avg_str = f"{avg:.0%}" if isinstance(avg, float) else "below threshold"
     match trigger_type:
         case "regression":
-            return (
-                f"Skill '{skill_label}' is trending downward "
-                f"(current average: {avg_str})."
-            )
+            return f"Skill '{skill_label}' is trending downward (current average: {avg_str})."
         case "persistent_gap":
             count = details.get("assignment_count", 0)
             return (

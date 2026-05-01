@@ -166,9 +166,7 @@ class TestApproveIntervention:
         assert body["data"]["id"] == str(rec_id)
         assert body["data"]["status"] == "approved"
 
-    def test_returns_404_when_not_found(
-        self, authenticated_client: TestClient
-    ) -> None:
+    def test_returns_404_when_not_found(self, authenticated_client: TestClient) -> None:
         rec_id = uuid.uuid4()
         with patch(
             "app.routers.intervention.approve_intervention",
@@ -178,15 +176,11 @@ class TestApproveIntervention:
 
         assert resp.status_code == 404
 
-    def test_returns_409_when_already_dismissed(
-        self, authenticated_client: TestClient
-    ) -> None:
+    def test_returns_409_when_already_dismissed(self, authenticated_client: TestClient) -> None:
         rec_id = uuid.uuid4()
         with patch(
             "app.routers.intervention.approve_intervention",
-            new=AsyncMock(
-                side_effect=ConflictError("Cannot approve a dismissed recommendation.")
-            ),
+            new=AsyncMock(side_effect=ConflictError("Cannot approve a dismissed recommendation.")),
         ):
             resp = authenticated_client.post(f"/api/v1/interventions/{rec_id}/approve")
 
@@ -219,9 +213,7 @@ class TestDismissIntervention:
         assert body["data"]["id"] == str(rec_id)
         assert body["data"]["status"] == "dismissed"
 
-    def test_returns_404_when_not_found(
-        self, authenticated_client: TestClient
-    ) -> None:
+    def test_returns_404_when_not_found(self, authenticated_client: TestClient) -> None:
         rec_id = uuid.uuid4()
         with patch(
             "app.routers.intervention.dismiss_intervention",
@@ -231,9 +223,7 @@ class TestDismissIntervention:
 
         assert resp.status_code == 404
 
-    def test_returns_409_when_already_approved(
-        self, authenticated_client: TestClient
-    ) -> None:
+    def test_returns_409_when_already_approved(self, authenticated_client: TestClient) -> None:
         rec_id = uuid.uuid4()
         with patch(
             "app.routers.intervention.dismiss_intervention",

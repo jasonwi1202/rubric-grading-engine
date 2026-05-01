@@ -135,7 +135,9 @@ class TestInterventionListIntegration:
 
         await _seed_teacher(db_session, teacher_id)
         await _seed_student(db_session, student_id, teacher_id)
-        await _seed_intervention(db_session, pending_id, teacher_id, student_id, status="pending_review")
+        await _seed_intervention(
+            db_session, pending_id, teacher_id, student_id, status="pending_review"
+        )
         await _seed_intervention(db_session, approved_id, teacher_id, student_id, status="approved")
 
         client = _client_for(teacher_id, pg_dsn)
@@ -157,7 +159,9 @@ class TestInterventionListIntegration:
 
         await _seed_teacher(db_session, teacher_id)
         await _seed_student(db_session, student_id, teacher_id)
-        await _seed_intervention(db_session, _uuid(), teacher_id, student_id, status="pending_review")
+        await _seed_intervention(
+            db_session, _uuid(), teacher_id, student_id, status="pending_review"
+        )
         await _seed_intervention(db_session, _uuid(), teacher_id, student_id, status="dismissed")
 
         client = _client_for(teacher_id, pg_dsn)
@@ -182,7 +186,9 @@ class TestInterventionActionIntegration:
 
         await _seed_teacher(db_session, teacher_id)
         await _seed_student(db_session, student_id, teacher_id)
-        await _seed_intervention(db_session, rec_id, teacher_id, student_id, status="pending_review")
+        await _seed_intervention(
+            db_session, rec_id, teacher_id, student_id, status="pending_review"
+        )
 
         client = _client_for(teacher_id, pg_dsn)
         resp = client.post(f"/api/v1/interventions/{rec_id}/approve")
@@ -217,7 +223,9 @@ class TestInterventionActionIntegration:
 
         await _seed_teacher(db_session, teacher_id)
         await _seed_student(db_session, student_id, teacher_id)
-        await _seed_intervention(db_session, rec_id, teacher_id, student_id, status="pending_review")
+        await _seed_intervention(
+            db_session, rec_id, teacher_id, student_id, status="pending_review"
+        )
 
         client = _client_for(teacher_id, pg_dsn)
         resp = client.delete(f"/api/v1/interventions/{rec_id}")

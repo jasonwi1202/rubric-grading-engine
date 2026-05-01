@@ -342,10 +342,12 @@ class TestScanTeacherForInterventions:
         # profiles query returns one profile
         profile_scalars = MagicMock()
         profile_scalars.scalars.return_value = [profile]
-        db.execute = AsyncMock(side_effect=[
-            profile_scalars,  # SELECT StudentSkillProfile
-            MagicMock(return_value=set()),  # SELECT pending_signal_keys (empty set)
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                profile_scalars,  # SELECT StudentSkillProfile
+                MagicMock(return_value=set()),  # SELECT pending_signal_keys (empty set)
+            ]
+        )
         db.add = MagicMock()
         db.flush = AsyncMock()
         db.commit = AsyncMock()
