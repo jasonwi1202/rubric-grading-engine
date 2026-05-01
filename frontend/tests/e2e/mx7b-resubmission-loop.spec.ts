@@ -256,10 +256,10 @@ test.describe("Journey 7 — Resubmission Loop", () => {
     const page = state.page;
 
     // DiffPlaceholder renders two column headers.
-    await expect(page.getByText(/original submission/i)).toBeVisible({
+    await expect(page.getByText("Original submission", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText(/revised submission/i)).toBeVisible({
+    await expect(page.getByText("Revised submission", { exact: true })).toBeVisible({
       timeout: 10_000,
     });
 
@@ -267,8 +267,8 @@ test.describe("Journey 7 — Resubmission Loop", () => {
     // should carry text-blue-700 (active) and "Original submission" should
     // carry text-gray-600 (inactive).  These classes are stable signals from
     // DiffPlaceholder that the active column prop is applied correctly.
-    const revisedHeader = page.getByText(/revised submission/i);
-    const originalHeader = page.getByText(/original submission/i);
+    const revisedHeader = page.getByText("Revised submission", { exact: true });
+    const originalHeader = page.getByText("Original submission", { exact: true });
     await expect(revisedHeader).toHaveClass(/text-blue-700/, { timeout: 10_000 });
     await expect(originalHeader).toHaveClass(/text-gray-600/);
   });
@@ -290,8 +290,8 @@ test.describe("Journey 7 — Resubmission Loop", () => {
     await v1Button.click();
     await expect(v1Button).toHaveAttribute("aria-pressed", "true");
 
-    const originalHeader = page.getByText(/original submission/i);
-    const revisedHeader = page.getByText(/revised submission/i);
+    const originalHeader = page.getByText("Original submission", { exact: true });
+    const revisedHeader = page.getByText("Revised submission", { exact: true });
     await expect(originalHeader).toHaveClass(/text-blue-700/, { timeout: 10_000 });
     await expect(revisedHeader).toHaveClass(/text-gray-600/);
 

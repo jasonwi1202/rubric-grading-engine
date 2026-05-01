@@ -140,13 +140,26 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     if (!state.page || !state.fixture) throw new Error("State not initialized");
     const page = state.page;
 
-    // The page is still on the class detail with the Groups tab active.
-    // Find the first group card and click its expand button.
+    // Re-navigate to the class Groups tab explicitly.  Serial tests share a
+    // browser context but the page may have been reloaded or navigated away
+    // between tests in CI, so we cannot rely on state left by Test 1.
+    await page.goto(`/dashboard/classes/${state.fixture.classId}`);
+    const groupsTab = page.getByRole("tab", { name: /groups/i });
+    await expect(groupsTab).toBeVisible({ timeout: 15_000 });
+    await groupsTab.click();
+
+    // The first group card and click its expand button.
     const firstCard = page.locator('[aria-label^="Skill group:"]').first();
     await expect(firstCard).toBeVisible({ timeout: 10_000 });
 
-    const expandButton = firstCard.getByRole("button", { name: /expand group/i });
-    await expandButton.click();
+    // In some runs the card can already be expanded; accept either label.
+    const toggleButton = firstCard.getByRole("button", {
+      name: /expand group|collapse group/i,
+    });
+    const isExpanded = await toggleButton.getAttribute("aria-expanded");
+    if (isExpanded !== "true") {
+      await toggleButton.click();
+    }
 
     // Wait for the expanded member list to appear.
     const memberList = firstCard.locator("ul[aria-label]");
@@ -163,7 +176,7 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
 
     // Extract the group ID from the aria-controls attribute of the expand button
     // so subsequent tests can target the same group without relying on position.
-    const controlsAttr = await expandButton.getAttribute("aria-controls");
+    const controlsAttr = await toggleButton.getAttribute("aria-controls");
     if (controlsAttr) {
       // aria-controls is "group-members-{groupId}"
       state.firstGroupId = controlsAttr.replace("group-members-", "");

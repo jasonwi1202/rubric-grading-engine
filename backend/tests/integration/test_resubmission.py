@@ -104,9 +104,7 @@ async def _seed_teacher(db: AsyncSession, teacher_id: uuid.UUID) -> None:
     await db.commit()
 
 
-async def _seed_class(
-    db: AsyncSession, class_id: uuid.UUID, teacher_id: uuid.UUID
-) -> None:
+async def _seed_class(db: AsyncSession, class_id: uuid.UUID, teacher_id: uuid.UUID) -> None:
     await db.execute(
         text(
             "INSERT INTO classes "
@@ -125,9 +123,7 @@ async def _seed_class(
     await db.commit()
 
 
-async def _seed_rubric(
-    db: AsyncSession, rubric_id: uuid.UUID, teacher_id: uuid.UUID
-) -> None:
+async def _seed_rubric(db: AsyncSession, rubric_id: uuid.UUID, teacher_id: uuid.UUID) -> None:
     await db.execute(
         text(
             "INSERT INTO rubrics (id, teacher_id, name, is_template) "
@@ -455,9 +451,7 @@ class TestResubmitEssayIntegration:
         assert body.get("error", {}).get("code") == "RESUBMISSION_LIMIT_REACHED"
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """Teacher B cannot resubmit an essay belonging to Teacher A.
 
         ``essays`` has FORCE RLS: cross-tenant IDs are DB-invisible, so the
@@ -505,9 +499,7 @@ class TestResubmitEssayIntegration:
         assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
-    async def test_essay_not_found_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_essay_not_found_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """404 when the essay UUID does not exist."""
         teacher_id = _uuid()
         await _seed_teacher(db_session, teacher_id)
@@ -584,9 +576,7 @@ class TestGetRevisionComparisonIntegration:
         assert data["feedback_addressed"] is None
 
     @pytest.mark.asyncio
-    async def test_no_comparison_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_no_comparison_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """404 when the essay exists but has no revision comparison."""
         teacher_id = _uuid()
         class_id = _uuid()
@@ -608,9 +598,7 @@ class TestGetRevisionComparisonIntegration:
         assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """Teacher B cannot access Teacher A's revision comparison.
 
         ``revision_comparisons`` has FORCE RLS through essay_id → essays chain:
@@ -658,5 +646,116 @@ class TestGetRevisionComparisonIntegration:
 
         client = _client_for(teacher_id, pg_dsn)
         resp = client.get(f"/api/v1/essays/{_uuid()}/revision-comparison")
+
+        assert resp.status_code == 404, resp.text
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/versions — list all submitted versions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestGetEssayVersionsIntegration:
+    """Integration tests for GET /api/v1/essays/{essayId}/versions."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_both_versions(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """200 + list of both essay versions in ascending version_number order."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+        rubric_id = _uuid()
+        assignment_id = _uuid()
+        essay_id = _uuid()
+        v1_id = _uuid()
+        v2_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        await _seed_rubric(db_session, rubric_id, teacher_id)
+        await _seed_assignment(db_session, assignment_id, class_id, rubric_id)
+        await _seed_essay(db_session, essay_id, assignment_id)
+        await _seed_essay_version(db_session, v1_id, essay_id, version_number=1)
+        await _seed_essay_version(db_session, v2_id, essay_id, version_number=2)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{essay_id}/versions")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        versions = body["data"]["versions"]
+        assert len(versions) == 2
+        # Versions are returned in ascending version_number order.
+        assert versions[0]["version_number"] == 1
+        assert versions[1]["version_number"] == 2
+        assert versions[0]["id"] == str(v1_id)
+        assert versions[1]["id"] == str(v2_id)
+
+    @pytest.mark.asyncio
+    async def test_single_version_essay_returns_one_item(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """200 + single-element list when essay has never been resubmitted."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+        rubric_id = _uuid()
+        assignment_id = _uuid()
+        essay_id = _uuid()
+        v1_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        await _seed_rubric(db_session, rubric_id, teacher_id)
+        await _seed_assignment(db_session, assignment_id, class_id, rubric_id)
+        await _seed_essay(db_session, essay_id, assignment_id)
+        await _seed_essay_version(db_session, v1_id, essay_id, version_number=1)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{essay_id}/versions")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        versions = body["data"]["versions"]
+        assert len(versions) == 1
+        assert versions[0]["version_number"] == 1
+
+    @pytest.mark.asyncio
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
+        """404 when the essay belongs to another teacher."""
+        teacher_a_id = _uuid()
+        teacher_b_id = _uuid()
+        class_id = _uuid()
+        rubric_id = _uuid()
+        assignment_id = _uuid()
+        essay_id = _uuid()
+        v1_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_a_id)
+        await _seed_teacher(db_session, teacher_b_id)
+        await _seed_class(db_session, class_id, teacher_a_id)
+        await _seed_rubric(db_session, rubric_id, teacher_a_id)
+        await _seed_assignment(db_session, assignment_id, class_id, rubric_id)
+        await _seed_essay(db_session, essay_id, assignment_id)
+        await _seed_essay_version(db_session, v1_id, essay_id, version_number=1)
+
+        # Teacher B should not be able to list Teacher A's essay versions.
+        client = _client_for(teacher_b_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{essay_id}/versions")
+
+        assert resp.status_code == 404, resp.text
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_essay_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """404 when the essay UUID does not exist."""
+        teacher_id = _uuid()
+        await _seed_teacher(db_session, teacher_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/essays/{_uuid()}/versions")
 
         assert resp.status_code == 404, resp.text

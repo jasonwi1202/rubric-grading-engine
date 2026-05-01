@@ -84,9 +84,7 @@ class RevisionComparison(Base):
     )
     revised_grade_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey(
-            "grades.id", ondelete="CASCADE", name="fk_revision_comparisons_grades_revised"
-        ),
+        ForeignKey("grades.id", ondelete="CASCADE", name="fk_revision_comparisons_grades_revised"),
         nullable=False,
     )
     # revised.total_score − base.total_score (may be negative for regressions)
@@ -96,9 +94,7 @@ class RevisionComparison(Base):
     # True when heuristics indicate a surface-level (low-effort) revision.
     is_low_effort: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Human-readable reasons for the low-effort flag.  Empty list when not flagged.
-    low_effort_reasons: Mapped[list[Any]] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    low_effort_reasons: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     # LLM-produced per-criterion feedback-addressed analysis.
     # NULL when LLM step was skipped or failed.
     # [{criterion_id, feedback_given, addressed: bool, detail: str}, ...]

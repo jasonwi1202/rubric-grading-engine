@@ -12,6 +12,40 @@ Changes on active feature branches not yet merged to a release branch.
 
 ---
 
+## [v0.7.0] — M6 Prioritization & Instruction — Unreleased (pending merge to main)
+
+### Added
+- **Auto-grouping by skill gap** — after each grading batch, a Celery task clusters students into small groups based on shared underperforming skill dimensions derived from `StudentSkillProfile`; minimum group size and score threshold are configurable; groups stored in new `student_groups` table with stability tracking (`new`/`persistent`/`exited`)
+- **Auto-grouping API** — `GET /classes/{id}/groups` returns current groups with student lists, skill-gap labels, and stability; `PATCH /classes/{id}/groups/{groupId}` allows manual membership adjustment
+- **Auto-grouping UI** — Groups tab on class page: expandable group cards with student list, skill badge, stability indicator; add/remove student from group; cross-reference link to class heatmap
+- **Teacher worklist** — `GET /worklist` returns a ranked list of students requiring attention, derived from skill profiles and group history; trigger conditions: persistent gap (same group 2+ assignments), score regression, high inconsistency, non-responder (no improvement after resubmission); urgency-ranked
+- **Worklist API** — `POST /worklist/{id}/complete`, `POST /worklist/{id}/snooze`, `DELETE /worklist/{id}`; filter by trigger type, skill, urgency
+- **Worklist UI** — ranked list view with urgency indicators; reason and suggested action per item; mark done / snooze / dismiss controls; filter bar; default top-10 with expand-all
+- **Instruction recommendation generation** — `POST /students/{id}/recommendations` and `POST /classes/{id}/groups/{groupId}/recommendations` call a versioned LLM prompt (`instruction-v1`) to produce mini-lesson, targeted exercise, and intervention recommendations; evidence summary included with each recommendation; LLM response validated before any DB write; prompt version stored on every `instruction_recommendations` row
+- **Instruction API** — `GET /students/{id}/recommendations`; `POST /recommendations/{id}/assign` — explicit teacher action required before any exercise is associated with a student record
+- **Instruction recommendations UI** — recommendation card with objective, evidence summary, strategy type, estimated time; accept / modify / dismiss controls; assign-exercise confirmation modal (teacher must explicitly confirm)
+- **Resubmission intake and versioning** — `POST /essays/{id}/resubmit` creates a new `EssayVersion` linked to the same `Essay`; per-assignment limit configurable via `RESUBMISSION_LIMIT`; re-grading triggered automatically via Celery; new unique constraint on `(essay_id, version_number)`
+- **Resubmission grading and comparison** — `GET /essays/{id}/revision-comparison` returns criterion-level score deltas, flags for which feedback points were addressed in the revision, and a low-effort flag when content change ratio is below threshold; criterion comparison uses a versioned revision LLM prompt (`revision-v1`)
+- **Resubmission UI** — side-by-side diff view (original vs. revised text); score delta display per criterion; feedback-addressed indicators; version history list; improvement signal fed back into student profile
+- **E2E Journey 6** — Playwright: login → grade batch → groups tab populated → worklist item appears → mark item done (Closes MX.6b)
+- **E2E Journey 7** — Playwright: submit essay → grade → resubmit → comparison view → score delta visible (Closes MX.7b)
+- **RLS and tenant isolation for all M6 tables** — `student_groups`, `teacher_worklist_items`, `instruction_recommendations`, and `revision_comparisons` all have Row Level Security enabled and are verified by `tests/integration/test_m6_tenant_isolation.py`
+
+### Security
+- All four new tables have PostgreSQL RLS policies restricting access to the owning `teacher_id`; application layer enforces `teacher_id` in every query as defense-in-depth
+- Instruction recommendation and revision prompts keep essay content strictly in the `user` role; system prompts contain the standard injection-defense directive
+- `instruction_recommendations` rows store `prompt_version` to enable auditing of which prompt version produced each recommendation
+- `revision_comparisons` receives sanitized diffs; raw essay text is never placed in the system role
+- No student PII in any log line added in M6; only entity IDs (`essay_id`, `student_id`, `group_id`) used in logger calls
+
+### Tests added
+- Backend unit: `test_auto_grouping_api`, `test_worklist_service`, `test_worklist_router`, `test_instruction_recommendation_service`, `test_instruction_recommendation_router`, `test_resubmission_service`, `test_essay_service`, extended `test_tenant_isolation`
+- Backend integration: `test_m6_tenant_isolation` (RLS assertions on all new tables), `test_resubmission` (full flow against real Postgres), `test_instruction_recommendations`
+- Frontend unit: `recommendation-panel.test.tsx`, `resubmission-panel.test.tsx`
+- E2E: Journey 6 (`mx6b-journey6-worklist-auto-grouping.spec.ts`), Journey 7 (`mx7b-resubmission-loop.spec.ts`)
+
+---
+
 ## [v0.6.0] — M5 Student Intelligence — Unreleased (pending merge to main)
 
 ### Added

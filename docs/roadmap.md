@@ -24,7 +24,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **M3** | Foundation | Core product: rubric builder, class/roster management, essay upload and ingestion, AI grading engine, human-in-the-loop review interface, and export. | 26 | ✅ Complete |
 | **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | ✅ Complete |
 | **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | ✅ Complete |
-| **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | 🔲 Planned |
+| **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | ✅ Complete |
 | **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | 🔲 Planned |
 | **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | 🔄 Ongoing |
 | | **Total** | | **95** | |
@@ -216,7 +216,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M6 — Prioritization & Instruction
+## M6 — Prioritization & Instruction ✅ Complete
 
 > Teacher worklist, auto-grouping, instruction recommendations, and resubmission loop.
 
@@ -224,33 +224,33 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 | # | Issue Title | Description |
 |---|---|---|
-| M6.1 | Auto-grouping Celery task | After each batch of grades is locked, compute skill groups from updated `StudentSkillProfile` records. Cluster students by shared underperforming skill dimensions. Apply minimum group size threshold. Store groups as JSONB on class or as a separate `student_groups` table. |
-| M6.2 | Auto-grouping API | `GET /classes/{id}/groups` — current groups with student lists, shared skill gap labels, and group stability data (persistent / new / exited). |
-| M6.3 | Auto-grouping UI | Group list view (name, skill gap, student count). Expand to see individual students. Manual adjust (add/remove student from group). Cross-reference link to class heatmap. |
+| ~~M6.1~~ | ~~Auto-grouping Celery task~~ | ✅ Done — PR #197. After each batch of grades is locked, compute skill groups from updated `StudentSkillProfile` records. Cluster students by shared underperforming skill dimensions. Apply minimum group size threshold. Store groups in `student_groups` table. |
+| ~~M6.2~~ | ~~Auto-grouping API~~ | ✅ Done — PR #198. `GET /classes/{id}/groups` — current groups with student lists, shared skill gap labels, and group stability data (persistent / new / exited). |
+| ~~M6.3~~ | ~~Auto-grouping UI~~ | ✅ Done — PR #199. Group list view (name, skill gap, student count). Expand to see individual students. Manual adjust (add/remove student from group). Cross-reference link to class heatmap. |
 
 ### Teacher Worklist
 
 | # | Issue Title | Description |
 |---|---|---|
-| M6.4 | Worklist generation logic | Compute worklist from student profiles: persistent gap (same group 2+ assignments), regression (score drop), high inconsistency, non-responder (no improvement after resubmission). Rank by urgency. Link each item to a suggested action from the instruction engine. |
-| M6.5 | Worklist API | `GET /worklist`, `POST /worklist/{id}/complete`, `POST /worklist/{id}/snooze`, `DELETE /worklist/{id}`. |
-| M6.6 | Worklist UI | Ranked list with urgency indicators. Reason and suggested action per student. Mark done / snooze / dismiss controls. Filter by action type, skill gap, urgency. Default to top 10, expand to full class. |
+| ~~M6.4~~ | ~~Worklist generation logic~~ | ✅ Done — PR #200. Compute worklist from student profiles: persistent gap (same group 2+ assignments), regression (score drop), high inconsistency, non-responder (no improvement after resubmission). Rank by urgency. |
+| ~~M6.5~~ | ~~Worklist API~~ | ✅ Done — PR #201. `GET /worklist`, `POST /worklist/{id}/complete`, `POST /worklist/{id}/snooze`, `DELETE /worklist/{id}`. |
+| ~~M6.6~~ | ~~Worklist UI~~ | ✅ Done — PR #202. Ranked list with urgency indicators. Reason and suggested action per student. Mark done / snooze / dismiss controls. Filter by action type, skill gap, urgency. Default to top 10, expand to full class. |
 
 ### Instruction Engine
 
 | # | Issue Title | Description |
 |---|---|---|
-| M6.7 | Instruction recommendation generation | LLM-powered recommendation generation for: mini-lessons (objective, structure, example), targeted exercises (single-skill prompts), intervention suggestions (1:1, reading scaffolds, peer review). Triggered from worklist items or student profile gaps. Evidence summary included with each recommendation. |
-| M6.8 | Instruction API | `POST /students/{id}/recommendations` — generate recommendation for a student gap. `POST /classes/{id}/groups/{groupId}/recommendations` — for a group. `POST /recommendations/{id}/assign` — teacher assigns exercise to student/group (explicit teacher action). |
-| M6.9 | Instruction recommendations UI | Recommendation card: objective, structure, evidence summary. Accept / modify / dismiss controls. Assign exercise flow (teacher confirms before any action is applied to student record). |
+| ~~M6.7~~ | ~~Instruction recommendation generation~~ | ✅ Done — PR #203. LLM-powered recommendation generation for: mini-lessons (objective, structure, example), targeted exercises (single-skill prompts), intervention suggestions (1:1, reading scaffolds, peer review). Triggered from worklist items or student profile gaps. Evidence summary included with each recommendation. |
+| ~~M6.8~~ | ~~Instruction API~~ | ✅ Done — PR #205. `POST /students/{id}/recommendations` — generate recommendation for a student gap. `POST /classes/{id}/groups/{groupId}/recommendations` — for a group. `POST /recommendations/{id}/assign` — teacher assigns exercise to student/group (explicit teacher action). |
+| ~~M6.9~~ | ~~Instruction recommendations UI~~ | ✅ Done — PR #206. Recommendation card: objective, structure, evidence summary. Accept / modify / dismiss controls. Assign exercise flow (teacher confirms before any action is applied to student record). |
 
 ### Resubmission Loop
 
 | # | Issue Title | Description |
 |---|---|---|
-| M6.10 | Resubmission intake and versioning | `POST /essays/{id}/resubmit` — submit new version. Store as new `EssayVersion` linked to same `Essay`. Configurable per-assignment limit. |
-| M6.11 | Resubmission grading and comparison | Re-run grading task on resubmission. Score delta per criterion vs. original. Detect whether specific feedback points were addressed in revision. Flag low-effort revisions (surface-level changes). |
-| M6.12 | Resubmission UI | Side-by-side diff view (original vs. revised). Score delta display per criterion. Feedback-addressed indicators. Version history list. Improvement signal in student profile. |
+| ~~M6.10~~ | ~~Resubmission intake and versioning~~ | ✅ Done — PR #207. `POST /essays/{id}/resubmit` — submit new version. Store as new `EssayVersion` linked to same `Essay`. Configurable per-assignment limit. |
+| ~~M6.11~~ | ~~Resubmission grading and comparison~~ | ✅ Done — PR #208. Re-run grading task on resubmission. Score delta per criterion vs. original. Detect whether specific feedback points were addressed in revision. Flag low-effort revisions (surface-level changes). |
+| ~~M6.12~~ | ~~Resubmission UI~~ | ✅ Done — PR #209. Side-by-side diff view (original vs. revised). Score delta display per criterion. Feedback-addressed indicators. Version history list. Improvement signal in student profile. |
 
 ---
 

@@ -5,7 +5,7 @@ This guide walks you through spinning up the full GradeWise stack locally in a s
 **No API keys are required to explore the UI and backend.**  
 You only need an OpenAI key if you want to run actual AI grading jobs.
 
-The demo stack now seeds a ready-to-login teacher account and sample M4 + M5 data automatically.
+The demo stack now seeds a ready-to-login teacher account and sample M4 + M5 + M6 data automatically.
 
 
 ## Prerequisites

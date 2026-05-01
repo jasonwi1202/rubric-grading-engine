@@ -293,6 +293,139 @@ def wait_for_stack(api: str, max_wait: int, retry_delay: float) -> bool:
     return False
 
 
+def run_m6_checks(api: str) -> list[Result]:
+    """Run authenticated M6 demo checks using the seeded demo teacher account.
+
+    Validates that the M6 seed data (groups, worklist, recommendation, resubmission)
+    is present and the corresponding endpoints return the expected data shapes.
+    """
+    checks: list[Result] = []
+
+    def _record(name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0) -> None:
+        checks.append(
+            Result(
+                check=Check(name=name, url="(dynamic)", expected_status=200),
+                passed=passed,
+                error=error,
+                elapsed_ms=elapsed_ms,
+            )
+        )
+
+    # Authenticate with the seeded demo account.
+    start = time.monotonic()
+    try:
+        status, body = _request_json(
+            f"{api}/api/v1/auth/login",
+            method="POST",
+            body={"email": "demo@gradewise.app", "password": "DemoPass123!"},
+        )
+        token = str(((body.get("data") or {}).get("access_token")))
+        ok = status == 200 and token and token != "None"
+        if not ok:
+            _record("M6: demo login", False, error=f"status={status}", elapsed_ms=(time.monotonic() - start) * 1000)
+            return checks
+    except Exception as exc:
+        _record("M6: demo login", False, error=str(exc))
+        return checks
+
+    try:
+        # Resolve class ID.
+        status, classes_body = _request_json(f"{api}/api/v1/classes", token=token)
+        classes_data = list(classes_body.get("data", []))
+        demo_class = next((c for c in classes_data if c.get("name") == "Demo English 8"), None)
+        class_id = str((demo_class or {}).get("id"))
+        if not demo_class or not class_id:
+            raise RuntimeError("unable to resolve Demo English 8 class")
+
+        # Resolve Student Alpha ID.
+        status, students_body = _request_json(f"{api}/api/v1/classes/{class_id}/students", token=token)
+        students_data = list(students_body.get("data", []))
+        alpha = next((s for s in students_data if (s.get("student") or {}).get("full_name") == "Student Alpha"), None)
+        alpha_id = str(((alpha or {}).get("student") or {}).get("id"))
+        if not alpha or not alpha_id:
+            raise RuntimeError("unable to resolve Student Alpha")
+
+        # Resolve Student Beta's Assignment A essay ID for resubmission check.
+        status, asgn_body = _request_json(f"{api}/api/v1/classes/{class_id}/assignments", token=token)
+        assignments_data = list(asgn_body.get("data", []))
+        assignment_a = next((a for a in assignments_data if a.get("title") == "Demo Persuasive Essay A"), None)
+        assignment_a_id = str((assignment_a or {}).get("id"))
+        if not assignment_a or not assignment_a_id:
+            raise RuntimeError("unable to resolve Demo Persuasive Essay A")
+
+        status, essays_body = _request_json(f"{api}/api/v1/assignments/{assignment_a_id}/essays", token=token)
+        essays_data = list(essays_body.get("data", []))
+        beta_essay = next((e for e in essays_data if e.get("student_name") == "Student Beta"), None)
+        beta_essay_id = str((beta_essay or {}).get("essay_id"))
+        if not beta_essay or not beta_essay_id:
+            raise RuntimeError("unable to resolve Student Beta essay for Assignment A")
+
+        # ── Check 1: GET /classes/{classId}/groups ───────────────────────────
+        start = time.monotonic()
+        status, groups_body = _request_json(f"{api}/api/v1/classes/{class_id}/groups", token=token)
+        groups = list((groups_body.get("data") or {}).get("groups", []))
+        ok = status == 200 and len(groups) >= 1
+        _record(
+            "M6: skill-gap groups seeded (>= 1 group)",
+            ok,
+            error=None if ok else f"status={status}, groups_count={len(groups)}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+        # ── Check 2: GET /worklist ────────────────────────────────────────────
+        start = time.monotonic()
+        status, wl_body = _request_json(f"{api}/api/v1/worklist", token=token)
+        items = list((wl_body.get("data") or {}).get("items", []))
+        ok = status == 200 and len(items) >= 1
+        _record(
+            "M6: worklist items seeded (>= 1 active item)",
+            ok,
+            error=None if ok else f"status={status}, item_count={len(items)}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+        # ── Check 3: GET /students/{studentId}/recommendations ────────────────
+        start = time.monotonic()
+        status, rec_body = _request_json(f"{api}/api/v1/students/{alpha_id}/recommendations", token=token)
+        recs = list((rec_body.get("data") or {}).get("recommendations", []))
+        ok = status == 200 and len(recs) >= 1
+        _record(
+            "M6: instruction recommendation seeded for Student Alpha",
+            ok,
+            error=None if ok else f"status={status}, rec_count={len(recs)}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+        # ── Check 4: GET /essays/{essayId}/versions (Student Beta Asgn A) ────
+        start = time.monotonic()
+        status, versions_body = _request_json(f"{api}/api/v1/essays/{beta_essay_id}/versions", token=token)
+        versions = list((versions_body.get("data") or {}).get("versions", []))
+        ok = status == 200 and len(versions) >= 2
+        _record(
+            "M6: resubmission version seeded (>= 2 versions)",
+            ok,
+            error=None if ok else f"status={status}, version_count={len(versions)}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+        # ── Check 5: GET /essays/{essayId}/revision-comparison ────────────────
+        start = time.monotonic()
+        status, comp_body = _request_json(f"{api}/api/v1/essays/{beta_essay_id}/revision-comparison", token=token)
+        comp = comp_body.get("data") or {}
+        ok = status == 200 and bool(comp.get("criterion_deltas"))
+        _record(
+            "M6: revision comparison seeded (criterion_deltas present)",
+            ok,
+            error=None if ok else f"status={status}, criterion_deltas={comp.get('criterion_deltas')}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+    except Exception as exc:
+        _record("M6: API walkthrough checks", False, error=str(exc))
+
+    return checks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke test for the GradeWise demo stack.")
     parser.add_argument("--api-url",      default="http://localhost:8000")
@@ -308,6 +441,8 @@ def main() -> int:
                         help="Skip the readiness wait loop and run checks immediately")
     parser.add_argument("--no-m5",        action="store_true",
                         help="Skip authenticated M5 demo checks")
+    parser.add_argument("--no-m6",        action="store_true",
+                        help="Skip authenticated M6 demo checks")
     args = parser.parse_args()
 
     print(f"\n{BOLD}GradeWise demo smoke test{RESET}")
@@ -322,7 +457,7 @@ def main() -> int:
             return 1
 
     checks = build_checks(args.api_url, args.frontend_url, args.mailpit_url)
-    total_checks = len(checks) + (0 if args.no_m5 else 4)
+    total_checks = len(checks) + (0 if args.no_m5 else 4) + (0 if args.no_m6 else 5)
     print(f"{BOLD}Running {total_checks} checks...{RESET}\n")
 
     results: list[Result] = []
@@ -353,6 +488,18 @@ def main() -> int:
             extra = f"  {YELLOW}{result.error}{RESET}" if result.error and not result.passed else ""
             print(f"  {icon}  {result.check.name:<52} {elapsed}{extra}")
         results.extend(m5_results)
+        passed = sum(1 for r in results if r.passed)
+        failed = len(results) - passed
+
+    if not args.no_m6:
+        print(f"\n{BOLD}Running M6 authenticated checks...{RESET}\n")
+        m6_results = run_m6_checks(args.api_url)
+        for result in m6_results:
+            icon = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
+            elapsed = f"{result.elapsed_ms:.0f}ms" if result.elapsed_ms else ""
+            extra = f"  {YELLOW}{result.error}{RESET}" if result.error and not result.passed else ""
+            print(f"  {icon}  {result.check.name:<52} {elapsed}{extra}")
+        results.extend(m6_results)
         passed = sum(1 for r in results if r.passed)
         failed = len(results) - passed
 

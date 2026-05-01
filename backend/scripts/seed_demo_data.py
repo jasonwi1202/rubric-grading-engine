@@ -13,6 +13,10 @@ Seeded entities:
 - Browser-writing snapshots + process signals on one essay version (M5)
 - Student skill profiles with assignment_count=2 for demo walkthrough (M5)
 - One integrity report and one open regrade request for demo workflows
+- One skill-gap group (persistent) per seeded student with low evidence scores (M6)
+- One worklist item (persistent_gap) per student for the evidence skill gap (M6)
+- One instruction recommendation in pending_review state for Student Alpha (M6)
+- A second EssayVersion on Student Beta's Assignment A essay + revision comparison (M6)
 """
 
 from __future__ import annotations
@@ -31,12 +35,15 @@ from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.grade import ConfidenceLevel, CriterionScore, Grade, StrictnessLevel
+from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
 from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
 from app.models.rubric import Rubric, RubricCriterion
 from app.models.student import Student
+from app.models.student_group import StudentGroup
 from app.models.student_skill_profile import StudentSkillProfile
 from app.models.user import User, UserRole
+from app.models.worklist import TeacherWorklistItem
 from app.services.rubric import build_rubric_snapshot
 
 DEMO_EMAIL = "demo@gradewise.app"
@@ -504,6 +511,239 @@ async def _seed_teacher_scoped_data(teacher_id: uuid.UUID) -> None:
                 profile.last_updated_at = now
 
         await db.commit()
+
+        # ── M6: Skill-gap groups ──────────────────────────────────────────────
+        # One persistent group per skill key where both students score low.
+        # The group contains both student UUIDs encoded as a JSONB array.
+        # student_ids must be stored as UUID strings.
+        student_id_strings = [str(s.id) for s in students]
+        for skill_key, label in [
+            ("evidence", "Evidence & Reasoning"),
+            ("thesis", "Claim & Thesis"),
+        ]:
+            group_result = await db.execute(
+                select(StudentGroup).where(
+                    StudentGroup.teacher_id == teacher_id,
+                    StudentGroup.class_id == class_row.id,
+                    StudentGroup.skill_key == skill_key,
+                )
+            )
+            group = group_result.scalar_one_or_none()
+            if group is None:
+                db.add(
+                    StudentGroup(
+                        teacher_id=teacher_id,
+                        class_id=class_row.id,
+                        skill_key=skill_key,
+                        label=label,
+                        student_ids=student_id_strings,
+                        student_count=len(student_id_strings),
+                        stability="persistent",
+                        computed_at=now,
+                    )
+                )
+            else:
+                group.student_ids = student_id_strings
+                group.student_count = len(student_id_strings)
+                group.stability = "persistent"
+                group.computed_at = now
+
+        await db.commit()
+
+        # ── M6: Teacher worklist items ────────────────────────────────────────
+        # One persistent_gap item per student for the evidence skill gap.
+        for student in students:
+            wl_result = await db.execute(
+                select(TeacherWorklistItem).where(
+                    TeacherWorklistItem.teacher_id == teacher_id,
+                    TeacherWorklistItem.student_id == student.id,
+                    TeacherWorklistItem.trigger_type == "persistent_gap",
+                    TeacherWorklistItem.skill_key == "evidence",
+                    TeacherWorklistItem.status == "active",
+                )
+            )
+            if wl_result.scalar_one_or_none() is None:
+                db.add(
+                    TeacherWorklistItem(
+                        teacher_id=teacher_id,
+                        student_id=student.id,
+                        trigger_type="persistent_gap",
+                        skill_key="evidence",
+                        urgency=3,
+                        suggested_action="Schedule a targeted evidence-use mini-lesson with this student.",
+                        details={
+                            "avg_score": 0.375 if student.full_name == "Student Beta" else 0.625,
+                            "data_points": 2,
+                            "consecutive_assignments": 2,
+                        },
+                        status="active",
+                    )
+                )
+
+        await db.commit()
+
+        # ── M6: Instruction recommendation (pending_review) ──────────────────
+        # One pre-generated recommendation for Student Alpha so the demo UI
+        # shows a populated recommendation card without requiring an LLM call.
+        alpha = next((s for s in students if s.full_name == "Student Alpha"), None)
+        if alpha is not None:
+            rec_result = await db.execute(
+                select(InstructionRecommendation).where(
+                    InstructionRecommendation.teacher_id == teacher_id,
+                    InstructionRecommendation.student_id == alpha.id,
+                    InstructionRecommendation.status == "pending_review",
+                )
+            )
+            if rec_result.scalar_one_or_none() is None:
+                db.add(
+                    InstructionRecommendation(
+                        teacher_id=teacher_id,
+                        student_id=alpha.id,
+                        group_id=None,
+                        worklist_item_id=None,
+                        skill_key="evidence",
+                        grade_level="Grade 8",
+                        evidence_summary=(
+                            "Student Alpha has scored below 0.70 on the Evidence & Reasoning "
+                            "dimension across both graded assignments (avg 0.625). "
+                            "The gap is consistent — no upward trend detected."
+                        ),
+                        recommendations=[
+                            {
+                                "skill_dimension": "evidence",
+                                "title": "Evidence Sandwich Mini-Lesson",
+                                "description": "Model a 3-step evidence sandwich (claim → quote → explain) using a short mentor text.",
+                                "estimated_minutes": 15,
+                                "strategy_type": "mini_lesson",
+                            },
+                            {
+                                "skill_dimension": "evidence",
+                                "title": "Single-Paragraph Evidence Practice",
+                                "description": "Students write one body paragraph with one embedded quote and a two-sentence analysis.",
+                                "estimated_minutes": 20,
+                                "strategy_type": "exercise",
+                            },
+                        ],
+                        status="pending_review",
+                        prompt_version="instruction-v1",
+                    )
+                )
+
+            await db.commit()
+
+        # ── M6: Resubmission data for Student Beta, Assignment A ──────────────
+        # Add a second EssayVersion (version_number=2) and a RevisionComparison
+        # row so the revision comparison UI is populated in the demo without
+        # requiring a live LLM call.
+        # Student Beta's Assignment A essay was seeded earlier in the loop;
+        # locate it by student + assignment.
+        beta = next((s for s in students if s.full_name == "Student Beta"), None)
+        if beta is not None and assignments:
+            assignment_a = assignments[0]  # Assignment A is index 0 (created first)
+            beta_essay_result = await db.execute(
+                select(Essay).where(
+                    Essay.assignment_id == assignment_a.id,
+                    Essay.student_id == beta.id,
+                )
+            )
+            beta_essay = beta_essay_result.scalar_one_or_none()
+            if beta_essay is not None:
+                # Check if a v2 already exists.
+                v2_result = await db.execute(
+                    select(EssayVersion).where(
+                        EssayVersion.essay_id == beta_essay.id,
+                        EssayVersion.version_number == 2,
+                    )
+                )
+                if v2_result.scalar_one_or_none() is None:
+                    v2 = EssayVersion(
+                        essay_id=beta_essay.id,
+                        version_number=2,
+                        content=(
+                            "This revised essay incorporates stronger textual evidence throughout. "
+                            "Each body paragraph now includes a specific quote from the source "
+                            "material, followed by a sentence of analysis explaining its relevance "
+                            "to the central argument. The thesis has been sharpened and the "
+                            "conclusion now synthesises the key supporting points more precisely."
+                        ),
+                        word_count=67,
+                    )
+                    db.add(v2)
+                    await db.flush()  # populate v2.id
+
+                    # Seed a Grade for v2 (slightly higher than v1).
+                    v1_result = await db.execute(
+                        select(EssayVersion).where(
+                            EssayVersion.essay_id == beta_essay.id,
+                            EssayVersion.version_number == 1,
+                        )
+                    )
+                    v1 = v1_result.scalar_one_or_none()
+
+                    # Fetch v1's grade so we can record the base_grade_id.
+                    v1_grade = None
+                    if v1 is not None:
+                        v1_grade_result = await db.execute(
+                            select(Grade).where(Grade.essay_version_id == v1.id)
+                        )
+                        v1_grade = v1_grade_result.scalar_one_or_none()
+
+                    v2_grade = Grade(
+                        essay_version_id=v2.id,
+                        total_score=Decimal("7.00"),
+                        max_possible_score=Decimal("10.00"),
+                        summary_feedback=(
+                            "Good revision — evidence integration is noticeably stronger. "
+                            "Continue developing the analytical sentences after each quote."
+                        ),
+                        strictness=StrictnessLevel.balanced,
+                        ai_model="demo",
+                        prompt_version="grading-v1",
+                        is_locked=True,
+                        locked_at=now,
+                    )
+                    db.add(v2_grade)
+                    await db.flush()  # populate v2_grade.id
+
+                    # Seed RevisionComparison if both v1 and v1_grade exist.
+                    if v1 is not None and v1_grade is not None:
+                        from app.models.revision_comparison import RevisionComparison
+
+                        rc_result = await db.execute(
+                            select(RevisionComparison).where(
+                                RevisionComparison.essay_id == beta_essay.id,
+                            )
+                        )
+                        if rc_result.scalar_one_or_none() is None:
+                            db.add(
+                                RevisionComparison(
+                                    essay_id=beta_essay.id,
+                                    base_version_id=v1.id,
+                                    revised_version_id=v2.id,
+                                    base_grade_id=v1_grade.id,
+                                    revised_grade_id=v2_grade.id,
+                                    total_score_delta=Decimal("1.00"),
+                                    criterion_deltas=[
+                                        {
+                                            "criterion_name": "Evidence and Reasoning",
+                                            "base_score": 3,
+                                            "revised_score": 4,
+                                            "delta": 1,
+                                        },
+                                        {
+                                            "criterion_name": "Claim and Thesis",
+                                            "base_score": 3,
+                                            "revised_score": 3,
+                                            "delta": 0,
+                                        },
+                                    ],
+                                    is_low_effort=False,
+                                    low_effort_reasons=[],
+                                    feedback_addressed=None,
+                                )
+                            )
+
+                await db.commit()
 
 
 async def _run() -> None:
