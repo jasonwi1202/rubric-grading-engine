@@ -826,6 +826,61 @@ async function triggerBatchGradingAndWait(
 }
 
 /**
+ * Trigger grading retry for a single essay and wait until the latest version
+ * has a grade available via GET /essays/{essayId}/grade.
+ */
+async function triggerEssayRetryAndWaitForGrade(
+  token: string,
+  essayId: string,
+  label: string,
+): Promise<void> {
+  const retryRes = await fetch(
+    `${API_BASE}/api/v1/essays/${essayId}/grade/retry`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ strictness: "balanced" }),
+    },
+  );
+  if (!retryRes.ok) {
+    const text = await retryRes.text().catch(() => "");
+    throw new Error(
+      `${label} (retry grading) failed: ${retryRes.status} ${retryRes.statusText} — ${text}`,
+    );
+  }
+
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    const gradeRes = await fetch(
+      `${API_BASE}/api/v1/essays/${essayId}/grade`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (gradeRes.ok) {
+      return;
+    }
+    if (gradeRes.status >= 500) {
+      continue;
+    }
+    // 404 is expected while the latest version is still ungraded.
+    if (gradeRes.status === 404) {
+      continue;
+    }
+    const text = await gradeRes.text().catch(() => "");
+    throw new Error(
+      `${label} (poll latest grade) failed: ${gradeRes.status} ${gradeRes.statusText} — ${text}`,
+    );
+  }
+
+  throw new Error(
+    `${label}: latest essay version was not graded within 120 s`,
+  );
+}
+
+/**
  * Fetch the grade for `essayId` and lock it.  Throws on any HTTP error.
  */
 async function lockGradeForEssay(
@@ -1361,27 +1416,6 @@ export async function seedResubmissionFixture(
     "seedResubmissionFixture (lock original grade)",
   );
 
-  // After all grades are locked the assignment transitions to 'review' status,
-  // which blocks POST /assignments/{id}/grade (requires 'open' or 'grading').
-  // PATCH it back to 'open' so the resubmission grading cycle can be triggered.
-  const reopenRes = await fetch(
-    `${API_BASE}/api/v1/assignments/${assignmentId}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status: "open" }),
-    },
-  );
-  if (!reopenRes.ok) {
-    const text = await reopenRes.text().catch(() => "");
-    throw new Error(
-      `seedResubmissionFixture (reopen assignment) failed: ${reopenRes.status} ${reopenRes.statusText} — ${text}`,
-    );
-  }
-
   // Submit the resubmission.  The revised text is substantively different from
   // the original to avoid triggering the low-effort heuristic.
   const revisedText =
@@ -1413,10 +1447,12 @@ export async function seedResubmissionFixture(
     );
   }
 
-  // Grade the resubmission.
-  await triggerBatchGradingAndWait(
+  // Grade the resubmission using essay-level retry. The resubmit service sets
+  // the essay back to queued, and retry endpoint does not require assignment
+  // status transitions.
+  await triggerEssayRetryAndWaitForGrade(
     token,
-    assignmentId,
+    essayId,
     "seedResubmissionFixture (resubmission grading)",
   );
 

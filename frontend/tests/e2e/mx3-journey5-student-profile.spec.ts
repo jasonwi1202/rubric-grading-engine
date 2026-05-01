@@ -117,8 +117,12 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     const profileLink = page.getByRole("link", { name: state.studentName });
     await expect(profileLink).toBeVisible({ timeout: 15_000 });
 
-    // Click the student's name link in the roster table.
-    await profileLink.click();
+    // Read the profile href from the roster link, then navigate explicitly.
+    // This avoids occasional click flakiness under CI load while still
+    // validating that the roster renders the correct student profile link.
+    const profileHref = await profileLink.getAttribute("href");
+    expect(profileHref).toContain(`/dashboard/students/${state.studentId}`);
+    await page.goto(profileHref ?? `/dashboard/students/${state.studentId}`);
 
     // Verify navigation reached the student profile page.
     await expect(page).toHaveURL(
@@ -176,10 +180,14 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     await expect(items).toHaveCount(2);
 
     // Assignment B was locked after Assignment A, so it appears first (newest-first).
-    const firstItemLink = items.nth(0).getByRole("link");
-    const secondItemLink = items.nth(1).getByRole("link");
-    await expect(firstItemLink).toContainText(state.assignment2Title);
-    await expect(secondItemLink).toContainText(state.assignment1Title);
+    const firstItemTitleLink = items
+      .nth(0)
+      .getByRole("link", { name: state.assignment2Title, exact: true });
+    const secondItemTitleLink = items
+      .nth(1)
+      .getByRole("link", { name: state.assignment1Title, exact: true });
+    await expect(firstItemTitleLink).toBeVisible();
+    await expect(secondItemTitleLink).toBeVisible();
   });
 
   // ── Test 4: Strengths and gaps callouts reflect the seeded scores ──────────

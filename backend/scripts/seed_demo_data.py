@@ -35,11 +35,11 @@ from app.models.class_ import Class
 from app.models.class_enrollment import ClassEnrollment
 from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.grade import ConfidenceLevel, CriterionScore, Grade, StrictnessLevel
+from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
 from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
 from app.models.rubric import Rubric, RubricCriterion
 from app.models.student import Student
-from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.student_group import StudentGroup
 from app.models.student_skill_profile import StudentSkillProfile
 from app.models.user import User, UserRole

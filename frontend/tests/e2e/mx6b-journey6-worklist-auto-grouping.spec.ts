@@ -152,8 +152,14 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     const firstCard = page.locator('[aria-label^="Skill group:"]').first();
     await expect(firstCard).toBeVisible({ timeout: 10_000 });
 
-    const expandButton = firstCard.getByRole("button", { name: /expand group/i });
-    await expandButton.click();
+    // In some runs the card can already be expanded; accept either label.
+    const toggleButton = firstCard.getByRole("button", {
+      name: /expand group|collapse group/i,
+    });
+    const isExpanded = await toggleButton.getAttribute("aria-expanded");
+    if (isExpanded !== "true") {
+      await toggleButton.click();
+    }
 
     // Wait for the expanded member list to appear.
     const memberList = firstCard.locator("ul[aria-label]");
@@ -170,7 +176,7 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
 
     // Extract the group ID from the aria-controls attribute of the expand button
     // so subsequent tests can target the same group without relying on position.
-    const controlsAttr = await expandButton.getAttribute("aria-controls");
+    const controlsAttr = await toggleButton.getAttribute("aria-controls");
     if (controlsAttr) {
       // aria-controls is "group-members-{groupId}"
       state.firstGroupId = controlsAttr.replace("group-members-", "");

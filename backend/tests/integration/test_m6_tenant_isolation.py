@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC
 from unittest.mock import MagicMock
 
 import pytest
@@ -162,6 +163,7 @@ async def _seed_enrollment(
 ) -> None:
     """Enroll a student in a class (active enrollment, no removed_at)."""
     import uuid as _uuid
+
     await db.execute(
         text(
             "INSERT INTO class_enrollments (id, student_id, class_id) "
@@ -181,6 +183,7 @@ async def _seed_group(
     student_ids: list[str] | None = None,
 ) -> None:
     import json as _json
+
     sids = _json.dumps(student_ids or [])
     count = len(student_ids) if student_ids else 0
     await db.execute(
@@ -466,11 +469,14 @@ class TestWorklistIntegrationTenantIsolation:
         await _seed_student(db_session, student_id, teacher_id)
         await _seed_worklist_item(db_session, item_id, teacher_id, student_id)
 
-        from datetime import datetime, timedelta, timezone
-        snooze_until = (datetime.now(tz=timezone.utc) + timedelta(days=7)).isoformat()
+        from datetime import datetime, timedelta
+
+        snooze_until = (datetime.now(tz=UTC) + timedelta(days=7)).isoformat()
 
         client = _client_for(teacher_id, pg_dsn)
-        resp = client.post(f"/api/v1/worklist/{item_id}/snooze", json={"snooze_until": snooze_until})
+        resp = client.post(
+            f"/api/v1/worklist/{item_id}/snooze", json={"snooze_until": snooze_until}
+        )
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -531,7 +537,10 @@ class TestStudentGroupsMutationIntegration:
         await _seed_enrollment(db_session, student2_id, class_id)
         # Group starts with both students.
         await _seed_group(
-            db_session, group_id, class_id, teacher_id,
+            db_session,
+            group_id,
+            class_id,
+            teacher_id,
             student_ids=[str(student1_id), str(student2_id)],
         )
 
@@ -564,7 +573,10 @@ class TestStudentGroupsMutationIntegration:
         await _seed_student(db_session, student_id, teacher_id)
         await _seed_enrollment(db_session, student_id, class_id)
         await _seed_group(
-            db_session, group_id, class_id, teacher_id,
+            db_session,
+            group_id,
+            class_id,
+            teacher_id,
             student_ids=[str(student_id)],
         )
 

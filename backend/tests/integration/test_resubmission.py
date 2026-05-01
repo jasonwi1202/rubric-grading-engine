@@ -723,9 +723,7 @@ class TestGetEssayVersionsIntegration:
         assert versions[0]["version_number"] == 1
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """404 when the essay belongs to another teacher."""
         teacher_a_id = _uuid()
         teacher_b_id = _uuid()
