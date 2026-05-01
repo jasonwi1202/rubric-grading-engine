@@ -170,9 +170,14 @@ jobs:
         run: |
           current=$(docker compose exec -T postgres psql -U postgres -d migration_smoke -t -c \
             "SELECT version_num FROM alembic_version;" | tr -d '[:space:]')
+          heads=$(docker compose run --rm --no-deps backend sh -c "cd /app && alembic heads -q")
+
           echo "Alembic version in DB: $current"
-          if [ "$current" != "032_validate_audit_logs_users_fk" ]; then
-            echo "ERROR: expected '032_validate_audit_logs_users_fk' but got '$current'"
+          echo "Alembic head revision(s):"
+          echo "$heads"
+
+          if ! printf '%s\n' "$heads" | tr ' ' '\n' | sed '/^$/d' | grep -qx "$current"; then
+            echo "ERROR: DB revision '$current' is not one of the current alembic head(s)."
             exit 1
           fi
 

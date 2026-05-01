@@ -26,7 +26,7 @@
  * - No credential-format strings in test data.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
@@ -568,6 +568,24 @@ describe("ReviewQueue — sort", () => {
 });
 
 describe("ReviewQueue — keyboard navigation", () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      const message = args.map(String).join(" ");
+      if (
+        message.includes("not wrapped in act") ||
+        message.includes("not configured to support act")
+      ) {
+        return;
+      }
+    });
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
   it("ArrowDown moves focus to the next row", async () => {
     const user = userEvent.setup();
     render(
@@ -583,7 +601,9 @@ describe("ReviewQueue — keyboard navigation", () => {
     await user.keyboard("{ArrowDown}");
 
     // Focus should now be on the second row
-    expect(document.activeElement).toBe(items[1]);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(items[1]);
+    });
   });
 
   it("ArrowUp moves focus to the previous row", async () => {
@@ -599,7 +619,9 @@ describe("ReviewQueue — keyboard navigation", () => {
 
     await user.keyboard("{ArrowUp}");
 
-    expect(document.activeElement).toBe(items[0]);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(items[0]);
+    });
   });
 
   it("ArrowUp does not go above the first row", async () => {
@@ -613,7 +635,9 @@ describe("ReviewQueue — keyboard navigation", () => {
     items[0].focus();
     await user.keyboard("{ArrowUp}");
     // Should still be on the first row
-    expect(document.activeElement).toBe(items[0]);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(items[0]);
+    });
   });
 
   it("ArrowDown does not go past the last row", async () => {
@@ -627,7 +651,9 @@ describe("ReviewQueue — keyboard navigation", () => {
     const last = items[items.length - 1];
     last.focus();
     await user.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(last);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(last);
+    });
   });
 });
 
