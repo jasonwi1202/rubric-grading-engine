@@ -40,6 +40,7 @@ from app.exceptions import (
     ConflictError,
     RateLimitError,
     RefreshTokenInvalidError,
+    UnauthorizedError,
     ValidationError,
 )
 
@@ -565,7 +566,7 @@ async def login_user(
         )
         db.add(audit)
         await db.commit()
-        raise ValidationError(_invalid_msg)
+        raise UnauthorizedError(_invalid_msg)
 
     if not db_user.email_verified and not settings.allow_unverified_login_in_test:
         audit = AuditLog(
@@ -578,7 +579,7 @@ async def login_user(
         )
         db.add(audit)
         await db.commit()
-        raise ValidationError("Please verify your email address before signing in.")
+        raise UnauthorizedError("Please verify your email address before signing in.")
 
     # Verify password -- CPU-bound; run in a thread to avoid blocking the event loop.
     password_valid: bool = await run_in_threadpool(
@@ -596,7 +597,7 @@ async def login_user(
         )
         db.add(audit)
         await db.commit()
-        raise ValidationError(_invalid_msg)
+        raise UnauthorizedError(_invalid_msg)
 
     # Update last_login_at
     db_user.last_login_at = datetime.now(UTC)

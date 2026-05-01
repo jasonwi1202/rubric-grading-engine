@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.exceptions import RefreshTokenInvalidError, ValidationError
+from app.exceptions import RefreshTokenInvalidError, UnauthorizedError, ValidationError
 from app.services.auth import (
     consume_refresh_token,
     create_access_token,
@@ -203,7 +203,7 @@ class TestLoginUser:
     async def test_login_failure_user_not_found(self) -> None:
         db = _make_db(fake_user=None)
         redis = _make_redis()
-        with pytest.raises(ValidationError, match="Invalid email or password"):
+        with pytest.raises(UnauthorizedError, match="Invalid email or password"):
             from app.services.auth import login_user
 
             await login_user(db, redis, "nobody@school.edu", "password123")
@@ -214,7 +214,7 @@ class TestLoginUser:
         user = _make_fake_user(verified=False)
         db = _make_db(fake_user=user)
         redis = _make_redis()
-        with pytest.raises(ValidationError, match="verify your email"):
+        with pytest.raises(UnauthorizedError, match="verify your email"):
             from app.services.auth import login_user
 
             await login_user(db, redis, user.email, "password123")
@@ -228,7 +228,7 @@ class TestLoginUser:
         user = _make_fake_user(verified=True, password_hash=hashed)
         db = _make_db(fake_user=user)
         redis = _make_redis()
-        with pytest.raises(ValidationError, match="Invalid email or password"):
+        with pytest.raises(UnauthorizedError, match="Invalid email or password"):
             from app.services.auth import login_user
 
             await login_user(db, redis, user.email, "wrong_pass")

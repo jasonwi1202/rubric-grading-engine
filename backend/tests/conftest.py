@@ -14,7 +14,7 @@ import os
 # Set defaults only — do not overwrite values already provided by the caller
 # (e.g. CI may inject real credentials for integration tests).
 _DEFAULTS: dict[str, str] = {
-    "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@localhost:5432/testdb",
+    "DATABASE_URL": "postgresql+asyncpg://test-db-user:test-db-password@localhost:5432/testdb",
     "REDIS_URL": "redis://localhost:6379/0",
     "JWT_SECRET_KEY": "a" * 32,
     "EMAIL_VERIFICATION_HMAC_SECRET": "b" * 32,

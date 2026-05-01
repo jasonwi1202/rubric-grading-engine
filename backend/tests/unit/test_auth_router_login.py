@@ -63,8 +63,8 @@ class TestLoginEndpoint:
         # Refresh token should be in a cookie, not the response body
         assert _REFRESH_COOKIE in resp.cookies
 
-    def test_returns_422_on_invalid_credentials(self) -> None:
-        from app.exceptions import ValidationError
+    def test_returns_401_on_invalid_credentials(self) -> None:
+        from app.exceptions import UnauthorizedError
 
         app = create_app()
 
@@ -72,7 +72,7 @@ class TestLoginEndpoint:
             patch(
                 "app.routers.auth.login_user",
                 new_callable=AsyncMock,
-                side_effect=ValidationError("Invalid email or password."),
+                side_effect=UnauthorizedError("Invalid email or password."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
@@ -81,8 +81,8 @@ class TestLoginEndpoint:
                 json={"email": "bad@school.edu", "password": "wrong"},
             )
 
-        assert resp.status_code == 422
-        assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
     def test_returns_422_for_missing_body(self) -> None:
         app = create_app()
