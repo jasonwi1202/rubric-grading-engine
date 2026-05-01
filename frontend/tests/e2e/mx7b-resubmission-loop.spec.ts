@@ -230,10 +230,6 @@ test.describe("Journey 7 — Resubmission Loop", () => {
     const btnVisible = await feedbackAddressedBtn.isVisible();
 
     if (legendVisible || btnVisible) {
-      // When feedback_addressed data is present, at least one indicator must
-      // be visible per criterion row that has a feedback item.
-      expect(legendVisible || btnVisible).toBe(true);
-
       // Exercise the expand/collapse interaction on the first feedback button.
       if (btnVisible) {
         await feedbackAddressedBtn.click();
@@ -269,13 +265,14 @@ test.describe("Journey 7 — Resubmission Loop", () => {
       timeout: 10_000,
     });
 
-    // The active version column should be highlighted (ring-blue-400 class
-    // is applied).  After restoring to v2 in Test 2, the "Revised submission"
-    // column header should carry the highlighted class.  We verify this by
-    // checking aria semantics are present (the columns are wrapped by divs
-    // whose parent is the two-column grid in DiffPlaceholder).
-    // Rather than test CSS details, we simply assert both headers are visible —
-    // which confirms the diff grid rendered without error.
+    // After Test 2 restored us to v2, the "Revised submission" column header
+    // should carry text-blue-700 (active) and "Original submission" should
+    // carry text-gray-600 (inactive).  These classes are stable signals from
+    // DiffPlaceholder that the active column prop is applied correctly.
+    const revisedHeader = page.getByText(/revised submission/i);
+    const originalHeader = page.getByText(/original submission/i);
+    await expect(revisedHeader).toHaveClass(/text-blue-700/, { timeout: 10_000 });
+    await expect(originalHeader).toHaveClass(/text-gray-600/);
   });
 
   // ── Test 7: Version history snapshot switching changes active column ────────
@@ -286,26 +283,28 @@ test.describe("Journey 7 — Resubmission Loop", () => {
 
     const versionStrip = page.getByLabel("Version history");
 
-    // Switch to Version 1 — the "Original submission" column header should
-    // have the blue-highlighted styling while "Revised submission" should not.
+    // Switch to Version 1 — "Original submission" header should become
+    // text-blue-700 (active) and "Revised submission" should become
+    // text-gray-600 (inactive).
     const v1Button = versionStrip.getByRole("button", {
       name: /version 1.*original/i,
     });
     await v1Button.click();
     await expect(v1Button).toHaveAttribute("aria-pressed", "true");
 
-    // Both column headers must still be visible after the switch.
-    await expect(page.getByText(/original submission/i)).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(page.getByText(/revised submission/i)).toBeVisible();
+    const originalHeader = page.getByText(/original submission/i);
+    const revisedHeader = page.getByText(/revised submission/i);
+    await expect(originalHeader).toHaveClass(/text-blue-700/, { timeout: 10_000 });
+    await expect(revisedHeader).toHaveClass(/text-gray-600/);
 
-    // Switch back to Version 2 for cleanliness.
+    // Switch back to Version 2 — "Revised submission" becomes active again.
     const v2Button = versionStrip.getByRole("button", {
       name: /version 2.*revised/i,
     });
     await v2Button.click();
     await expect(v2Button).toHaveAttribute("aria-pressed", "true");
+    await expect(revisedHeader).toHaveClass(/text-blue-700/, { timeout: 10_000 });
+    await expect(originalHeader).toHaveClass(/text-gray-600/);
   });
 
   // ── Test 8: Student profile shows skill data after resubmission ─────────────
@@ -331,9 +330,9 @@ test.describe("Journey 7 — Resubmission Loop", () => {
     ).toBeVisible({ timeout: 20_000 });
 
     // Growth indicators (improving / stable / declining) reflect the skill
-    // trend.  With one assignment (original + resubmission), the direction
-    // depends on whether the LLM assigned higher scores on the revision.
-    // We only assert that at least one trend badge is present rather than
+    // trend.  The backend returns "stable" when only one assignment contributes,
+    // so a trend badge is always rendered by StudentProfile regardless of
+    // direction.  We only assert that at least one badge is present rather than
     // asserting a specific direction, which would couple the test to LLM output.
     const trendPatterns = [/improving/i, /stable/i, /declining/i];
     let anyTrendVisible = false;
@@ -343,10 +342,6 @@ test.describe("Journey 7 — Resubmission Loop", () => {
         break;
       }
     }
-    // Trend data requires ≥ 2 locked grades across any combination of
-    // assignments or versions.  The fixture locks both the original and revised
-    // grade, so two data points exist and the trend computation should produce
-    // at least one badge.
     expect(anyTrendVisible).toBe(true);
   });
 });

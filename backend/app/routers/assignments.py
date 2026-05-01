@@ -24,6 +24,7 @@ from redis.asyncio import Redis
 
 from app.db.session import AsyncSession, get_db
 from app.dependencies import get_current_teacher
+from app.exceptions import ValidationError
 from app.models.assignment import Assignment
 from app.models.user import User
 from app.schemas.assignment import AssignmentResponse, PatchAssignmentRequest
@@ -306,6 +307,11 @@ async def patch_assignment_endpoint(
     Returns 422 if the status transition is not allowed.
     """
     fields_set = payload.model_fields_set
+    if "resubmission_enabled" in fields_set and payload.resubmission_enabled is None:
+        raise ValidationError(
+            "resubmission_enabled cannot be null; omit the field to leave it unchanged.",
+            field="resubmission_enabled",
+        )
     assignment = await update_assignment(
         db,
         teacher_id=teacher.id,
