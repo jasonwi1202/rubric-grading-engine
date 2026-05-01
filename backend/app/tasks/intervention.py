@@ -25,11 +25,11 @@ Security invariants:
 Test note — ``asyncio`` import
 -------------------------------
 ``asyncio`` is imported at module level so that tests can patch
-``app.tasks.intervention.asyncio.run``.  This patches the ``run`` attribute
-on the shared ``asyncio`` module object, which also affects the
-``run_task_async()`` helper (defined in ``app.db.session``) because both
-references point to the same module singleton.  This is the same pattern used
-by other task modules.
+``app.tasks.intervention.asyncio.run``.  The ``run_task_async`` helper (from
+``app.db.session``) calls ``asyncio.run()`` to execute async coroutines in a
+synchronous Celery worker context.  Patching the ``run`` attribute on the
+``asyncio`` module object (accessed through this import) intercepts those
+calls in tests.  This is the same pattern used by other task modules.
 """
 
 from __future__ import annotations

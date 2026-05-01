@@ -234,8 +234,7 @@ def _detect_signals(
         if (
             avg_score < _GAP_SCORE_THRESHOLD
             and assignment_count >= _GAP_MIN_ASSIGNMENTS
-            and trend != "improving"
-            and trend != "declining"  # declining already captured above
+            and trend not in ("improving", "declining")
         ):
             signals.append(
                 {

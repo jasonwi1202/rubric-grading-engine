@@ -67,11 +67,6 @@ down_revision: str | None = "032_validate_audit_logs_users_fk"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
-# Setting this to False tells Alembic to run this migration outside the
-# default per-migration transaction so the concurrent index builds succeed.
-transaction_per_migration = False
-
 
 def upgrade() -> None:
     # ------------------------------------------------------------------
