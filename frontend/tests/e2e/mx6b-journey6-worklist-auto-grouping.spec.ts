@@ -13,7 +13,7 @@
  *   4. Teacher removes a student from the group (manual adjustment).
  *   5. Teacher adds the student back to the group (manual adjustment).
  *   6. Teacher navigates to the Dashboard worklist and sees urgency indicators.
- *   7. Teacher snoozes a worklist item — Snoozed badge appears.
+ *   7. Teacher snoozes a worklist item — item disappears from list.
  *   8. Teacher marks a worklist item as done — item disappears.
  *   9. Teacher dismisses a worklist item — item disappears.
  *
@@ -49,16 +49,13 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     fixture: AutoGroupingFixture | null;
     context: BrowserContext | null;
     page: Page | null;
-    /** ID of the first group visible in the Groups tab, set in test 2. */
+    /** ID of the first group visible in the Groups tab, captured in test 2 and used in tests 3–4 to target the same card regardless of render order. */
     firstGroupId: string | null;
-    /** Total active worklist item count observed in test 5, used for boundary checks in tests 6–8. */
-    worklistItemCount: number;
   } = {
     fixture: null,
     context: null,
     page: null,
     firstGroupId: null,
-    worklistItemCount: 0,
   };
 
   test.beforeAll(async ({ browser }) => {
@@ -126,8 +123,10 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
 
     for (let i = 0; i < count; i++) {
       const card = groupCards.nth(i);
-      // The label is rendered as a <p> with class font-semibold.
-      await expect(card.locator("p.font-semibold, p.truncate")).toBeVisible();
+      // The skill label is encoded in the card's aria-label ("Skill group: {label}").
+      // Assert the aria-label carries a non-empty skill name — no CSS class dependency.
+      const ariaLabel = await card.getAttribute("aria-label") ?? "";
+      expect(ariaLabel).toMatch(/Skill group:\s+\S/);
       // Student count badge contains the word "student" or "students".
       await expect(
         card.getByText(/\d+\s+students?/),
@@ -178,7 +177,17 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     const page = state.page;
 
     // The first group card should still be expanded from the previous test.
-    const firstCard = page.locator('[aria-label^="Skill group:"]').first();
+    // Use firstGroupId (captured in test 2) to locate the same card regardless
+    // of render order; fall back to .first() if the ID wasn't captured.
+    const firstCard = state.firstGroupId
+      ? page
+          .locator('[aria-label^="Skill group:"]')
+          .filter({
+            has: page.locator(
+              `[aria-controls="group-members-${state.firstGroupId}"]`,
+            ),
+          })
+      : page.locator('[aria-label^="Skill group:"]').first();
     const memberList = firstCard.locator("ul[aria-label]");
 
     // Get initial member count.
@@ -218,7 +227,16 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     if (!state.page || !state.fixture) throw new Error("State not initialized");
     const page = state.page;
 
-    const firstCard = page.locator('[aria-label^="Skill group:"]').first();
+    // Target the same group card as tests 2 & 3.
+    const firstCard = state.firstGroupId
+      ? page
+          .locator('[aria-label^="Skill group:"]')
+          .filter({
+            has: page.locator(
+              `[aria-controls="group-members-${state.firstGroupId}"]`,
+            ),
+          })
+      : page.locator('[aria-label^="Skill group:"]').first();
     const memberList = firstCard.locator("ul[aria-label]");
 
     const countBefore = await memberList.getByRole("listitem").count();
@@ -296,35 +314,37 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
         card.getByRole("button", { name: /dismiss item/i }),
       ).toBeVisible();
     }
-
-    // Record item count for use in subsequent tests.
-    state.worklistItemCount = itemCount;
   });
 
   // ── Test 6: Snooze a worklist item ─────────────────────────────────────────
 
-  test("Teacher snoozes a worklist item and Snoozed badge appears", async () => {
+  test("Teacher snoozes a worklist item and it disappears", async () => {
     if (!state.page) throw new Error("State not initialized");
     const page = state.page;
 
-    const itemCards = page.locator('[aria-label="Worklist items"] li');
-    const itemCount = await itemCards.count();
-    if (itemCount < 2) {
-      // Need at least 2 items so we have one left after test 7 (mark done).
-      test.skip(true, `Only ${itemCount} worklist item(s) — skipping snooze test`);
+    const itemList = page.locator('[aria-label="Worklist items"]');
+    const itemCards = itemList.locator("li");
+    const countBefore = await itemCards.count();
+
+    if (countBefore === 0) {
+      test.skip(true, "No active worklist items — skipping snooze test");
       return;
     }
 
-    // Snooze the last item so tests 7–8 can use the first item.
-    const lastCard = itemCards.last();
-    const snoozeButton = lastCard.getByRole("button", { name: /snooze item/i });
+    // Snooze the first item.
+    const firstCard = itemCards.first();
+    const snoozeButton = firstCard.getByRole("button", { name: /snooze item/i });
     await expect(snoozeButton).toBeEnabled({ timeout: 5_000 });
     await snoozeButton.click();
 
-    // After snooze, the item should display the "Snoozed" badge.
-    await expect(
-      lastCard.getByText(/Snoozed/i),
-    ).toBeVisible({ timeout: 15_000 });
+    // The backend excludes snoozed items from the worklist response, so the
+    // snoozed item should disappear from the list after the React Query refetch.
+    await expect
+      .poll(
+        async () => await itemCards.count(),
+        { timeout: 20_000, intervals: [500, 1000] },
+      )
+      .toBeLessThan(countBefore);
   });
 
   // ── Test 7: Mark a worklist item as done ───────────────────────────────────

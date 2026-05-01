@@ -1063,13 +1063,23 @@ async function pollForGroups(
   label: string,
   timeoutMs = 90_000,
 ): Promise<void> {
+  const NON_RETRIABLE = new Set([401, 403, 404]);
   const deadline = Date.now() + timeoutMs;
   let lastCount = 0;
+  let first = true;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 3_000));
+    if (!first) {
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+    first = false;
     const res = await fetch(`${API_BASE}/api/v1/classes/${classId}/groups`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (NON_RETRIABLE.has(res.status)) {
+      throw new Error(
+        `${label}: non-retriable status ${res.status} from GET /classes/${classId}/groups`,
+      );
+    }
     if (!res.ok) continue;
     const body = (await res.json()) as {
       data: { groups: Array<unknown> };
@@ -1091,13 +1101,23 @@ async function pollForWorklistItems(
   label: string,
   timeoutMs = 90_000,
 ): Promise<void> {
+  const NON_RETRIABLE = new Set([401, 403, 404]);
   const deadline = Date.now() + timeoutMs;
   let lastCount = 0;
+  let first = true;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 3_000));
+    if (!first) {
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+    first = false;
     const res = await fetch(`${API_BASE}/api/v1/worklist`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (NON_RETRIABLE.has(res.status)) {
+      throw new Error(
+        `${label}: non-retriable status ${res.status} from GET /worklist`,
+      );
+    }
     if (!res.ok) continue;
     const body = (await res.json()) as {
       data: { items: Array<unknown> };
