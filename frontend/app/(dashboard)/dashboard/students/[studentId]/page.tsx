@@ -37,6 +37,7 @@ import type {
   SkillTrend,
   AssignmentHistoryItem,
 } from "@/lib/api/students";
+import { RecommendationPanel } from "@/components/recommendations/RecommendationPanel";
 
 // ---------------------------------------------------------------------------
 // Notes form schema — max_length matches backend PatchStudentRequest
@@ -194,6 +195,14 @@ function HistoryRow({ item }: { item: AssignmentHistoryItem }) {
           {item.assignment_title}
         </Link>
         <p className="mt-0.5 text-xs text-gray-500">{date}</p>
+        {/* Link to the essay review page — shows the ResubmissionPanel when a
+            revision comparison exists for this essay. */}
+        <Link
+          href={`/dashboard/assignments/${item.assignment_id}/review/${item.essay_id}`}
+          className="mt-0.5 inline-block text-xs text-gray-400 underline hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+        >
+          View review for {item.assignment_title}
+        </Link>
       </div>
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold tabular-nums text-gray-900">
@@ -445,6 +454,9 @@ export default function StudentProfilePage() {
               {student?.skill_profile?.assignment_count === 1
                 ? "assignment"
                 : "assignments"}
+              {(student?.skill_profile?.assignment_count ?? 0) > 0 && (
+                <> · Upward skill trends may reflect resubmission progress</>
+              )}
             </p>
           </>
         )}
@@ -501,6 +513,21 @@ export default function StudentProfilePage() {
             </ul>
           </div>
         )}
+      </section>
+
+      {/* ---- Instruction recommendations ---- */}
+      <section aria-labelledby="recommendations-heading" className="mb-8">
+        <h2
+          id="recommendations-heading"
+          className="mb-1 text-base font-semibold text-gray-900"
+        >
+          Instruction Recommendations
+        </h2>
+        <p className="mb-3 text-xs text-gray-500">
+          AI-generated activities and mini-lessons targeting this student&rsquo;s
+          skill gaps. Review, modify, and confirm before assigning.
+        </p>
+        <RecommendationPanel studentId={studentId} />
       </section>
 
       {/* ---- Teacher notes ---- */}

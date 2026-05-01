@@ -826,6 +826,61 @@ async function triggerBatchGradingAndWait(
 }
 
 /**
+ * Trigger grading retry for a single essay and wait until the latest version
+ * has a grade available via GET /essays/{essayId}/grade.
+ */
+async function triggerEssayRetryAndWaitForGrade(
+  token: string,
+  essayId: string,
+  label: string,
+): Promise<void> {
+  const retryRes = await fetch(
+    `${API_BASE}/api/v1/essays/${essayId}/grade/retry`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ strictness: "balanced" }),
+    },
+  );
+  if (!retryRes.ok) {
+    const text = await retryRes.text().catch(() => "");
+    throw new Error(
+      `${label} (retry grading) failed: ${retryRes.status} ${retryRes.statusText} — ${text}`,
+    );
+  }
+
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    const gradeRes = await fetch(
+      `${API_BASE}/api/v1/essays/${essayId}/grade`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (gradeRes.ok) {
+      return;
+    }
+    if (gradeRes.status >= 500) {
+      continue;
+    }
+    // 404 is expected while the latest version is still ungraded.
+    if (gradeRes.status === 404) {
+      continue;
+    }
+    const text = await gradeRes.text().catch(() => "");
+    throw new Error(
+      `${label} (poll latest grade) failed: ${gradeRes.status} ${gradeRes.statusText} — ${text}`,
+    );
+  }
+
+  throw new Error(
+    `${label}: latest essay version was not graded within 120 s`,
+  );
+}
+
+/**
  * Fetch the grade for `essayId` and lock it.  Throws on any HTTP error.
  */
 async function lockGradeForEssay(
@@ -992,6 +1047,475 @@ export async function seedStudentProfileFixture(
     assignment2Id,
     assignment1Title,
     assignment2Title,
+  };
+}
+
+/** Return type of {@link seedAutoGroupingFixture}. */
+export interface AutoGroupingFixture {
+  email: string;
+  password: string;
+  classId: string;
+  student1Id: string;
+  student2Id: string;
+  student3Id: string;
+  assignment1Id: string;
+  assignment2Id: string;
+}
+
+/**
+ * Upload a deliberately brief plain-text essay so the LLM assigns low scores,
+ * making it likely that students fall below the underperformance threshold and
+ * groups / worklist items are generated.
+ *
+ * The assignment is created via seedAssignment which already transitions it to
+ * the 'open' status, so essay uploads are accepted immediately.
+ *
+ * Security:
+ * - No student name in essay text or filename — only the student UUID appears
+ *   in the request body as `student_id`. Filenames become S3 object keys and
+ *   must not carry PII even for synthetic test data.
+ */
+async function seedWeakEssay(
+  token: string,
+  assignmentId: string,
+  studentId: string,
+): Promise<string> {
+  const essayText =
+    "This essay addresses the given topic. " +
+    "Some points are mentioned without elaboration. " +
+    "Evidence is lacking. " +
+    "The argument is underdeveloped.";
+  const blob = new Blob([essayText], { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("files", blob, `essay-${studentId}.txt`);
+  formData.append("student_id", studentId);
+
+  const res = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}/essays`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `seedWeakEssay failed: ${res.status} ${res.statusText} — ${text}`,
+    );
+  }
+  const body = (await res.json()) as { data: Array<{ essay_id: string }> };
+  return body.data[0].essay_id;
+}
+
+/**
+ * Poll GET /classes/{classId}/groups until at least one group appears or the
+ * deadline is exceeded.  Throws on timeout.
+ */
+async function pollForGroups(
+  token: string,
+  classId: string,
+  label: string,
+  timeoutMs = 90_000,
+): Promise<void> {
+  const NON_RETRIABLE = new Set([401, 403, 404]);
+  const deadline = Date.now() + timeoutMs;
+  let lastCount = 0;
+  let lastStatus = 0;
+  let lastBody = "";
+  let first = true;
+  while (Date.now() < deadline) {
+    if (!first) {
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+    first = false;
+    const res = await fetch(`${API_BASE}/api/v1/classes/${classId}/groups`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    lastStatus = res.status;
+    if (NON_RETRIABLE.has(res.status)) {
+      throw new Error(
+        `${label}: non-retriable status ${res.status} from GET /classes/${classId}/groups`,
+      );
+    }
+    if (!res.ok) {
+      lastBody = (await res.text()).slice(0, 200);
+      continue;
+    }
+    const body = (await res.json()) as {
+      data: { groups: Array<unknown> };
+    };
+    lastCount = body.data?.groups?.length ?? 0;
+    if (lastCount > 0) return;
+  }
+  throw new Error(
+    `${label}: no groups appeared within ${timeoutMs}ms` +
+      ` (last count: ${lastCount}, last status: ${lastStatus}` +
+      (lastBody ? `, last body: ${lastBody}` : "") +
+      ")",
+  );
+}
+
+/**
+ * Poll GET /worklist until at least one active worklist item appears or the
+ * deadline is exceeded.  Throws on timeout.
+ */
+async function pollForWorklistItems(
+  token: string,
+  label: string,
+  timeoutMs = 90_000,
+): Promise<void> {
+  const NON_RETRIABLE = new Set([401, 403, 404]);
+  const deadline = Date.now() + timeoutMs;
+  let lastCount = 0;
+  let lastStatus = 0;
+  let lastBody = "";
+  let first = true;
+  while (Date.now() < deadline) {
+    if (!first) {
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+    first = false;
+    const res = await fetch(`${API_BASE}/api/v1/worklist`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    lastStatus = res.status;
+    if (NON_RETRIABLE.has(res.status)) {
+      throw new Error(
+        `${label}: non-retriable status ${res.status} from GET /worklist`,
+      );
+    }
+    if (!res.ok) {
+      lastBody = (await res.text()).slice(0, 200);
+      continue;
+    }
+    const body = (await res.json()) as {
+      data: { items: Array<unknown> };
+    };
+    lastCount = body.data?.items?.length ?? 0;
+    if (lastCount > 0) return;
+  }
+  throw new Error(
+    `${label}: no worklist items appeared within ${timeoutMs}ms` +
+      ` (last count: ${lastCount}, last status: ${lastStatus}` +
+      (lastBody ? `, last body: ${lastBody}` : "") +
+      ")",
+  );
+}
+
+/**
+ * Seed a fixture for Journey 6: three students graded across two assignments so
+ * that:
+ *   - Auto-grouping produces at least one group after the first assignment's
+ *     grades are locked.
+ *   - After the second assignment's grades are locked, groups transition to
+ *     `'persistent'` and the worklist is populated with `persistent_gap` items.
+ *
+ * Weak essay content is used so that LLM scores fall below the underperformance
+ * threshold (0.70 normalised), which ensures auto-grouping forms groups and the
+ * worklist fires the `persistent_gap` trigger.
+ *
+ * Security:
+ * - Synthetic student names only — no real student PII.
+ * - Essay bodies are generic placeholder text — no real essay content.
+ */
+export async function seedAutoGroupingFixture(
+  tag: string,
+): Promise<AutoGroupingFixture> {
+  const creds = await seedTeacher(tag);
+  const token = await loginApi(creds.email, creds.password);
+
+  const ts = Date.now();
+  const classId = await seedClass(token, `J6 Class ${ts}`);
+  const student1Id = await seedStudent(token, classId, "Lambda Writer");
+  const student2Id = await seedStudent(token, classId, "Mu Writer");
+  const student3Id = await seedStudent(token, classId, "Nu Writer");
+
+  // ── Assignment 1 ──────────────────────────────────────────────────────────
+  const rubric1Id = await seedRubric(token, `J6 Rubric A ${ts}`);
+  const assignment1Id = await seedAssignment(
+    token,
+    classId,
+    rubric1Id,
+    `J6 Assignment A ${ts}`,
+  );
+
+  const essay1Id = await seedWeakEssay(token, assignment1Id, student1Id);
+  const essay2Id = await seedWeakEssay(token, assignment1Id, student2Id);
+  const essay3Id = await seedWeakEssay(token, assignment1Id, student3Id);
+
+  await triggerBatchGradingAndWait(
+    token,
+    assignment1Id,
+    "seedAutoGroupingFixture (assignment1)",
+  );
+
+  for (const [essayId, label] of [
+    [essay1Id, "essay1"],
+    [essay2Id, "essay2"],
+    [essay3Id, "essay3"],
+  ] as [string, string][]) {
+    await lockGradeForEssay(
+      token,
+      essayId,
+      `seedAutoGroupingFixture (${label})`,
+    );
+  }
+
+  // Wait for auto-grouping task to compute initial groups.
+  await pollForGroups(
+    token,
+    classId,
+    "seedAutoGroupingFixture (initial groups)",
+  );
+
+  // Small delay so the second assignment's locked_at timestamps are clearly
+  // later than the first, which makes the history order deterministic.
+  await new Promise((r) => setTimeout(r, 2_000));
+
+  // ── Assignment 2 ──────────────────────────────────────────────────────────
+  const rubric2Id = await seedRubric(token, `J6 Rubric B ${ts}`);
+  const assignment2Id = await seedAssignment(
+    token,
+    classId,
+    rubric2Id,
+    `J6 Assignment B ${ts}`,
+  );
+
+  const essay4Id = await seedWeakEssay(token, assignment2Id, student1Id);
+  const essay5Id = await seedWeakEssay(token, assignment2Id, student2Id);
+  const essay6Id = await seedWeakEssay(token, assignment2Id, student3Id);
+
+  await triggerBatchGradingAndWait(
+    token,
+    assignment2Id,
+    "seedAutoGroupingFixture (assignment2)",
+  );
+
+  for (const [essayId, label] of [
+    [essay4Id, "essay4"],
+    [essay5Id, "essay5"],
+    [essay6Id, "essay6"],
+  ] as [string, string][]) {
+    await lockGradeForEssay(
+      token,
+      essayId,
+      `seedAutoGroupingFixture (${label})`,
+    );
+  }
+
+  // Wait for auto-grouping to recompute (groups should become 'persistent')
+  // and for the worklist generation task to produce persistent_gap items.
+  await pollForWorklistItems(
+    token,
+    "seedAutoGroupingFixture (worklist)",
+  );
+
+  return {
+    email: creds.email,
+    password: creds.password,
+    classId,
+    student1Id,
+    student2Id,
+    student3Id,
+    assignment1Id,
+    assignment2Id,
+  };
+}
+
+/** Return type of {@link seedResubmissionFixture}. */
+export interface ResubmissionFixture {
+  email: string;
+  password: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  assignmentId: string;
+  essayId: string;
+  /**
+   * Whether the revision comparison has non-null `feedback_addressed` data.
+   * Determined by querying GET /essays/{essayId}/revision-comparison after
+   * both grades are locked.  Used by Test 5 to decide whether to assert the
+   * feedback-addressed section is visible or absent.
+   */
+  hasFeedbackAddressed: boolean;
+}
+
+/**
+ * Seed a complete resubmission-loop fixture for Journey 7 E2E tests.
+ *
+ * Flow:
+ *   1. Creates a fresh verified teacher account, class, student, rubric, and
+ *      assignment with resubmission enabled.
+ *   2. Uploads an original essay and grades it (batch grading).
+ *   3. Locks the original grade.
+ *   4. Submits a resubmission via POST /essays/{essayId}/resubmit.
+ *   5. Triggers batch grading again and polls until the resubmission is graded.
+ *   6. Locks the revision grade.
+ *   7. Polls until the student skill profile reflects the locked grade
+ *      (assignment_count >= 1).
+ *
+ * The original and revised essay texts are substantively different so the
+ * low-effort heuristic does not flag the revision.
+ *
+ * Security:
+ * - Synthetic student name only — no real student PII.
+ * - Essay bodies are generic placeholder text — no real essay content.
+ */
+export async function seedResubmissionFixture(
+  tag: string,
+): Promise<ResubmissionFixture> {
+  const creds = await seedTeacher(tag);
+  const token = await loginApi(creds.email, creds.password);
+
+  const ts = Date.now();
+  const studentName = "Xi Writer";
+  const classId = await seedClass(token, `J7 Class ${ts}`);
+  const studentId = await seedStudent(token, classId, studentName);
+  const rubricId = await seedRubric(token, `J7 Rubric ${ts}`);
+  const assignmentId = await seedAssignment(
+    token,
+    classId,
+    rubricId,
+    `J7 Assignment ${ts}`,
+  );
+
+  // Enable resubmission on the assignment.
+  const enableRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ resubmission_enabled: true }),
+    },
+  );
+  if (!enableRes.ok) {
+    const text = await enableRes.text().catch(() => "");
+    throw new Error(
+      `seedResubmissionFixture (enable resubmission) failed: ${enableRes.status} ${enableRes.statusText} — ${text}`,
+    );
+  }
+
+  // Upload original essay pre-assigned to the student.
+  const essayId = await seedEssay(token, assignmentId, studentId, studentName);
+
+  // Grade the original essay.
+  await triggerBatchGradingAndWait(
+    token,
+    assignmentId,
+    "seedResubmissionFixture (original grading)",
+  );
+
+  // Lock the original grade.
+  await lockGradeForEssay(
+    token,
+    essayId,
+    "seedResubmissionFixture (lock original grade)",
+  );
+
+  // Submit the resubmission.  The revised text is substantively different from
+  // the original to avoid triggering the low-effort heuristic.
+  const revisedText =
+    "This revised essay substantially strengthens the argument presented earlier. " +
+    "New evidence has been incorporated throughout each body paragraph to address " +
+    "the weaknesses identified in the original feedback. " +
+    "The thesis has been sharpened to reflect a more nuanced position. " +
+    "Each claim is now backed by a specific example drawn from the source material. " +
+    "The organisation has been restructured so that each paragraph advances a " +
+    "distinct aspect of the argument in a logical sequence. " +
+    "The conclusion synthesises the evidence and restates the refined thesis " +
+    "with greater precision, leaving the reader with a clear and convincing takeaway.";
+  const revisedBlob = new Blob([revisedText], { type: "text/plain" });
+  const resubmitForm = new FormData();
+  resubmitForm.append("file", revisedBlob, `resubmission-${studentId}.txt`);
+
+  const resubmitRes = await fetch(
+    `${API_BASE}/api/v1/essays/${essayId}/resubmit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: resubmitForm,
+    },
+  );
+  if (!resubmitRes.ok) {
+    const text = await resubmitRes.text().catch(() => "");
+    throw new Error(
+      `seedResubmissionFixture (resubmit) failed: ${resubmitRes.status} ${resubmitRes.statusText} — ${text}`,
+    );
+  }
+
+  // Grade the resubmission using essay-level retry. The resubmit service sets
+  // the essay back to queued, and retry endpoint does not require assignment
+  // status transitions.
+  await triggerEssayRetryAndWaitForGrade(
+    token,
+    essayId,
+    "seedResubmissionFixture (resubmission grading)",
+  );
+
+  // Lock the revision grade (triggers skill profile update).
+  await lockGradeForEssay(
+    token,
+    essayId,
+    "seedResubmissionFixture (lock revision grade)",
+  );
+
+  // Poll until the student skill profile reflects at least one locked grade.
+  {
+    const deadline = Date.now() + 90_000;
+    let profileReady = false;
+    let lastCount = 0;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      const profileRes = await fetch(
+        `${API_BASE}/api/v1/students/${studentId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!profileRes.ok) continue;
+      const profileBody = (await profileRes.json()) as {
+        data: { skill_profile: { assignment_count: number } | null };
+      };
+      const count = profileBody.data?.skill_profile?.assignment_count ?? 0;
+      lastCount = count;
+      if (count >= 1) {
+        profileReady = true;
+        break;
+      }
+    }
+    if (!profileReady) {
+      throw new Error(
+        `seedResubmissionFixture: skill profile did not reach assignment_count >= 1 ` +
+          `within 90 s (last count: ${lastCount})`,
+      );
+    }
+  }
+
+  return {
+    email: creds.email,
+    password: creds.password,
+    studentId,
+    studentName,
+    classId,
+    assignmentId,
+    essayId,
+    hasFeedbackAddressed: await (async () => {
+      try {
+        const compRes = await fetch(
+          `${API_BASE}/api/v1/essays/${essayId}/revision-comparison`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!compRes.ok) return false;
+        const body = (await compRes.json()) as {
+          data: { feedback_addressed: unknown[] | null };
+        };
+        return Array.isArray(body.data?.feedback_addressed);
+      } catch {
+        return false;
+      }
+    })(),
   };
 }
 

@@ -9,11 +9,14 @@ Endpoints (``assignments_router``, prefix ``/assignments``):
   POST  /assignments/{assignmentId}/essays/compose — create essay for in-browser composition (M5-09)
 
 Endpoints (``essay_router``, prefix ``/essays``):
-  PATCH /essays/{essayId}                  — manually assign a student to an essay
-  POST  /essays/{essayId}/grade/retry      — re-enqueue grading for a failed essay
-  POST  /essays/{essayId}/snapshots        — save a writing-process snapshot (M5-09)
-  GET   /essays/{essayId}/snapshots        — retrieve snapshots for editor recovery (M5-09)
-  GET   /essays/{essayId}/process-signals  — composition timeline signals (M5-10)
+  PATCH /essays/{essayId}                        — manually assign a student to an essay
+  POST  /essays/{essayId}/grade/retry            — re-enqueue grading for a failed essay
+  POST  /essays/{essayId}/resubmit              — submit a new essay version (M6-10)
+  GET   /essays/{essayId}/versions              — list all submitted versions (M6-10)
+  GET   /essays/{essayId}/revision-comparison   — get revision comparison for a resubmission (M6-11)
+  POST  /essays/{essayId}/snapshots             — save a writing-process snapshot (M5-09)
+  GET   /essays/{essayId}/snapshots             — retrieve snapshots for editor recovery (M5-09)
+  GET   /essays/{essayId}/process-signals       — composition timeline signals (M5-10)
 """
 
 from __future__ import annotations
@@ -38,6 +41,9 @@ from app.schemas.essay import (
     ComposeEssayRequest,
     EssayListItemResponse,
     EssayUploadItemResponse,
+    EssayVersionListResponse,
+    EssayVersionResponse,
+    RevisionComparisonResponse,
     WriteSnapshotRequest,
 )
 from app.services.batch_grading import retry_essay_grading
@@ -48,8 +54,10 @@ from app.services.essay import (
     get_writing_snapshots,
     ingest_essay,
     list_essays_for_assignment,
+    resubmit_essay,
     save_writing_snapshot,
 )
+from app.services.resubmission import get_revision_comparison, list_essay_versions
 from app.tasks.embedding import compute_essay_embedding as _compute_embedding_task
 
 logger = logging.getLogger(__name__)
@@ -307,6 +315,75 @@ async def retry_essay_grading_endpoint(
 
 
 # ---------------------------------------------------------------------------
+# POST /essays/{essayId}/resubmit  (M6-10)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.post(
+    "/{essay_id}/resubmit",
+    status_code=201,
+    summary="Submit a new essay version (resubmission)",
+)
+async def resubmit_essay_endpoint(
+    essay_id: uuid.UUID,
+    file: UploadFile = File(..., description="Revised essay file (PDF, DOCX, or TXT)"),
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Create a new versioned submission for an existing essay.
+
+    Validates resubmission eligibility against the assignment's
+    ``resubmission_enabled`` flag and ``resubmission_limit``, then stores the
+    revised file and creates a new :class:`EssayVersion` record.
+
+    Response body: ``{"data": ResubmitEssayResponse}``
+
+    Returns 404 if the essay does not exist or is not visible to the
+    authenticated teacher.
+    Returns 409 if resubmission is disabled or the limit has been reached.
+    Returns 422 if the file MIME type is not allowed or the file is too large.
+    """
+    max_bytes = settings.max_essay_file_size_mb * 1024 * 1024
+    raw = await file.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise FileTooLargeError(
+            f"File exceeds the maximum allowed size of {settings.max_essay_file_size_mb} MB.",
+            field="file",
+        )
+
+    filename = file.filename or f"resubmission_{uuid.uuid4()}"
+
+    result = await resubmit_essay(
+        db=db,
+        teacher_id=teacher.id,
+        essay_id=essay_id,
+        filename=filename,
+        data=raw,
+    )
+
+    # Enqueue embedding task for the new version.  Fire-and-forget.
+    try:
+        _compute_embedding_task.delay(
+            str(result.essay_version_id),
+            str(result.assignment_id),
+            str(teacher.id),
+        )
+    except Exception as embed_exc:
+        logger.warning(
+            "Failed to enqueue embedding task for resubmission — version is still persisted",
+            extra={
+                "essay_version_id": str(result.essay_version_id),
+                "error_type": type(embed_exc).__name__,
+            },
+        )
+
+    return JSONResponse(
+        status_code=201,
+        content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
 # POST /assignments/{assignmentId}/essays/compose  (M5-09)
 # ---------------------------------------------------------------------------
 
@@ -496,4 +573,90 @@ async def get_process_signals_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/versions  (M6-10)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.get(
+    "/{essay_id}/versions",
+    summary="List all submitted versions of an essay (M6-10)",
+)
+async def list_essay_versions_endpoint(
+    essay_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return all submitted versions of an essay in ascending version_number order.
+
+    Each version represents one submission attempt (original + any resubmissions).
+    The list is sorted by ``version_number`` ascending so the original submission
+    is always first.
+
+    Response body: ``{"data": {"versions": [EssayVersionResponse, ...]}}``
+
+    Returns 404 if the essay does not exist or belongs to a different teacher.
+    Cross-tenant essay IDs are invisible via FORCE-RLS so they return 404,
+    indistinguishable from nonexistent IDs.
+    """
+    versions = await list_essay_versions(
+        db=db,
+        essay_id=essay_id,
+        teacher_id=teacher.id,
+    )
+    response = EssayVersionListResponse(
+        versions=[EssayVersionResponse.model_validate(v) for v in versions],
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": response.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/revision-comparison  (M6-11)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.get(
+    "/{essay_id}/revision-comparison",
+    summary="Get the revision comparison for a resubmitted essay (M6-11)",
+)
+async def get_revision_comparison_endpoint(
+    essay_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return the most recent revision comparison for a resubmitted essay.
+
+    The revision comparison is computed automatically when a resubmission is
+    graded.  It includes:
+
+    - ``total_score_delta``: revised total score minus base total score.
+    - ``criterion_deltas``: per-criterion score deltas.
+    - ``is_low_effort``: ``true`` when heuristics flag a surface-level revision.
+    - ``low_effort_reasons``: human-readable explanations for the flag.
+    - ``feedback_addressed``: per-criterion assessment of whether the student's
+      revision addressed the prior feedback (populated by LLM analysis, or
+      ``null`` when the LLM step was skipped or failed).
+
+    Response body: ``{"data": RevisionComparisonResponse}``
+
+    Returns 404 if the essay does not exist, belongs to a different teacher
+    (FORCE-RLS makes cross-tenant IDs invisible, so they are indistinguishable
+    from missing), or has no revision comparison yet (not yet resubmitted and
+    re-graded).
+    """
+    comparison = await get_revision_comparison(
+        db=db,
+        essay_id=essay_id,
+        teacher_id=teacher.id,
+    )
+    response = RevisionComparisonResponse.model_validate(comparison)
+    return JSONResponse(
+        status_code=200,
+        content={"data": response.model_dump(mode="json")},
     )

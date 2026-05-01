@@ -353,8 +353,7 @@ async def refresh_token_endpoint(
     The refresh token is rotated on every use (old token is invalidated, new
     one is set in a fresh cookie).
 
-    Returns 401 if the refresh cookie is absent, and 422 if the token is
-    invalid or expired.
+    Returns 401 if the refresh cookie is absent, invalid, or expired.
     """
     client_ip = _get_client_ip(request)
     incoming_refresh = request.cookies.get(_REFRESH_TOKEN_COOKIE)

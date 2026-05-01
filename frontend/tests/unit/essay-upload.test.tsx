@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -405,7 +405,9 @@ describe("EssayUploadDialog — successful upload", () => {
 
     // Advance past the progress ticker intervals (10 × 300ms = 3 s) and
     // the 400ms closing delay.
-    await vi.runAllTimersAsync();
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
 
     await waitFor(() => {
       expect(mockUploadEssays).toHaveBeenCalledWith(

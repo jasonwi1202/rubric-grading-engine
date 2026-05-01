@@ -1,7 +1,7 @@
 # Feature: Teacher Worklist
 
 **Phase:** 4 — Prioritization
-**Status:** Planned
+**Status:** Implemented (M6-06)
 
 ---
 

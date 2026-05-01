@@ -3,7 +3,7 @@
 Import all models here so that Alembic's autogenerate can detect every
 mapped table from a single import point::
 
-    from app.models import base  # noqa: F401 ΓÇö populates Base.metadata
+    from app.models import base  # noqa: F401 — populates Base.metadata
 
 and so application code can import individual models cleanly::
 
@@ -22,27 +22,38 @@ and so application code can import individual models cleanly::
     from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
     from app.models.media_comment import MediaComment
     from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
+    from app.models.revision_comparison import RevisionComparison
+    from app.models.student_group import StudentGroup
     from app.models.student_skill_profile import StudentSkillProfile
+    from app.models.instruction_recommendation import InstructionRecommendation
 """
 
-from app.models import assignment as assignment  # noqa: F401 ΓÇö registers mapped class
-from app.models import audit_log as audit_log  # noqa: F401 ΓÇö registers mapped class
-from app.models import class_ as class_  # noqa: F401 ΓÇö registers mapped class
-from app.models import class_enrollment as class_enrollment  # noqa: F401 ΓÇö registers mapped class
-from app.models import comment_bank as comment_bank  # noqa: F401 ΓÇö registers mapped class
-from app.models import contact as contact  # noqa: F401 ΓÇö registers mapped class
-from app.models import dpa_request as dpa_request  # noqa: F401 ΓÇö registers mapped class
-from app.models import essay as essay  # noqa: F401 ΓÇö registers mapped class
-from app.models import grade as grade  # noqa: F401 ΓÇö registers mapped class
-from app.models import integrity_report as integrity_report  # noqa: F401 ΓÇö registers mapped class
+from app.models import assignment as assignment  # noqa: F401 — registers mapped class
+from app.models import audit_log as audit_log  # noqa: F401 — registers mapped class
+from app.models import class_ as class_  # noqa: F401 — registers mapped class
+from app.models import class_enrollment as class_enrollment  # noqa: F401 — registers mapped class
+from app.models import comment_bank as comment_bank  # noqa: F401 — registers mapped class
+from app.models import contact as contact  # noqa: F401 — registers mapped class
+from app.models import dpa_request as dpa_request  # noqa: F401 — registers mapped class
+from app.models import essay as essay  # noqa: F401 — registers mapped class
+from app.models import grade as grade  # noqa: F401 — registers mapped class
+from app.models import (
+    instruction_recommendation as instruction_recommendation,  # noqa: F401 — registers mapped class
+)
+from app.models import integrity_report as integrity_report  # noqa: F401 — registers mapped class
 from app.models import media_comment as media_comment  # noqa: F401 — registers mapped class
 from app.models import regrade_request as regrade_request  # noqa: F401 — registers mapped class
-from app.models import rubric as rubric  # noqa: F401 ΓÇö registers mapped class
-from app.models import student as student  # noqa: F401 ΓÇö registers mapped class
+from app.models import (
+    revision_comparison as revision_comparison,  # noqa: F401 — registers mapped class
+)
+from app.models import rubric as rubric  # noqa: F401 — registers mapped class
+from app.models import student as student  # noqa: F401 — registers mapped class
+from app.models import student_group as student_group  # noqa: F401 — registers mapped class
 from app.models import (
     student_skill_profile as student_skill_profile,  # noqa: F401 — registers mapped class
 )
-from app.models import user as user  # noqa: F401 ΓÇö registers mapped class
+from app.models import user as user  # noqa: F401 — registers mapped class
+from app.models import worklist as worklist  # noqa: F401 — registers mapped class
 
 __all__ = [
     "assignment",
@@ -54,11 +65,15 @@ __all__ = [
     "dpa_request",
     "essay",
     "grade",
+    "instruction_recommendation",
     "integrity_report",
     "media_comment",
     "regrade_request",
+    "revision_comparison",
     "rubric",
     "student",
+    "student_group",
     "student_skill_profile",
     "user",
+    "worklist",
 ]

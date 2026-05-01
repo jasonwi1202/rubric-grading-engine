@@ -35,6 +35,12 @@ class UnauthorizedError(RubricGradingError):
     code = "UNAUTHORIZED"
 
 
+class RefreshTokenInvalidError(UnauthorizedError):
+    """Refresh token is missing, expired, invalid, or already consumed."""
+
+    code = "REFRESH_TOKEN_INVALID"
+
+
 class ForbiddenError(RubricGradingError):
     """Authenticated teacher does not have access to this resource.
 
@@ -141,3 +147,20 @@ class RegradeRequestLimitReachedError(ConflictError):
     """Per-grade regrade request limit has been reached."""
 
     code = "REGRADE_REQUEST_LIMIT_REACHED"
+
+
+# ---------------------------------------------------------------------------
+# Resubmission ConflictError subclasses
+# ---------------------------------------------------------------------------
+
+
+class ResubmissionDisabledError(ConflictError):
+    """Resubmission is not enabled for this assignment."""
+
+    code = "RESUBMISSION_DISABLED"
+
+
+class ResubmissionLimitReachedError(ConflictError):
+    """Per-assignment resubmission limit has been reached."""
+
+    code = "RESUBMISSION_LIMIT_REACHED"

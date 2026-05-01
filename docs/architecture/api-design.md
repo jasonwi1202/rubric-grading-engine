@@ -49,6 +49,8 @@ All list endpoints accept `?page=1&page_size=25`. Default page size: 25. Max: 10
 ### Authentication
 All endpoints require a valid JWT Bearer token in the `Authorization` header unless explicitly documented as public. Unauthenticated requests return `401`. Requests for resources the authenticated teacher does not own return `403` (not `404` — do not leak existence).
 
+**Exception — FORCE RLS anti-enumeration endpoints:** Endpoints whose service layer uses a single `WHERE id = ? AND teacher_id = ?` query (matching the worklist `_load_worklist_item` pattern) cannot distinguish a cross-tenant ID from a nonexistent ID at the DB level, because FORCE RLS filters the row out before the application sees it. These endpoints return `404` for both missing and cross-tenant IDs. The endpoint description will explicitly note this behavior. Example: `POST /recommendations/{recommendationId}/assign`.
+
 **Public endpoints (no JWT required):**
 - `POST /auth/signup` — create a new teacher account
 - `GET /auth/verify-email` — verify email address via HMAC token
@@ -174,6 +176,8 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 | PATCH | `/classes/{classId}` | Update class name, subject, grade level |
 | POST | `/classes/{classId}/archive` | Archive the class (soft) |
 | GET | `/classes/{classId}/insights` | Class-level skill averages, score distributions, and common issues |
+| GET | `/classes/{classId}/groups` | Current auto-generated skill-gap student groups for a class |
+| PATCH | `/classes/{classId}/groups/{groupId}` | Manually adjust the student membership of a skill-gap group |
 
 **GET /classes query params:** `?academic_year=2025-26&is_archived=false`
 
@@ -217,6 +221,89 @@ This endpoint is consumed by the dashboard trial-expiry banner.
 - Only **locked** grades contribute; unlocked grades are excluded.
 
 Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
+
+**GET /classes/{classId}/groups** (requires JWT)
+
+Returns the current auto-generated skill-gap student groups for the class, computed by the auto-grouping Celery task each time a grade is locked.
+
+```json
+{
+  "data": {
+    "class_id": "uuid",
+    "groups": [
+      {
+        "id": "uuid",
+        "skill_key": "evidence",
+        "label": "Evidence",
+        "stability": "persistent",
+        "student_count": 4,
+        "students": [
+          { "id": "uuid", "full_name": "Student Name", "external_id": null }
+        ],
+        "computed_at": "2026-04-29T18:00:00Z"
+      },
+      {
+        "id": "uuid",
+        "skill_key": "thesis",
+        "label": "Thesis",
+        "stability": "exited",
+        "student_count": 0,
+        "students": [],
+        "computed_at": "2026-04-29T18:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+- **`groups`** — ordered: active groups (`new`/`persistent`) first sorted by `label`; exited groups last sorted by `label`. Empty list when no groups have been computed yet.
+- **`stability`** — lifecycle tag for each group:
+  - `new` — first time this skill gap has appeared for the class.
+  - `persistent` — the group existed in the previous computation run.
+  - `exited` — previously existed but no longer meets the minimum group-size threshold; `students` is always empty for exited groups.
+- **`students`** — resolved student summaries (name + optional external ID); empty for `exited` groups.
+- **`computed_at`** — ISO-8601 timestamp of the computation run that produced this group.
+
+Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class does not exist).
+
+---
+
+**PATCH /classes/{classId}/groups/{groupId}** (requires JWT)
+
+Manually replaces the student membership of a skill-gap group. The supplied `student_ids` list becomes the new membership in full. Duplicate student IDs are removed while preserving the submitted order of the resulting membership list. The returned `students` array is sorted by `full_name` for deterministic UI ordering and therefore does not necessarily match the submitted order. An empty list transitions the group to `stability='exited'`.
+
+**Request body:**
+```json
+{
+  "student_ids": ["uuid", "uuid"]
+}
+```
+
+**Response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "skill_key": "evidence",
+    "label": "Evidence",
+    "student_count": 2,
+    "students": [
+      { "id": "uuid", "full_name": "Student Name", "external_id": null }
+    ],
+    "stability": "persistent",
+    "computed_at": "2026-01-01T00:00:00Z"
+  }
+}
+```
+
+Stability transitions on update:
+- Empty list → `exited`
+- Previously `exited` + non-empty list → `persistent`
+- Otherwise, the existing stability value is preserved.
+
+Note: This endpoint adjusts only the group record; it does not modify the underlying `StudentSkillProfile` data.
+
+Errors: `403 FORBIDDEN` (class belongs to another teacher), `404 NOT_FOUND` (class or group does not exist), `422 UNPROCESSABLE_ENTITY` (invalid request body).
 
 ---
 
@@ -409,7 +496,7 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
 | GET | `/classes/{classId}/assignments` | List assignments for a class |
 | POST | `/classes/{classId}/assignments` | Create assignment |
 | GET | `/assignments/{assignmentId}` | Get assignment detail + submission status |
-| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, status, or feedback tone |
+| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, status, feedback tone, or resubmission setting |
 | POST | `/assignments/{assignmentId}/grade` | Trigger grading for all queued essays |
 | GET | `/assignments/{assignmentId}/grading-status` | Batch grading progress (polled by frontend) |
 | POST | `/assignments/{assignmentId}/export` | Enqueue export job |
@@ -455,7 +542,8 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
   "prompt": "Updated prompt.",
   "due_date": "2026-05-15",
   "status": "open",
-  "feedback_tone": "encouraging"
+  "feedback_tone": "encouraging",
+  "resubmission_enabled": true
 }
 ```
 
@@ -821,6 +909,74 @@ Only locked grades are included. Returns 404 if the assignment does not exist, 4
 ```
 
 The pre-signed URL is valid for 15 minutes. Returns 409 if the export is not yet complete, 404 if not found, 403 if cross-teacher access.
+
+---
+
+### Instruction Recommendations
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/students/{studentId}/recommendations` | Generate AI instruction recommendations from a student's skill profile |
+| GET | `/students/{studentId}/recommendations` | List persisted recommendation sets for a student (newest-first) |
+| POST | `/classes/{classId}/groups/{groupId}/recommendations` | Generate AI recommendations targeting a class skill-gap group |
+| POST | `/recommendations/{recommendationId}/assign` | Teacher-confirmed assignment of an instruction recommendation (human-in-the-loop) |
+
+**POST /students/{studentId}/recommendations body:**
+```json
+{
+  "grade_level": "Grade 8",
+  "duration_minutes": 20,
+  "skill_key": "evidence",
+  "worklist_item_id": "uuid"
+}
+```
+
+`skill_key` and `worklist_item_id` are optional.  `duration_minutes` must be between 5 and 120.
+
+**POST /students/{studentId}/recommendations response (201):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "teacher_id": "uuid",
+    "student_id": "uuid",
+    "group_id": null,
+    "worklist_item_id": null,
+    "skill_key": "evidence",
+    "grade_level": "Grade 8",
+    "prompt_version": "instruction-v1",
+    "recommendations": [
+      {
+        "skill_dimension": "evidence",
+        "title": "Evidence Workshop",
+        "description": "Practice integrating and citing evidence.",
+        "estimated_minutes": 20,
+        "strategy_type": "guided_practice"
+      }
+    ],
+    "evidence_summary": "Skill gap in 'evidence': average score 40%, trend stable.",
+    "status": "pending_review",
+    "created_at": "2026-04-30T00:00:00Z"
+  }
+}
+```
+
+Returns 404 if the student does not exist, 403 if it belongs to a different teacher, 422 if the student has no skill profile data or the request body is invalid, 503 if the LLM is unavailable.
+
+**POST /classes/{classId}/groups/{groupId}/recommendations** — identical body and response shape.  Returns 404 if the group or class does not exist, 403 if cross-teacher access.
+
+**POST /recommendations/{recommendationId}/assign response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "accepted",
+    ...
+  }
+}
+```
+
+Transitions the recommendation from `pending_review` → `accepted`.  Idempotent when already `accepted`.  Returns 404 if the recommendation does not exist or belongs to a different teacher (indistinguishable under FORCE RLS), 409 if it is in `dismissed` state.
 
 ---
 

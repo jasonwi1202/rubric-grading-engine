@@ -234,4 +234,10 @@ def run_task_async[T](coro: Coroutine[object, object, T]) -> T:
     Returns:
         The return value of the coroutine.
     """
-    return asyncio.run(coro)
+    try:
+        return asyncio.run(coro)
+    finally:
+        # Some unit tests patch asyncio.run and short-circuit execution,
+        # leaving the coroutine un-awaited. Always close to prevent
+        # RuntimeWarning: coroutine was never awaited.
+        coro.close()

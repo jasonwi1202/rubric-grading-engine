@@ -4,9 +4,11 @@ All endpoints require a valid JWT (``get_current_teacher`` dependency).
 Student PII (names) is never logged — only entity IDs appear in log output.
 
 Endpoints:
-  GET   /students/{studentId}          — get student detail with embedded skill profile
-  GET   /students/{studentId}/history  — get all locked graded assignments (newest-first)
-  PATCH /students/{studentId}          — update student name, external ID, or teacher notes
+  GET   /students/{studentId}                    — get student detail with embedded skill profile
+  GET   /students/{studentId}/history            — get all locked graded assignments (newest-first)
+  PATCH /students/{studentId}                    — update student name, external ID, or teacher notes
+  POST  /students/{studentId}/recommendations    — generate instruction recommendations from profile
+  GET   /students/{studentId}/recommendations    — list persisted recommendation sets
 """
 
 from __future__ import annotations
@@ -21,12 +23,20 @@ from app.dependencies import get_current_teacher
 from app.models.student import Student
 from app.models.student_skill_profile import StudentSkillProfile
 from app.models.user import User
+from app.schemas.instruction_recommendation import (
+    GenerateStudentRecommendationRequest,
+    recommendation_response_from_orm,
+)
 from app.schemas.student import (
     AssignmentHistoryItemResponse,
     PatchStudentRequest,
     SkillProfileResponse,
     StudentResponse,
     StudentWithProfileResponse,
+)
+from app.services.instruction_recommendation import (
+    generate_student_recommendations,
+    list_student_recommendations,
 )
 from app.services.student import (
     get_student_history,
@@ -168,4 +178,79 @@ async def patch_student_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": _student_response(student).model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /students/{studentId}/recommendations
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{student_id}/recommendations",
+    status_code=201,
+    summary="Generate instruction recommendations from a student's skill profile",
+)
+async def generate_student_recommendations_endpoint(
+    student_id: uuid.UUID,
+    payload: GenerateStudentRecommendationRequest,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Generate AI-powered instruction recommendations for a student's skill gaps.
+
+    Reads the student's skill profile, calls the LLM with aggregate skill data
+    only (no essay content), validates the response, and persists the result.
+
+    The teacher can optionally specify a single ``skill_key`` to target one
+    dimension, or omit it to address all detected gaps.  Setting
+    ``worklist_item_id`` links the generated recommendations to the worklist
+    item that prompted the action.
+
+    Returns 201 with the persisted recommendation set.
+    Returns 404 if the student or their skill profile does not exist.
+    Returns 403 if the student belongs to a different teacher.
+    Returns 422 if the student has no skill profile data yet.
+    Returns 503 if the LLM service is temporarily unavailable.
+    """
+    rec = await generate_student_recommendations(
+        db,
+        teacher.id,
+        student_id,
+        grade_level=payload.grade_level,
+        duration_minutes=payload.duration_minutes,
+        skill_key=payload.skill_key,
+        worklist_item_id=payload.worklist_item_id,
+    )
+    return JSONResponse(
+        status_code=201,
+        content={"data": recommendation_response_from_orm(rec).model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /students/{studentId}/recommendations
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{student_id}/recommendations",
+    summary="List persisted instruction recommendation sets for a student",
+)
+async def list_student_recommendations_endpoint(
+    student_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return all persisted instruction recommendation sets for a student, newest-first.
+
+    Returns 404 if the student does not exist.
+    Returns 403 if the student belongs to a different teacher.
+    """
+    recs = await list_student_recommendations(db, teacher.id, student_id)
+    return JSONResponse(
+        status_code=200,
+        content={
+            "data": [recommendation_response_from_orm(r).model_dump(mode="json") for r in recs]
+        },
     )

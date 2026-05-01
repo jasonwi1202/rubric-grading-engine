@@ -470,6 +470,40 @@ async def lock_grade(
                 },
             )
 
+        # Enqueue auto-grouping asynchronously.  Non-fatal — a broker outage
+        # must not prevent the grade lock response from returning.
+        try:
+            from app.tasks.auto_grouping import (  # noqa: PLC0415
+                compute_class_groups,
+            )
+
+            compute_class_groups.delay(str(grade_id), str(teacher_id))
+        except Exception as task_exc:
+            logger.warning(
+                "Failed to enqueue auto-grouping task after grade lock",
+                extra={
+                    "grade_id": str(grade_id),
+                    "error_type": type(task_exc).__name__,
+                },
+            )
+
+        # Enqueue worklist refresh asynchronously.  Non-fatal — a broker outage
+        # must not prevent the grade lock response from returning.
+        try:
+            from app.tasks.worklist import (  # noqa: PLC0415
+                refresh_teacher_worklist,
+            )
+
+            refresh_teacher_worklist.delay(str(grade_id), str(teacher_id))
+        except Exception as task_exc:
+            logger.warning(
+                "Failed to enqueue worklist refresh task after grade lock",
+                extra={
+                    "grade_id": str(grade_id),
+                    "error_type": type(task_exc).__name__,
+                },
+            )
+
     criterion_scores = await _load_criterion_scores(db, grade.id)
     return _build_grade_response(grade, criterion_scores)
 

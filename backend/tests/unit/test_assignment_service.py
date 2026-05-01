@@ -505,6 +505,49 @@ class TestUpdateAssignment:
                 status=None,
             )
 
+    @pytest.mark.asyncio
+    async def test_resubmission_enabled_set_to_true(self) -> None:
+        teacher_id = _make_teacher_id()
+        assignment = _make_assignment_orm()
+        assignment.resubmission_enabled = False
+        db = self._make_db_with_assignment(teacher_id, assignment)
+
+        result = await update_assignment(
+            db,
+            teacher_id=teacher_id,
+            assignment_id=assignment.id,
+            title=None,
+            prompt=None,
+            update_prompt=False,
+            due_date=None,
+            update_due_date=False,
+            status=None,
+            resubmission_enabled=True,
+        )
+        assert result.resubmission_enabled is True
+
+    @pytest.mark.asyncio
+    async def test_resubmission_enabled_none_leaves_value_unchanged(self) -> None:
+        teacher_id = _make_teacher_id()
+        assignment = _make_assignment_orm()
+        assignment.resubmission_enabled = False
+        db = self._make_db_with_assignment(teacher_id, assignment)
+
+        result = await update_assignment(
+            db,
+            teacher_id=teacher_id,
+            assignment_id=assignment.id,
+            title=None,
+            prompt=None,
+            update_prompt=False,
+            due_date=None,
+            update_due_date=False,
+            status=None,
+            resubmission_enabled=None,  # passed as None — service treats this as "not provided", no-op
+        )
+        # Original value should be preserved since None signals "not provided" to the service.
+        assert result.resubmission_enabled is False
+
 
 # ---------------------------------------------------------------------------
 # list_assignments
