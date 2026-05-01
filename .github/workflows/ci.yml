@@ -170,7 +170,7 @@ jobs:
         run: |
           current=$(docker compose exec -T postgres psql -U postgres -d migration_smoke -t -c \
             "SELECT version_num FROM alembic_version;" | tr -d '[:space:]')
-          heads=$(docker compose run --rm --no-deps backend sh -c "cd /app && alembic heads -q")
+          heads=$(docker compose run --rm --no-deps backend sh -c "cd /app && alembic heads")
 
           echo "Alembic version in DB: $current"
           echo "Alembic head revision(s):"
