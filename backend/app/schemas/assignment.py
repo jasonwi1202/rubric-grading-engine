@@ -39,6 +39,7 @@ class PatchAssignmentRequest(BaseModel):
     due_date: date | None = None
     status: AssignmentStatus | None = None
     feedback_tone: FeedbackTone | None = None
+    resubmission_enabled: bool | None = None
 
 
 class AssignmentResponse(BaseModel):

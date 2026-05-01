@@ -319,6 +319,9 @@ async def patch_assignment_endpoint(
         feedback_tone=payload.feedback_tone.value
         if "feedback_tone" in fields_set and payload.feedback_tone is not None
         else None,
+        resubmission_enabled=payload.resubmission_enabled
+        if "resubmission_enabled" in fields_set
+        else None,
     )
     return JSONResponse(
         status_code=200,

@@ -304,6 +304,7 @@ async def update_assignment(
     update_due_date: bool,
     status: AssignmentStatus | None,
     feedback_tone: str | None = None,
+    resubmission_enabled: bool | None = None,
 ) -> Assignment:
     """Partially update an assignment.
 
@@ -314,6 +315,7 @@ async def update_assignment(
       due_date (may be None to clear it).
     - ``status``: if not None, attempt a state-machine transition.
     - ``feedback_tone``: if not None, update the feedback tone.
+    - ``resubmission_enabled``: if not None, update whether resubmission is allowed.
 
     Raises:
         NotFoundError: If the assignment does not exist.
@@ -346,6 +348,9 @@ async def update_assignment(
                 "Must be one of: encouraging, direct, academic.",
                 field="feedback_tone",
             ) from None
+
+    if resubmission_enabled is not None:
+        assignment.resubmission_enabled = resubmission_enabled
 
     await db.commit()
     await db.refresh(assignment)

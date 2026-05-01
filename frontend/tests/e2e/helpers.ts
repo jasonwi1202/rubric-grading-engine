@@ -1268,6 +1268,178 @@ export async function seedAutoGroupingFixture(
   };
 }
 
+/** Return type of {@link seedResubmissionFixture}. */
+export interface ResubmissionFixture {
+  email: string;
+  password: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  assignmentId: string;
+  essayId: string;
+}
+
+/**
+ * Seed a complete resubmission-loop fixture for Journey 7 E2E tests.
+ *
+ * Flow:
+ *   1. Creates a fresh verified teacher account, class, student, rubric, and
+ *      assignment with resubmission enabled.
+ *   2. Uploads an original essay and grades it (batch grading).
+ *   3. Locks the original grade.
+ *   4. Submits a resubmission via POST /essays/{essayId}/resubmit.
+ *   5. Triggers batch grading again and polls until the resubmission is graded.
+ *   6. Locks the revision grade.
+ *   7. Polls until the student skill profile reflects the locked grade
+ *      (assignment_count >= 1).
+ *
+ * The original and revised essay texts are substantively different so the
+ * low-effort heuristic does not flag the revision.
+ *
+ * Security:
+ * - Synthetic student name only — no real student PII.
+ * - Essay bodies are generic placeholder text — no real essay content.
+ */
+export async function seedResubmissionFixture(
+  tag: string,
+): Promise<ResubmissionFixture> {
+  const creds = await seedTeacher(tag);
+  const token = await loginApi(creds.email, creds.password);
+
+  const ts = Date.now();
+  const studentName = "Xi Writer";
+  const classId = await seedClass(token, `J7 Class ${ts}`);
+  const studentId = await seedStudent(token, classId, studentName);
+  const rubricId = await seedRubric(token, `J7 Rubric ${ts}`);
+  const assignmentId = await seedAssignment(
+    token,
+    classId,
+    rubricId,
+    `J7 Assignment ${ts}`,
+  );
+
+  // Enable resubmission on the assignment.
+  const enableRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ resubmission_enabled: true }),
+    },
+  );
+  if (!enableRes.ok) {
+    const text = await enableRes.text().catch(() => "");
+    throw new Error(
+      `seedResubmissionFixture (enable resubmission) failed: ${enableRes.status} ${enableRes.statusText} — ${text}`,
+    );
+  }
+
+  // Upload original essay pre-assigned to the student.
+  const essayId = await seedEssay(token, assignmentId, studentId, studentName);
+
+  // Grade the original essay.
+  await triggerBatchGradingAndWait(
+    token,
+    assignmentId,
+    "seedResubmissionFixture (original grading)",
+  );
+
+  // Lock the original grade.
+  await lockGradeForEssay(
+    token,
+    essayId,
+    "seedResubmissionFixture (lock original grade)",
+  );
+
+  // Submit the resubmission.  The revised text is substantively different from
+  // the original to avoid triggering the low-effort heuristic.
+  const revisedText =
+    "This revised essay substantially strengthens the argument presented earlier. " +
+    "New evidence has been incorporated throughout each body paragraph to address " +
+    "the weaknesses identified in the original feedback. " +
+    "The thesis has been sharpened to reflect a more nuanced position. " +
+    "Each claim is now backed by a specific example drawn from the source material. " +
+    "The organisation has been restructured so that each paragraph advances a " +
+    "distinct aspect of the argument in a logical sequence. " +
+    "The conclusion synthesises the evidence and restates the refined thesis " +
+    "with greater precision, leaving the reader with a clear and convincing takeaway.";
+  const revisedBlob = new Blob([revisedText], { type: "text/plain" });
+  const resubmitForm = new FormData();
+  resubmitForm.append("file", revisedBlob, `resubmission-${studentId}.txt`);
+
+  const resubmitRes = await fetch(
+    `${API_BASE}/api/v1/essays/${essayId}/resubmit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: resubmitForm,
+    },
+  );
+  if (!resubmitRes.ok) {
+    const text = await resubmitRes.text().catch(() => "");
+    throw new Error(
+      `seedResubmissionFixture (resubmit) failed: ${resubmitRes.status} ${resubmitRes.statusText} — ${text}`,
+    );
+  }
+
+  // Grade the resubmission.
+  await triggerBatchGradingAndWait(
+    token,
+    assignmentId,
+    "seedResubmissionFixture (resubmission grading)",
+  );
+
+  // Lock the revision grade (triggers skill profile update).
+  await lockGradeForEssay(
+    token,
+    essayId,
+    "seedResubmissionFixture (lock revision grade)",
+  );
+
+  // Poll until the student skill profile reflects at least one locked grade.
+  {
+    const deadline = Date.now() + 90_000;
+    let profileReady = false;
+    let lastCount = 0;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2_000));
+      const profileRes = await fetch(
+        `${API_BASE}/api/v1/students/${studentId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!profileRes.ok) continue;
+      const profileBody = (await profileRes.json()) as {
+        data: { skill_profile: { assignment_count: number } | null };
+      };
+      const count = profileBody.data?.skill_profile?.assignment_count ?? 0;
+      lastCount = count;
+      if (count >= 1) {
+        profileReady = true;
+        break;
+      }
+    }
+    if (!profileReady) {
+      throw new Error(
+        `seedResubmissionFixture: skill profile did not reach assignment_count >= 1 ` +
+          `within 90 s (last count: ${lastCount})`,
+      );
+    }
+  }
+
+  return {
+    email: creds.email,
+    password: creds.password,
+    studentId,
+    studentName,
+    classId,
+    assignmentId,
+    essayId,
+  };
+}
+
 /** Wait for the backend health endpoint to be reachable. Useful after compose up. */
 export async function waitForBackend(
   apiBase = "http://localhost:8000",
