@@ -350,6 +350,9 @@ class TestScanTeacherForInterventions:
         db.flush = AsyncMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
+        # begin_nested() is a sync call in SQLAlchemy AsyncSession that returns
+        # an async context manager. MagicMock returning AsyncMock() replicates this.
+        db.begin_nested = MagicMock(return_value=AsyncMock())
 
         # Patch _pending_signal_keys to return empty set
         with patch(

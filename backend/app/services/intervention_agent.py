@@ -61,7 +61,6 @@ Audit log:
 
 from __future__ import annotations
 
-import inspect
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -385,10 +384,7 @@ async def scan_teacher_for_interventions(
             try:
                 # Use a savepoint so duplicate-signal races roll back only this
                 # recommendation, not the entire teacher scan transaction.
-                nested_tx = db.begin_nested()
-                if inspect.isawaitable(nested_tx):
-                    nested_tx = await nested_tx
-                async with nested_tx:
+                async with db.begin_nested():
                     rec = InterventionRecommendation(
                         id=uuid.uuid4(),
                         teacher_id=teacher_id,
