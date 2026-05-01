@@ -58,6 +58,7 @@ celery = Celery(
         "app.tasks.skill_profile",
         "app.tasks.auto_grouping",
         "app.tasks.worklist",
+        "app.tasks.intervention",
     ],
 )
 
@@ -86,6 +87,10 @@ celery.conf.update(
         "scan-trial-expirations-daily": {
             "task": "tasks.email.scan_trial_expirations",
             "schedule": crontab(hour=6, minute=0),
+        },
+        "scan-intervention-signals-daily": {
+            "task": "tasks.intervention.scan_intervention_signals",
+            "schedule": crontab(hour=7, minute=0),
         },
     },
 )
@@ -155,6 +160,7 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
     import app.tasks.auto_grouping as _auto_grouping_module  # noqa: PLC0415
     import app.tasks.embedding as _embedding_module  # noqa: PLC0415
     import app.tasks.grading as _grading_module  # noqa: PLC0415
+    import app.tasks.intervention as _intervention_module  # noqa: PLC0415
     import app.tasks.skill_profile as _skill_profile_module  # noqa: PLC0415
     import app.tasks.worklist as _worklist_module  # noqa: PLC0415
 
@@ -163,6 +169,7 @@ def _reset_sqlalchemy_pool_after_fork(**_kwargs: object) -> None:
     _skill_profile_module.AsyncSessionLocal = new_session_factory
     _auto_grouping_module.AsyncSessionLocal = new_session_factory
     _worklist_module.AsyncSessionLocal = new_session_factory
+    _intervention_module.AsyncSessionLocal = new_session_factory
 
 
 @before_task_publish.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete

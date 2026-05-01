@@ -980,6 +980,84 @@ Transitions the recommendation from `pending_review` → `accepted`.  Idempotent
 
 ---
 
+### Interventions
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/interventions` | List intervention recommendations for the authenticated teacher |
+| POST | `/interventions/{id}/approve` | Approve a recommendation (teacher-confirmed action) |
+| DELETE | `/interventions/{id}` | Dismiss a recommendation |
+
+**GET /interventions query params:**
+
+- `status` (optional): `pending_review` (default), `approved`, `dismissed`, or `all`
+
+**GET /interventions response (200):**
+```json
+{
+  "data": {
+    "teacher_id": "uuid",
+    "items": [
+      {
+        "id": "uuid",
+        "teacher_id": "uuid",
+        "student_id": "uuid",
+        "trigger_type": "persistent_gap",
+        "skill_key": "evidence",
+        "urgency": 3,
+        "trigger_reason": "Skill 'evidence' has been below threshold across recent assignments.",
+        "evidence_summary": "Average score remains below threshold with a stable trend.",
+        "suggested_action": "Assign targeted evidence-focused writing practice.",
+        "details": {
+          "avg_score": 0.42,
+          "trend": "stable",
+          "assignment_count": 3
+        },
+        "status": "pending_review",
+        "actioned_at": null,
+        "created_at": "2026-05-01T00:00:00Z"
+      }
+    ],
+    "total_count": 1
+  }
+}
+```
+
+**POST /interventions/{id}/approve response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "approved",
+    "actioned_at": "2026-05-01T00:00:00Z",
+    "...": "other InterventionRecommendationResponse fields"
+  }
+}
+```
+
+Idempotent when already approved.
+
+**DELETE /interventions/{id} response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "dismissed",
+    "actioned_at": "2026-05-01T00:00:00Z",
+    "...": "other InterventionRecommendationResponse fields"
+  }
+}
+```
+
+Idempotent when already dismissed.
+
+**Error behavior for intervention action endpoints (`approve`, `dismiss`):**
+
+- `404 NOT_FOUND` if the recommendation does not exist or is not accessible to the authenticated teacher (non-enumerable behavior)
+- `409 CONFLICT` when the requested state transition is disallowed (`approve` after dismissed, `dismiss` after approved)
+
+---
+
 ### Worklist
 
 | Method | Path | Description |
