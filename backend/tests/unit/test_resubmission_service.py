@@ -379,7 +379,9 @@ class TestComputeRevisionComparison:
         essay_id = _make_uuid()
         criterion_id = _make_uuid()
 
-        base_version = _make_essay_version(version_number=1, content="Original essay.", word_count=2)
+        base_version = _make_essay_version(
+            version_number=1, content="Original essay.", word_count=2
+        )
         revised_version = _make_essay_version(
             version_number=2,
             content="Completely rewritten essay with much more evidence and detail. " * 5,
@@ -569,7 +571,8 @@ class TestComputeRevisionComparison:
         )
         revised_version = _make_essay_version(
             version_number=2,
-            content="Revised essay that is substantially different and much longer with many new arguments. " * 4,
+            content="Revised essay that is substantially different and much longer with many new arguments. "
+            * 4,
             word_count=70,
         )
 
@@ -617,9 +620,7 @@ class TestComputeRevisionComparison:
         criterion_id = _make_uuid()
 
         base_version = _make_essay_version(version_number=1, content="A " * 50, word_count=50)
-        revised_version = _make_essay_version(
-            version_number=2, content="B " * 50, word_count=50
-        )
+        revised_version = _make_essay_version(version_number=2, content="B " * 50, word_count=50)
 
         base_grade = _make_grade(total_score=Decimal("5"))
         revised_grade = _make_grade(total_score=Decimal("3"))

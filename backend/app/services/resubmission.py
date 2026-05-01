@@ -110,9 +110,7 @@ def _detect_low_effort(
     reasons: list[str] = []
 
     word_delta_abs = abs(revised_word_count - base_word_count)
-    word_delta_frac = (
-        word_delta_abs / base_word_count if base_word_count > 0 else 0.0
-    )
+    word_delta_frac = word_delta_abs / base_word_count if base_word_count > 0 else 0.0
     if word_delta_abs < _WORD_COUNT_DELTA_ABS and word_delta_frac < _WORD_COUNT_DELTA_FRACTION:
         reasons.append(
             f"Word count changed by only {word_delta_abs} words "
@@ -209,9 +207,7 @@ async def compute_revision_comparison(
             EssayVersion.essay_id == essay_id,
         )
     )
-    versions_by_id: dict[uuid.UUID, EssayVersion] = {
-        v.id: v for v in ver_result.scalars().all()
-    }
+    versions_by_id: dict[uuid.UUID, EssayVersion] = {v.id: v for v in ver_result.scalars().all()}
     base_version = versions_by_id.get(base_version_id)
     revised_version = versions_by_id.get(revised_version_id)
 

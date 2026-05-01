@@ -521,7 +521,6 @@ async def call_revision_comparison(
         return parse_revision_response(retry_raw)
 
 
-
 # Type alias exported for consumers
 # ---------------------------------------------------------------------------
 

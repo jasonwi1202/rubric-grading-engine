@@ -493,7 +493,9 @@ class TestDismissRecommendationEndpoint:
         with patch(
             "app.routers.recommendations.dismiss_recommendation",
             new_callable=AsyncMock,
-            side_effect=ConflictError("Cannot dismiss a recommendation that has already been assigned."),
+            side_effect=ConflictError(
+                "Cannot dismiss a recommendation that has already been assigned."
+            ),
         ):
             resp = _client(teacher).post(self._url())
         assert resp.status_code == 409

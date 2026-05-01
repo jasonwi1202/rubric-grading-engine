@@ -5,10 +5,14 @@
 # This is NOT for development or production.  Everything here runs on a single
 # machine with no external dependencies.
 #
-# Seeded data includes M4 + M5 walkthrough artifacts:
-# - 2 assignments with locked grades
+# Seeded data includes M4 + M5 + M6 walkthrough artifacts:
+# - 2 assignments with locked grades and skill profiles
 # - student skill profiles with assignment_count=2
 # - browser writing snapshots + process signals on one essay
+# - skill-gap groups (persistent evidence gap) with stability tracking
+# - worklist items pre-computed from seeded skill profiles
+# - one instruction recommendation in pending_review state
+# - one resubmission with revision comparison data
 #
 # Usage:
 #   cp .env.demo .env.demo.local   # copy template (first time only)

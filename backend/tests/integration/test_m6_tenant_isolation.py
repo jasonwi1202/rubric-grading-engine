@@ -328,7 +328,9 @@ class TestWorklistIntegrationTenantIsolation:
         item_ids = [item["id"] for item in body["data"]["items"]]
         assert len(item_ids) == 1, f"Expected exactly 1 item for Teacher B, got {len(item_ids)}"
         assert str(item_b_id) in item_ids, "Teacher B's own item should be returned"
-        assert str(item_a_id) not in item_ids, "Teacher A's item must not appear in Teacher B's worklist"
+        assert str(item_a_id) not in item_ids, (
+            "Teacher A's item must not appear in Teacher B's worklist"
+        )
 
     @pytest.mark.asyncio
     async def test_complete_worklist_item_returns_404_for_another_teachers_item(

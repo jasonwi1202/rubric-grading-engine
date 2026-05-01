@@ -104,9 +104,7 @@ async def _seed_teacher(db: AsyncSession, teacher_id: uuid.UUID) -> None:
     await db.commit()
 
 
-async def _seed_class(
-    db: AsyncSession, class_id: uuid.UUID, teacher_id: uuid.UUID
-) -> None:
+async def _seed_class(db: AsyncSession, class_id: uuid.UUID, teacher_id: uuid.UUID) -> None:
     await db.execute(
         text(
             "INSERT INTO classes "
@@ -125,9 +123,7 @@ async def _seed_class(
     await db.commit()
 
 
-async def _seed_rubric(
-    db: AsyncSession, rubric_id: uuid.UUID, teacher_id: uuid.UUID
-) -> None:
+async def _seed_rubric(db: AsyncSession, rubric_id: uuid.UUID, teacher_id: uuid.UUID) -> None:
     await db.execute(
         text(
             "INSERT INTO rubrics (id, teacher_id, name, is_template) "
@@ -455,9 +451,7 @@ class TestResubmitEssayIntegration:
         assert body.get("error", {}).get("code") == "RESUBMISSION_LIMIT_REACHED"
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """Teacher B cannot resubmit an essay belonging to Teacher A.
 
         ``essays`` has FORCE RLS: cross-tenant IDs are DB-invisible, so the
@@ -505,9 +499,7 @@ class TestResubmitEssayIntegration:
         assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
-    async def test_essay_not_found_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_essay_not_found_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """404 when the essay UUID does not exist."""
         teacher_id = _uuid()
         await _seed_teacher(db_session, teacher_id)
@@ -584,9 +576,7 @@ class TestGetRevisionComparisonIntegration:
         assert data["feedback_addressed"] is None
 
     @pytest.mark.asyncio
-    async def test_no_comparison_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_no_comparison_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """404 when the essay exists but has no revision comparison."""
         teacher_id = _uuid()
         class_id = _uuid()
@@ -608,9 +598,7 @@ class TestGetRevisionComparisonIntegration:
         assert resp.status_code == 404, resp.text
 
     @pytest.mark.asyncio
-    async def test_cross_teacher_returns_404(
-        self, db_session: AsyncSession, pg_dsn: str
-    ) -> None:
+    async def test_cross_teacher_returns_404(self, db_session: AsyncSession, pg_dsn: str) -> None:
         """Teacher B cannot access Teacher A's revision comparison.
 
         ``revision_comparisons`` has FORCE RLS through essay_id → essays chain:
