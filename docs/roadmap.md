@@ -29,6 +29,8 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | 🔄 Ongoing |
 | | **Total** | | **95** | |
 
+> Note: M7's issue count includes the 4 milestone-specific M7 issues plus 5 cross-cutting MX issues expected to run alongside milestone delivery.
+
 ---
 
 ## M1 — Project Scaffold ✅ Complete
