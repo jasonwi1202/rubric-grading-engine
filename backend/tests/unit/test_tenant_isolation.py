@@ -31,7 +31,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_teacher
-from app.exceptions import ForbiddenError
+from app.exceptions import ForbiddenError, NotFoundError
 from app.main import create_app
 
 # ---------------------------------------------------------------------------
@@ -59,6 +59,13 @@ def _assert_403(resp: httpx.Response) -> None:
     assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body.get("error", {}).get("code") == "FORBIDDEN", f"Unexpected body: {body}"
+
+
+def _assert_404(resp: httpx.Response) -> None:
+    """Assert that the response carries HTTP 404 with the NOT_FOUND error code."""
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body.get("error", {}).get("code") == "NOT_FOUND", f"Unexpected body: {body}"
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +474,16 @@ class TestStudentGroupTenantIsolation:
 
 
 class TestRecommendationTenantIsolation:
-    def test_assign_recommendation_returns_403_for_another_teachers_recommendation(
+    """Cross-tenant isolation tests for the recommendations endpoints.
+
+    The recommendations service uses a single ``SELECT … WHERE id = ? AND
+    teacher_id = ?`` query pattern (matching the FORCE RLS visibility model).
+    Cross-tenant and nonexistent IDs are indistinguishable and both raise
+    :exc:`~app.exceptions.NotFoundError`, which surfaces as HTTP 404
+    (not 403 — this differs from most other resource types).
+    """
+
+    def test_assign_recommendation_returns_404_for_another_teachers_recommendation(
         self,
     ) -> None:
         teacher_b = _make_teacher()
@@ -478,15 +494,15 @@ class TestRecommendationTenantIsolation:
             patch(
                 "app.routers.recommendations.assign_recommendation",
                 new_callable=AsyncMock,
-                side_effect=ForbiddenError("recommendation not accessible"),
+                side_effect=NotFoundError("Instruction recommendation not found."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.post(f"/api/v1/recommendations/{other_rec_id}/assign")
 
-        _assert_403(resp)
+        _assert_404(resp)
 
-    def test_dismiss_recommendation_returns_403_for_another_teachers_recommendation(
+    def test_dismiss_recommendation_returns_404_for_another_teachers_recommendation(
         self,
     ) -> None:
         teacher_b = _make_teacher()
@@ -497,10 +513,10 @@ class TestRecommendationTenantIsolation:
             patch(
                 "app.routers.recommendations.dismiss_recommendation",
                 new_callable=AsyncMock,
-                side_effect=ForbiddenError("recommendation not accessible"),
+                side_effect=NotFoundError("Instruction recommendation not found."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.post(f"/api/v1/recommendations/{other_rec_id}/dismiss")
 
-        _assert_403(resp)
+        _assert_404(resp)

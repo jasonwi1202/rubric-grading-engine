@@ -3,6 +3,13 @@
 Verifies that teacher B cannot read or modify resources owned by teacher A for
 all M6 tables: student_groups, teacher_worklist_items.
 
+These tests validate **service-layer ``teacher_id`` scoping** (every query
+carries a ``teacher_id`` predicate that limits results to the authenticated
+teacher's rows).  They do *not* exercise PostgreSQL FORCE ROW LEVEL SECURITY
+directly: the testcontainers DB user is a superuser and therefore BYPASSRLS,
+so RLS policies are not evaluated.  The isolation guarantee under test is the
+ORM-level ``WHERE teacher_id = ?`` filter applied by the service layer.
+
 Tests exercise the full stack: real PostgreSQL (via testcontainers), Alembic-
 migrated schema, real ORM writes.  Auth is injected via FastAPI dependency
 override.  No student PII in any fixture or assertion.
@@ -15,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -38,10 +46,8 @@ def _uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
-def _make_teacher_orm(teacher_id: uuid.UUID) -> User:
+def _make_teacher_orm(teacher_id: uuid.UUID) -> MagicMock:
     """Build a minimal User-like object sufficient for the auth dependency override."""
-    from unittest.mock import MagicMock
-
     teacher = MagicMock(spec=User)
     teacher.id = teacher_id
     teacher.email = "teacher@school.edu"
@@ -59,8 +65,10 @@ def _client_for(teacher_id: uuid.UUID, pg_dsn: str) -> TestClient:
     the anyio loop that TestClient runs under, causing a 'Future attached to a
     different loop' RuntimeError.
 
-    The ``app.current_teacher_id`` session variable is set so that
-    ``FORCE ROW LEVEL SECURITY`` returns only the authenticated teacher's rows.
+    Note: the testcontainers DB user is a superuser (BYPASSRLS), so
+    ``SET app.current_teacher_id`` has no effect on RLS enforcement.  Tenant
+    isolation here is enforced by the service-layer ``WHERE teacher_id = ?``
+    predicate, not by PostgreSQL FORCE RLS.
     """
     teacher_orm = _make_teacher_orm(teacher_id)
     app = create_app()
