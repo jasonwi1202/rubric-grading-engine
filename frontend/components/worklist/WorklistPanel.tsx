@@ -134,9 +134,14 @@ function WorklistItemCard({
   const indicatorClass = URGENCY_INDICATOR_CLASSES[item.urgency] ?? "bg-gray-400";
   const triggerLabel = TRIGGER_LABELS[item.trigger_type] ?? item.trigger_type;
   const isPredictive = item.trigger_type === "trajectory_risk";
-  const confidenceLevel =
-    isPredictive && typeof item.details?.confidence_level === "string"
-      ? (item.details.confidence_level as string)
+  const VALID_CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
+  type ConfidenceLevel = (typeof VALID_CONFIDENCE_LEVELS)[number];
+  const rawConfidence = item.details?.confidence_level;
+  const confidenceLevel: ConfidenceLevel | null =
+    isPredictive &&
+    typeof rawConfidence === "string" &&
+    (VALID_CONFIDENCE_LEVELS as readonly string[]).includes(rawConfidence)
+      ? (rawConfidence as ConfidenceLevel)
       : null;
 
   return (

@@ -1008,18 +1008,13 @@ class TestTrajectoryRiskTenantIsolation:
         scores = [0.8, 0.7, 0.6, 0.5]
 
         # student_a: skill is already 'declining' → skipped
-        items_a = _check_trajectory_risk(
-            student_a, {"evidence": scores}, {"evidence": "declining"}
-        )
+        items_a = _check_trajectory_risk(student_a, {"evidence": scores}, {"evidence": "declining"})
         # student_b: no profile trends → fires
         items_b = _check_trajectory_risk(student_b, {"evidence": scores}, {})
 
         assert items_a == []
         assert len(items_b) == 1
         assert items_b[0].student_id == student_b
-
-
-
 
 
 def _make_worklist_item_orm(

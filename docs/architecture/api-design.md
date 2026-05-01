@@ -1098,7 +1098,17 @@ Idempotent when already dismissed.
 
 Returns active items plus expired snoozed items (still marked `status: "snoozed"` until the next transition). Completed and dismissed items are excluded.
 
-`trigger_type` is one of `regression | non_responder | persistent_gap | high_inconsistency`.
+`trigger_type` is one of `regression | non_responder | persistent_gap | high_inconsistency | trajectory_risk`.
+
+`trajectory_risk` items are predictive signals (early warning before a confirmed regression). Their `details` object carries additional fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `is_predictive` | `true` | Always `true` — distinguishes predictive from diagnostic signals |
+| `confidence_level` | `"low" \| "medium" \| "high"` | Based on consecutive decline count: 3 → `"low"`, 4 → `"medium"`, ≥5 → `"high"` |
+| `consecutive_decline_count` | `integer` | Number of consecutive assignment-over-assignment score drops at the tail |
+| `total_decline` | `number` | Normalised score drop across the declining window (0–1) |
+| `recent_scores` | `number[]` | Normalised per-assignment scores covering the declining window, oldest-first |
 
 **POST /worklist/{itemId}/complete response (200):**
 ```json
