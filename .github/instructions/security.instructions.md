@@ -47,7 +47,8 @@ Reference: `docs/architecture/security.md#1-prompt-injection-defense`
 
 ## Multi-Tenant Isolation
 
-- [ ] Cross-teacher access returns `403` — do not return `404` in ways that could confirm or deny another teacher's data exists
+- [ ] Cross-teacher access returns `403` by default
+- [ ] `404` is allowed only for explicitly documented non-enumerable endpoints where both missing and cross-tenant IDs intentionally map to the same response shape/status
 - [ ] RLS is enforced at **both** the service layer (query filter) and the PostgreSQL RLS policy — neither alone is sufficient
 - [ ] No raw SQL queries that bypass the ORM's tenant filter without manually adding the `teacher_id` condition
 - [ ] Celery tasks validate teacher ownership of all entities they load

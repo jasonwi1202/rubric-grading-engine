@@ -20,6 +20,8 @@ Reference: `docs/architecture/migrations.md`
 These operations cause table locks and will take down production on large tables:
 
 - [ ] **`CREATE INDEX`** → must use `CREATE INDEX CONCURRENTLY`: `op.create_index(..., postgresql_concurrently=True)`
+- [ ] Every `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY` operation is wrapped in `with op.get_context().autocommit_block():` in both `upgrade()` and `downgrade()`
+- [ ] Do not add migration-local no-op flags like `transaction_per_migration = False` unless `env.py` actually reads them; document transaction behavior accurately in comments/docstrings
 - [ ] **`ADD COLUMN NOT NULL` without default** → add as nullable first; backfill in a separate migration; add constraint last
 - [ ] **`ALTER COLUMN` type change** → multi-step migration required; never in one shot on a populated table
 - [ ] **`DROP COLUMN`** → application code no longer references the column first; dropped in a separate migration
@@ -38,6 +40,7 @@ Reference: `docs/architecture/migrations.md#zero-downtime-migration-rules`
 ## Schema Correctness
 
 - [ ] New columns, tables, and indexes are consistent with `docs/architecture/data-model.md`
+- [ ] Alembic `revision` and `down_revision` identifiers fit the `alembic_version.version_num` storage limit used by this project
 - [ ] Foreign keys reference existing tables and columns
 - [ ] Index names follow convention: `ix_{table}_{column(s)}` (e.g., `ix_essays_assignment_id`)
 - [ ] **Foreign keys must have an explicit `name=` argument** — e.g., `sa.ForeignKey("users.id", name="fk_comment_bank_entries_users")`. Unnamed foreign keys use auto-generated names that differ across databases and Alembic environments, making diffs and targeted drops unreliable. Convention: `fk_{child_table}_{parent_table}`.
@@ -60,11 +63,8 @@ The `audit_logs` table is INSERT-only. These are hard blocks:
 
 ## Concurrent Index Note
 
-Migrations that use `postgresql_concurrently=True` cannot run inside a transaction. Ensure `env.py` handles this:
+Migrations that use `postgresql_concurrently=True` cannot run inside a transaction.
 
-```python
-# In the migration file, add at the top:
-# This migration creates indexes concurrently and must run outside a transaction.
-```
-
-And set the migration's `transaction_per_migration` behavior appropriately in `env.py`.
+- [ ] Every concurrent index statement is inside `op.get_context().autocommit_block()`
+- [ ] Module docstring/comments explicitly state why concurrent index operations are outside a transaction
+- [ ] Downgrade path uses the same concurrent + autocommit pattern when dropping those indexes
