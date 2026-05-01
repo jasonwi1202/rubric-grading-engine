@@ -1,6 +1,6 @@
-"""Teacher worklist generation service (M6-04).
+"""Teacher worklist generation service (M6-04 / M7-02).
 
-Generates a ranked, teacher-facing worklist from four student profile signals:
+Generates a ranked, teacher-facing worklist from five student profile signals:
 
 1. **regression**         — A skill dimension is trending downward
                             (``trend == 'declining'``).  Urgency 4.
@@ -19,6 +19,14 @@ Generates a ranked, teacher-facing worklist from four student profile signals:
                             across ≥ :data:`_INCONSISTENCY_MIN_ASSIGNMENTS`
                             assignments, suggesting unstable or context-sensitive
                             skill.  Urgency 2.
+5. **trajectory_risk**    — *Predictive* early-warning signal.  A skill shows
+                            ≥ :data:`_TRAJECTORY_RISK_MIN_DECLINE_STEPS`
+                            consecutive assignment-over-assignment score declines
+                            and is NOT yet classified as ``'declining'`` by the
+                            aggregated trend (which is already covered by
+                            **regression** at higher urgency).  Labeled as
+                            predictive guidance with a confidence indicator (low /
+                            medium / high).  Urgency 1.
 
 Public API:
   - :func:`generate_teacher_worklist`      — compute ranked items (read-only).
@@ -30,6 +38,7 @@ Pure helper functions (no DB calls, unit-testable in isolation):
   - :func:`_check_persistent_gap`
   - :func:`_check_high_inconsistency`
   - :func:`_check_non_responder`
+  - :func:`_check_trajectory_risk`
   - :func:`_rank_items`
 
 Tenant isolation:
@@ -39,9 +48,10 @@ Tenant isolation:
 Determinism:
   Given the same DB state, both public functions return the same ranked list.
   Urgency ties are broken deterministically by trigger type order
-  (regression → non_responder → persistent_gap → high_inconsistency) then
-  by ``skill_key`` alphabetically (``None`` sorts before any string value so
-  student-level triggers appear first within the same urgency tier).
+  (regression → non_responder → persistent_gap → high_inconsistency →
+  trajectory_risk) then by ``skill_key`` alphabetically (``None`` sorts
+  before any string value so student-level triggers appear first within the
+  same urgency tier).
 """
 
 from __future__ import annotations
@@ -104,6 +114,14 @@ _URGENCY_PERSISTENT_GAP: int = 3
 #: Urgency assigned to the ``high_inconsistency`` trigger.
 _URGENCY_HIGH_INCONSISTENCY: int = 2
 
+#: Urgency assigned to the ``trajectory_risk`` predictive trigger.
+_URGENCY_TRAJECTORY_RISK: int = 1
+
+#: Minimum consecutive assignment-over-assignment score declines required
+#: before the predictive ``trajectory_risk`` trigger fires.  Three steps
+#: means four data points: [A₀, A₁, A₂, A₃] where each Aᵢ < Aᵢ₋₁.
+_TRAJECTORY_RISK_MIN_DECLINE_STEPS: int = 3
+
 #: Ordering of trigger types for deterministic tie-breaking within the same
 #: urgency level.  Lower index = appears first in the ranked list.
 _TRIGGER_ORDER: dict[str, int] = {
@@ -111,6 +129,7 @@ _TRIGGER_ORDER: dict[str, int] = {
     "non_responder": 1,
     "persistent_gap": 2,
     "high_inconsistency": 3,
+    "trajectory_risk": 4,
 }
 
 
@@ -185,6 +204,12 @@ def _suggested_action(trigger_type: str, skill_key: str | None) -> str:
             return (
                 "Schedule a 1:1 check-in to understand why written feedback "
                 "has not translated to improvement."
+            )
+        case "trajectory_risk":
+            return (
+                f"Monitor this student's recent {skill_label} scores closely — "
+                f"early signs of a declining trend have been detected. "
+                f"Consider a brief check-in before the pattern worsens."
             )
         case _:
             return "Follow up with this student."
@@ -389,6 +414,100 @@ def _check_non_responder(
                 )
             ]
     return []
+
+
+def _check_trajectory_risk(
+    student_id: uuid.UUID,
+    per_assignment_skill_scores: dict[str, list[float]],
+    profile_trends: dict[str, str] | None = None,
+) -> list[_WorklistItemData]:
+    """Fire when a skill shows ≥ 3 consecutive assignment-over-assignment score declines.
+
+    Detects early trajectory risk *before* the decline becomes a confirmed
+    regression.  Items are explicitly labeled as predictive guidance (not
+    diagnostic certainty) via ``details['is_predictive'] = True``.
+
+    **Deduplication**: Skills whose overall profile trend is already
+    ``'declining'`` are skipped — the :func:`_check_regression` trigger
+    already covers those at higher urgency (4).  This function therefore
+    only fires for skills that have not yet crossed the profile-level
+    regression threshold, giving the teacher an earlier signal.
+
+    **Confidence levels** based on consecutive decline count:
+
+    - 3 consecutive declines → ``"low"``
+    - 4 consecutive declines → ``"medium"``
+    - ≥ 5 consecutive declines → ``"high"``
+
+    Args:
+        student_id:                  UUID of the student.
+        per_assignment_skill_scores: Mapping of ``skill_key → [score_oldest,
+                                      …, score_newest]``.  Each score is a
+                                      normalised value in [0, 1].
+        profile_trends:              Optional mapping of ``skill_key →
+                                      trend_label`` (e.g. ``'declining'``).
+                                      When a skill is already ``'declining'``
+                                      in the profile it is skipped here.
+                                      Pass ``None`` to disable deduplication.
+
+    Returns:
+        One :class:`_WorklistItemData` per skill meeting the threshold, sorted
+        alphabetically by skill_key.
+    """
+    items: list[_WorklistItemData] = []
+    excluded_trends = profile_trends or {}
+
+    for skill_key, scores in sorted(per_assignment_skill_scores.items()):
+        # Skip skills already flagged as declining — regression covers them.
+        if excluded_trends.get(skill_key) == "declining":
+            continue
+
+        n = len(scores)
+        # Need at least (min_steps + 1) scores to have min_steps decline steps.
+        if n < _TRAJECTORY_RISK_MIN_DECLINE_STEPS + 1:
+            continue
+
+        # Count how many consecutive (i-1, i) pairs at the tail are declining.
+        consecutive_declines = 0
+        for i in range(n - 1, 0, -1):
+            if scores[i] < scores[i - 1]:
+                consecutive_declines += 1
+            else:
+                break
+
+        if consecutive_declines < _TRAJECTORY_RISK_MIN_DECLINE_STEPS:
+            continue
+
+        # Derive confidence from how many consecutive declines are observed.
+        if consecutive_declines >= 5:
+            confidence_level = "high"
+        elif consecutive_declines >= 4:
+            confidence_level = "medium"
+        else:
+            confidence_level = "low"
+
+        # Capture the window of scores that form the declining sequence.
+        window_start = n - consecutive_declines - 1
+        total_decline = round(scores[window_start] - scores[-1], 4)
+        recent_scores = [round(s, 4) for s in scores[window_start:]]
+
+        items.append(
+            _WorklistItemData(
+                student_id=student_id,
+                trigger_type="trajectory_risk",
+                skill_key=skill_key,
+                urgency=_URGENCY_TRAJECTORY_RISK,
+                suggested_action=_suggested_action("trajectory_risk", skill_key),
+                details={
+                    "is_predictive": True,
+                    "confidence_level": confidence_level,
+                    "consecutive_decline_count": consecutive_declines,
+                    "total_decline": total_decline,
+                    "recent_scores": recent_scores,
+                },
+            )
+        )
+    return items
 
 
 def _rank_items(items: list[_WorklistItemData]) -> list[_WorklistItemData]:
@@ -714,10 +833,21 @@ async def generate_teacher_worklist(
         student_per_asgn = per_assignment_scores.get(student_id, {})
         student_resub_pairs = resubmission_pairs.get(student_id, [])
 
+        # Build a trend map for this student so trajectory_risk can skip
+        # skills already classified as 'declining' by the profile (those are
+        # already surfaced by the regression trigger at higher urgency).
+        raw_skill_scores: dict[str, Any] = profile.skill_scores or {}
+        profile_trends: dict[str, str] = {
+            sk: v.get("trend", "stable")
+            for sk, v in raw_skill_scores.items()
+            if isinstance(v, dict)
+        }
+
         all_items.extend(_check_regression(profile))
         all_items.extend(_check_persistent_gap(profile, persistent_skills))
         all_items.extend(_check_high_inconsistency(student_id, student_per_asgn))
         all_items.extend(_check_non_responder(student_id, student_resub_pairs))
+        all_items.extend(_check_trajectory_risk(student_id, student_per_asgn, profile_trends))
 
     ranked = _rank_items(all_items)
 

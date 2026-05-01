@@ -573,3 +573,145 @@ describe("WorklistPanel — filters", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// WorklistPanel — trajectory_risk / predictive insights (M7-02)
+// ---------------------------------------------------------------------------
+
+describe("WorklistPanel — trajectory risk predictive insights", () => {
+  function makePredictiveItem(
+    confidenceLevel: string = "low",
+    overrides: Partial<WorklistItem> = {},
+  ): WorklistItem {
+    return makeItem({
+      trigger_type: "trajectory_risk",
+      skill_key: "evidence",
+      urgency: 1,
+      suggested_action: "Monitor this student's recent evidence scores closely.",
+      details: {
+        is_predictive: true,
+        confidence_level: confidenceLevel,
+        consecutive_decline_count: 3,
+        total_decline: 0.3,
+        recent_scores: [0.8, 0.7, 0.6, 0.5],
+      },
+      ...overrides,
+    });
+  }
+
+  it("renders 'Trajectory Risk' as trigger label", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem()]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("Trajectory Risk")).toBeInTheDocument();
+    });
+  });
+
+  it("renders 'Predictive Insight' badge for trajectory_risk items", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem()]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("Predictive Insight")).toBeInTheDocument();
+    });
+  });
+
+  it("renders predictive disclaimer text", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem()]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText(/predictive guidance only/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders 'Low confidence' badge for low confidence level", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem("low")]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders 'Medium confidence' badge for medium confidence level", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem("medium")]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText(/medium confidence/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders 'High confidence' badge for high confidence level", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem("high")]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText(/high confidence/i)).toBeInTheDocument();
+    });
+  });
+
+  it("does NOT render 'Predictive Insight' badge for non-predictive items", async () => {
+    mockGetWorklist.mockResolvedValue(
+      makeResponse([makeItem({ trigger_type: "regression" })]),
+    );
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Predictive Insight")).not.toBeInTheDocument();
+    });
+  });
+
+  it("trajectory_risk item supports mark-done, snooze, and dismiss actions", async () => {
+    const user = userEvent.setup();
+    mockGetWorklist.mockResolvedValue(
+      makeResponse([makePredictiveItem("low", { id: "pred-001" })]),
+    );
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => screen.getByRole("button", { name: "Mark done" }));
+    await user.click(screen.getByRole("button", { name: "Mark done" }));
+
+    await waitFor(() => {
+      expect(mockCompleteWorklistItem).toHaveBeenCalledWith("pred-001");
+    });
+  });
+
+  it("can filter by 'trajectory_risk' trigger type", async () => {
+    const user = userEvent.setup();
+    mockGetWorklist.mockResolvedValue(
+      makeResponse([
+        makePredictiveItem("low", { id: "pred-001", suggested_action: "Predictive action" }),
+        makeItem({ id: "reg-001", trigger_type: "regression", suggested_action: "Regression action" }),
+      ]),
+    );
+
+    render(<WorklistPanel />, { wrapper });
+    await waitFor(() => screen.getByLabelText(/filter by action type/i));
+
+    await user.selectOptions(
+      screen.getByLabelText(/filter by action type/i),
+      "trajectory_risk",
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Mark done" })).toHaveLength(1);
+    });
+    expect(screen.getByText("Predictive action")).toBeInTheDocument();
+    expect(screen.queryByText("Regression action")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Trajectory Risk (Predictive)' option in the trigger filter dropdown", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([makePredictiveItem()]));
+    render(<WorklistPanel />, { wrapper });
+
+    await waitFor(() => screen.getByLabelText(/filter by action type/i));
+    const select = screen.getByLabelText(/filter by action type/i);
+    const options = Array.from(select.querySelectorAll("option")).map(
+      (o) => o.textContent,
+    );
+    expect(options).toContain("Trajectory Risk (Predictive)");
+  });
+});

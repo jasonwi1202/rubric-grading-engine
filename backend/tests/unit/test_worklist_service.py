@@ -804,8 +804,222 @@ class TestThresholdConstants:
 
 
 # ---------------------------------------------------------------------------
-# Tests — get_worklist_for_teacher / complete / snooze / dismiss (M6-05)
+# Tests — _check_trajectory_risk
 # ---------------------------------------------------------------------------
+
+
+from app.services.worklist import (  # noqa: E402 (after first imports block)
+    _TRAJECTORY_RISK_MIN_DECLINE_STEPS,
+    _URGENCY_TRAJECTORY_RISK,
+    _check_trajectory_risk,
+)
+
+
+class TestCheckTrajectoryRisk:
+    """Predictive trajectory risk trigger (M7-02)."""
+
+    def test_three_consecutive_declines_fires(self) -> None:
+        """Exactly 3 consecutive declining steps triggers the signal."""
+        student_id = uuid.uuid4()
+        # 4 scores: [0.8, 0.7, 0.6, 0.5] → 3 declining steps
+        scores = [0.8, 0.7, 0.6, 0.5]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert len(items) == 1
+        assert items[0].trigger_type == "trajectory_risk"
+        assert items[0].skill_key == "evidence"
+        assert items[0].student_id == student_id
+        assert items[0].urgency == _URGENCY_TRAJECTORY_RISK
+
+    def test_fewer_than_three_consecutive_declines_does_not_fire(self) -> None:
+        """Only 2 consecutive declining steps — below threshold."""
+        student_id = uuid.uuid4()
+        # [0.8, 0.7, 0.6] → 2 declining steps (need 3)
+        scores = [0.8, 0.7, 0.6]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items == []
+
+    def test_not_enough_data_points_does_not_fire(self) -> None:
+        """Fewer than min_steps + 1 data points → cannot have enough decline steps."""
+        student_id = uuid.uuid4()
+        # Need at least 4 data points for 3 declining steps
+        scores = [0.8, 0.7, 0.6]  # only 3 points → max 2 steps
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items == []
+
+    def test_non_monotonic_tail_does_not_fire(self) -> None:
+        """Decline broken by a flat or improving step does not fire."""
+        student_id = uuid.uuid4()
+        # [0.8, 0.7, 0.65, 0.7, 0.6]: last step 0.7→0.6 ok, but 0.65→0.7 breaks chain
+        scores = [0.8, 0.7, 0.65, 0.7, 0.6]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items == []
+
+    def test_rising_scores_do_not_fire(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.4, 0.5, 0.6, 0.7]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items == []
+
+    def test_flat_scores_do_not_fire(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.7, 0.7, 0.7, 0.7]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items == []
+
+    def test_is_predictive_flag_in_details(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].details["is_predictive"] is True
+
+    def test_confidence_low_for_three_declines(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]  # exactly 3 steps
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].details["confidence_level"] == "low"
+
+    def test_confidence_medium_for_four_declines(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.9, 0.8, 0.7, 0.6, 0.5]  # 4 steps
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].details["confidence_level"] == "medium"
+
+    def test_confidence_high_for_five_or_more_declines(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.95, 0.85, 0.75, 0.65, 0.55, 0.45]  # 5 steps
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].details["confidence_level"] == "high"
+
+    def test_details_include_consecutive_decline_count(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].details["consecutive_decline_count"] == 3
+
+    def test_details_include_total_decline(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]  # window: 0.8 to 0.5 = 0.3 decline
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].details["total_decline"] == pytest.approx(0.3, abs=0.001)
+
+    def test_details_include_recent_scores(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.9, 0.8, 0.7, 0.6, 0.5]  # 4 declining steps
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        # recent_scores should include the entire declining window (from 0.9 onward)
+        assert items[0].details["recent_scores"] == pytest.approx(
+            [0.9, 0.8, 0.7, 0.6, 0.5], abs=0.001
+        )
+
+    def test_deduplication_skips_already_declining_skills(self) -> None:
+        """Skills already classified as 'declining' in the profile are skipped."""
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]  # would normally fire
+        profile_trends = {"evidence": "declining"}
+        items = _check_trajectory_risk(student_id, {"evidence": scores}, profile_trends)
+        assert items == []
+
+    def test_non_declining_profile_trend_does_not_block(self) -> None:
+        """Skills with 'stable' or 'improving' profile trend can still fire."""
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+        profile_trends = {"evidence": "stable"}
+        items = _check_trajectory_risk(student_id, {"evidence": scores}, profile_trends)
+        assert len(items) == 1
+
+    def test_none_profile_trends_disables_deduplication(self) -> None:
+        """Passing None for profile_trends fires even for 'declining' skills."""
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+        items = _check_trajectory_risk(student_id, {"evidence": scores}, None)
+        assert len(items) == 1
+
+    def test_multiple_skills_only_qualifying_ones_fire(self) -> None:
+        student_id = uuid.uuid4()
+        per_skill = {
+            "evidence": [0.8, 0.7, 0.6, 0.5],  # 3 declines → fires
+            "thesis": [0.7, 0.8, 0.7, 0.8],  # no consecutive decline → no fire
+            "voice": [0.9, 0.8, 0.7, 0.6, 0.5],  # 4 declines → fires
+        }
+        items = _check_trajectory_risk(student_id, per_skill)
+        triggered = {i.skill_key for i in items}
+        assert triggered == {"evidence", "voice"}
+
+    def test_items_sorted_alphabetically_by_skill_key(self) -> None:
+        student_id = uuid.uuid4()
+        per_skill = {
+            "voice": [0.8, 0.7, 0.6, 0.5],
+            "evidence": [0.8, 0.7, 0.6, 0.5],
+            "thesis": [0.8, 0.7, 0.6, 0.5],
+        }
+        items = _check_trajectory_risk(student_id, per_skill)
+        assert [i.skill_key for i in items] == ["evidence", "thesis", "voice"]
+
+    def test_urgency_is_one(self) -> None:
+        student_id = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert items[0].urgency == 1
+
+    def test_urgency_constant_is_one(self) -> None:
+        assert _URGENCY_TRAJECTORY_RISK == 1
+
+    def test_min_decline_steps_constant_is_three(self) -> None:
+        assert _TRAJECTORY_RISK_MIN_DECLINE_STEPS == 3
+
+    def test_empty_per_assignment_scores_returns_no_items(self) -> None:
+        student_id = uuid.uuid4()
+        items = _check_trajectory_risk(student_id, {})
+        assert items == []
+
+    def test_tail_decline_preceded_by_earlier_rise_still_fires(self) -> None:
+        """Earlier improvements do not cancel a recent declining tail."""
+        student_id = uuid.uuid4()
+        # Rise then decline: [0.3, 0.5, 0.8, 0.7, 0.6, 0.5] — last 3 steps decline
+        scores = [0.3, 0.5, 0.8, 0.7, 0.6, 0.5]
+        items = _check_trajectory_risk(student_id, {"evidence": scores})
+        assert len(items) == 1
+        assert items[0].details["consecutive_decline_count"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests — tenant isolation for _check_trajectory_risk
+# ---------------------------------------------------------------------------
+
+
+class TestTrajectoryRiskTenantIsolation:
+    def test_items_bound_to_correct_student(self) -> None:
+        """trajectory_risk items always carry the correct student_id."""
+        student_a = uuid.uuid4()
+        student_b = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+
+        items_a = _check_trajectory_risk(student_a, {"evidence": scores})
+        items_b = _check_trajectory_risk(student_b, {"evidence": scores})
+
+        assert all(i.student_id == student_a for i in items_a)
+        assert all(i.student_id == student_b for i in items_b)
+        assert items_a[0].student_id != items_b[0].student_id
+
+    def test_deduplication_is_per_student(self) -> None:
+        """Deduplication uses per-call profile_trends, not shared state."""
+        student_a = uuid.uuid4()
+        student_b = uuid.uuid4()
+        scores = [0.8, 0.7, 0.6, 0.5]
+
+        # student_a: skill is already 'declining' → skipped
+        items_a = _check_trajectory_risk(
+            student_a, {"evidence": scores}, {"evidence": "declining"}
+        )
+        # student_b: no profile trends → fires
+        items_b = _check_trajectory_risk(student_b, {"evidence": scores}, {})
+
+        assert items_a == []
+        assert len(items_b) == 1
+        assert items_b[0].student_id == student_b
+
+
+
 
 
 def _make_worklist_item_orm(
