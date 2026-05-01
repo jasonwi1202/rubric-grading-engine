@@ -989,6 +989,92 @@ Transitions the recommendation from `pending_review` → `accepted`.  Idempotent
 | POST | `/worklist/{itemId}/snooze` | Snooze item (defer to next week) |
 | DELETE | `/worklist/{itemId}` | Dismiss item permanently |
 
+**GET /worklist response (200):**
+```json
+{
+  "data": {
+    "teacher_id": "uuid",
+    "items": [
+      {
+        "id": "uuid",
+        "student_id": "uuid",
+        "trigger_type": "regression",
+        "skill_key": "evidence",
+        "urgency": 4,
+        "suggested_action": "Review evidence integration with Student A.",
+        "details": {
+          "reason": "Score declined across recent locked assignments"
+        },
+        "status": "active",
+        "snoozed_until": null,
+        "completed_at": null,
+        "generated_at": "2026-05-01T00:00:00Z",
+        "created_at": "2026-05-01T00:00:00Z"
+      }
+    ],
+    "total_count": 1,
+    "generated_at": "2026-05-01T00:00:00Z"
+  }
+}
+```
+
+Returns active items plus expired snoozed items (still marked `status: "snoozed"` until the next transition). Completed and dismissed items are excluded.
+
+`trigger_type` is one of `regression | non_responder | persistent_gap | high_inconsistency`.
+
+**POST /worklist/{itemId}/complete response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "completed",
+    "completed_at": "2026-05-01T00:00:00Z",
+    "...": "other WorklistItemResponse fields"
+  }
+}
+```
+
+Idempotent when already completed.
+
+**POST /worklist/{itemId}/snooze body (optional):**
+```json
+{
+  "snoozed_until": "2026-05-08T00:00:00Z"
+}
+```
+
+If the body is omitted entirely, the server defaults `snoozed_until` to 7 days from now.
+
+**POST /worklist/{itemId}/snooze response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "snoozed",
+    "snoozed_until": "2026-05-08T00:00:00Z",
+    "...": "other WorklistItemResponse fields"
+  }
+}
+```
+
+**DELETE /worklist/{itemId} response (200):**
+```json
+{
+  "data": {
+    "id": "uuid",
+    "status": "dismissed",
+    "...": "other WorklistItemResponse fields"
+  }
+}
+```
+
+Idempotent when already dismissed.
+
+**Error behavior for all three mutation endpoints (`complete`, `snooze`, `dismiss`):**
+
+- `404 NOT_FOUND` if the item does not exist or is not accessible to the authenticated teacher (non-enumerable behavior)
+- `422 INVALID_STATE_TRANSITION` when the requested transition is disallowed by current state
+
 ---
 
 ### Contact (Public — no authentication required)

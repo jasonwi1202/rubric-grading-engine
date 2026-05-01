@@ -28,9 +28,10 @@ Every query touching classes, students, assignments, essays, grades, or rubrics 
 
 - [ ] All service functions accept `teacher_id` as an explicit parameter
 - [ ] Every database query includes `WHERE teacher_id = :teacher_id` or an equivalent join that enforces teacher ownership
+- [ ] Every UPDATE/DELETE mutation query on tenant-scoped tables includes `teacher_id` in the mutation predicate itself (not only in a prior ownership check)
 - [ ] **No two-query ownership pattern** — do NOT do a `teacher_id` check in one query and then fetch data in a second query that omits `teacher_id`. Both the ownership check and the data fetch must be in a single query, or the data fetch must independently include `teacher_id`. A check-then-fetch pattern without scoping the data query is a tenant isolation gap even if the check passes.
 - [ ] Celery tasks include `teacher_id` in their payload and validate ownership before loading any entity
-- [ ] Cross-teacher access attempts return `403` — do not return `404` in ways that leak existence
+- [ ] Cross-teacher access attempts default to `403`; if an endpoint intentionally uses a non-enumerable pattern and returns `404` for both missing and cross-tenant IDs, that behavior is explicitly documented in the route docstring/API docs and tested
 - [ ] RLS policy on the table is set for all tenant-scoped entities (see `docs/architecture/security.md#2-multi-tenant-data-isolation`)
 
 ## Prompt Injection Defense
@@ -122,6 +123,7 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 - [ ] Routers contain no business logic — they validate input, call a service, and return a response
 - [ ] **`StrEnum` values must be accessed via `.value` or passed directly, not via `str()`** — `str(FeedbackTone.direct)` produces `"FeedbackTone.direct"` (the repr), not `"direct"`. Use `tone.value` or rely on `StrEnum` auto-coercion when passing to string contexts.
 - [ ] **`None` and empty list `[]` are distinct — treat them separately in service functions** — `if essay_ids:` is falsy for both `None` and `[]`, causing an empty list to be silently ignored and the full dataset to be processed. Use `if essay_ids is not None:` to distinguish "not provided" from "provided but empty".
+- [ ] **List/ranking queries must be deterministic** — include an explicit stable tie-breaker (e.g., UUID/primary key ascending) after business ordering fields so repeated runs return the same order.
 - [ ] **Status transitions that gate subsequent I/O must be committed last or rolled back on failure** — committing an assignment/essay status change before Redis initialization or Celery enqueue leaves the status stuck if the subsequent step fails. Either defer the commit until all side effects succeed, or roll back the status on exception.
 - [ ] **Non-fatal side effects (Redis progress updates, notifications) must be caught and logged, not allowed to propagate** — a transient Redis outage should not fail an otherwise-successful grading write. Wrap best-effort operations in `try/except` with structured error logging.
 - [ ] **Score overrides must be validated against `rubric_snapshot` min/max, not the live rubric** — the rubric may have changed since assignment creation. Read `assignment.rubric_snapshot` to find the criterion bounds and raise a domain `ValidationError` when `teacher_score` is out of range.
@@ -133,6 +135,7 @@ Reference: `docs/architecture/data-model.md#key-design-decisions`
 
 - [ ] New tasks are registered in `app/tasks/celery_app.py`
 - [ ] **Tasks accept only IDs, never full entity objects** — passing full data into a task payload means retries use stale data from the original enqueue, not the current state. Tasks must load their own data from the DB using the ID.
+- [ ] **Batch recompute tasks use a per-entity DB lock before destructive rewrite steps** (e.g., DELETE+INSERT refresh patterns) to prevent duplicate/overlapping writes under concurrent runs.
 - [ ] **Tasks use exponential backoff** — do not set a fixed `default_retry_delay`. Use `countdown=2 ** self.request.retries` or equivalent. A fixed delay defeats the retry strategy during outages.
 - [ ] Tasks are idempotent — safe to re-run if a worker crashes mid-execution
 - [ ] **Celery task error handlers must not unconditionally revert state** — a `_revert_to_queued` helper called from a broad `except Exception` block will downgrade a legitimately `graded` essay if the failure is a `ConflictError` (e.g., duplicate grade). Handle `ConflictError` and other non-"stuck" failures explicitly without reverting, and only revert when the current status is actually the in-progress state (e.g., `grading`).
