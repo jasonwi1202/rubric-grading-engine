@@ -504,7 +504,7 @@ async def approve_intervention(
         # Idempotent: already approved.
         return rec
 
-    before = {"status": rec.status}
+    before: dict[str, object] = {"status": rec.status}
     now = datetime.now(UTC)
     update_result = await db.execute(
         update(InterventionRecommendation)
@@ -579,7 +579,7 @@ async def dismiss_intervention(
         # Idempotent: already dismissed.
         return rec
 
-    before = {"status": rec.status}
+    before: dict[str, object] = {"status": rec.status}
     now = datetime.now(UTC)
     update_result = await db.execute(
         update(InterventionRecommendation)
