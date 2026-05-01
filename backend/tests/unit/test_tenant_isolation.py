@@ -1,24 +1,33 @@
 """Unit tests for cross-tenant access control (tenant isolation).
 
-Verifies that every major resource type returns HTTP 403 — not 200 or 404 —
-when teacher B attempts to access a resource that belongs to teacher A.
+Most resource types return HTTP 403 when teacher B attempts to access a
+resource that belongs to teacher A.  However, some resources — specifically
+those whose service layer uses a single ``SELECT … WHERE id = ? AND
+teacher_id = ?`` query (matching the FORCE RLS visibility model) — return
+HTTP 404 instead: a cross-tenant ID and a nonexistent ID are
+indistinguishable, so both surface as NOT_FOUND.
+
+Resources that return 403 (ForbiddenError):
+  classes, essays, assignments, rubrics, grades, student_groups
+
+Resources that return 404 (NotFoundError):
+  teacher_worklist_items, instruction_recommendations
 
 The tests work by:
 1. Overriding ``get_current_teacher`` to inject teacher B's identity.
-2. Patching the relevant service function to raise ``ForbiddenError`` (which
-   is the correct service-layer response when ``teacher_id`` doesn't match).
-3. Asserting the HTTP response code is 403 and the error code is "FORBIDDEN".
+2. Patching the relevant service function to raise the appropriate exception.
+3. Asserting the HTTP response code and error code.
 
 No real database or Redis is required — all external dependencies are mocked.
 No student PII appears in any fixture or assertion.
 
 Scope: these are **unit tests** that validate the exception-to-HTTP mapping
-(i.e. that ``ForbiddenError`` from the service layer is correctly surfaced as
-HTTP 403 with ``FORBIDDEN`` code through the router/exception-handler chain).
-They do NOT exercise real database query scoping or PostgreSQL RLS behaviour.
-Integration tests that verify actual tenant isolation end-to-end (creating
-Teacher A resources in a real DB, authenticating as Teacher B, and asserting
-zero-row / 403 responses) are tracked separately and require testcontainers.
+(i.e. that the service-layer exception is correctly surfaced through the
+router/exception-handler chain).  They do NOT exercise real database query
+scoping or PostgreSQL RLS behaviour.  Integration tests that verify actual
+tenant isolation end-to-end (creating Teacher A resources in a real DB,
+authenticating as Teacher B, and asserting zero-row / 403 / 404 responses)
+are tracked separately and require testcontainers.
 """
 
 from __future__ import annotations
@@ -369,7 +378,14 @@ class TestGradeTenantIsolation:
 
 
 class TestWorklistTenantIsolation:
-    def test_complete_worklist_item_returns_403_for_another_teachers_item(self) -> None:
+    """Cross-tenant isolation tests for worklist endpoints.
+
+    The worklist service uses a single ``SELECT … WHERE id = ? AND teacher_id = ?``
+    query pattern. Cross-tenant and nonexistent IDs are indistinguishable and both
+    raise :exc:`~app.exceptions.NotFoundError`, surfacing as HTTP 404.
+    """
+
+    def test_complete_worklist_item_returns_404_for_another_teachers_item(self) -> None:
         teacher_b = _make_teacher()
         other_item_id = uuid.uuid4()
         app = _app_with_teacher(teacher_b)
@@ -378,15 +394,15 @@ class TestWorklistTenantIsolation:
             patch(
                 "app.routers.worklist.complete_worklist_item",
                 new_callable=AsyncMock,
-                side_effect=ForbiddenError("worklist item not accessible"),
+                side_effect=NotFoundError("Worklist item not found."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.post(f"/api/v1/worklist/{other_item_id}/complete")
 
-        _assert_403(resp)
+        _assert_404(resp)
 
-    def test_snooze_worklist_item_returns_403_for_another_teachers_item(self) -> None:
+    def test_snooze_worklist_item_returns_404_for_another_teachers_item(self) -> None:
         teacher_b = _make_teacher()
         other_item_id = uuid.uuid4()
         app = _app_with_teacher(teacher_b)
@@ -395,15 +411,15 @@ class TestWorklistTenantIsolation:
             patch(
                 "app.routers.worklist.snooze_worklist_item",
                 new_callable=AsyncMock,
-                side_effect=ForbiddenError("worklist item not accessible"),
+                side_effect=NotFoundError("Worklist item not found."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.post(f"/api/v1/worklist/{other_item_id}/snooze", json={})
 
-        _assert_403(resp)
+        _assert_404(resp)
 
-    def test_dismiss_worklist_item_returns_403_for_another_teachers_item(self) -> None:
+    def test_dismiss_worklist_item_returns_404_for_another_teachers_item(self) -> None:
         teacher_b = _make_teacher()
         other_item_id = uuid.uuid4()
         app = _app_with_teacher(teacher_b)
@@ -412,13 +428,13 @@ class TestWorklistTenantIsolation:
             patch(
                 "app.routers.worklist.dismiss_worklist_item",
                 new_callable=AsyncMock,
-                side_effect=ForbiddenError("worklist item not accessible"),
+                side_effect=NotFoundError("Worklist item not found."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.delete(f"/api/v1/worklist/{other_item_id}")
 
-        _assert_403(resp)
+        _assert_404(resp)
 
 
 # ---------------------------------------------------------------------------
