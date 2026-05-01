@@ -157,6 +157,11 @@ test.describe("Journey 5 — Student profiles: skill profile across two assignme
     if (!state.page) throw new Error("Browser context not initialized in beforeAll");
     const page = state.page;
 
+    // Navigate explicitly to the student profile page rather than relying on
+    // the page state left by Test 1 — serial tests share a browser context but
+    // CI can introduce micro-delays that cause the page to reload or redirect.
+    await page.goto(`/dashboard/students/${state.studentId}`);
+
     // The "Assignment History" section lists all locked grades newest-first.
     await expect(
       page.getByRole("heading", { name: /assignment history/i }),

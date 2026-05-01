@@ -305,3 +305,12 @@ class RevisionComparisonResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class EssayVersionListResponse(BaseModel):
+    """Response for ``GET /essays/{essayId}/versions``.
+
+    Returns all submitted versions of an essay in ascending version_number order.
+    """
+
+    versions: list[EssayVersionResponse]

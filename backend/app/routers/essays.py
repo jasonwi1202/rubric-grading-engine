@@ -12,6 +12,7 @@ Endpoints (``essay_router``, prefix ``/essays``):
   PATCH /essays/{essayId}                        — manually assign a student to an essay
   POST  /essays/{essayId}/grade/retry            — re-enqueue grading for a failed essay
   POST  /essays/{essayId}/resubmit              — submit a new essay version (M6-10)
+  GET   /essays/{essayId}/versions              — list all submitted versions (M6-10)
   GET   /essays/{essayId}/revision-comparison   — get revision comparison for a resubmission (M6-11)
   POST  /essays/{essayId}/snapshots             — save a writing-process snapshot (M5-09)
   GET   /essays/{essayId}/snapshots             — retrieve snapshots for editor recovery (M5-09)
@@ -40,6 +41,8 @@ from app.schemas.essay import (
     ComposeEssayRequest,
     EssayListItemResponse,
     EssayUploadItemResponse,
+    EssayVersionListResponse,
+    EssayVersionResponse,
     RevisionComparisonResponse,
     WriteSnapshotRequest,
 )
@@ -54,7 +57,7 @@ from app.services.essay import (
     resubmit_essay,
     save_writing_snapshot,
 )
-from app.services.resubmission import get_revision_comparison
+from app.services.resubmission import get_revision_comparison, list_essay_versions
 from app.tasks.embedding import compute_essay_embedding as _compute_embedding_task
 
 logger = logging.getLogger(__name__)
@@ -570,6 +573,46 @@ async def get_process_signals_endpoint(
     return JSONResponse(
         status_code=200,
         content={"data": result.model_dump(mode="json")},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /essays/{essayId}/versions  (M6-10)
+# ---------------------------------------------------------------------------
+
+
+@essay_router.get(
+    "/{essay_id}/versions",
+    summary="List all submitted versions of an essay (M6-10)",
+)
+async def list_essay_versions_endpoint(
+    essay_id: uuid.UUID,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return all submitted versions of an essay in ascending version_number order.
+
+    Each version represents one submission attempt (original + any resubmissions).
+    The list is sorted by ``version_number`` ascending so the original submission
+    is always first.
+
+    Response body: ``{"data": {"versions": [EssayVersionResponse, ...]}}``
+
+    Returns 404 if the essay does not exist or belongs to a different teacher.
+    Cross-tenant essay IDs are invisible via FORCE-RLS so they return 404,
+    indistinguishable from nonexistent IDs.
+    """
+    versions = await list_essay_versions(
+        db=db,
+        essay_id=essay_id,
+        teacher_id=teacher.id,
+    )
+    response = EssayVersionListResponse(
+        versions=[EssayVersionResponse.model_validate(v) for v in versions],
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"data": response.model_dump(mode="json")},
     )
 
 

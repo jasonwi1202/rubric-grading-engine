@@ -155,18 +155,39 @@ async def _seed_student(
     await db.commit()
 
 
+async def _seed_enrollment(
+    db: AsyncSession,
+    student_id: uuid.UUID,
+    class_id: uuid.UUID,
+) -> None:
+    """Enroll a student in a class (active enrollment, no removed_at)."""
+    import uuid as _uuid
+    await db.execute(
+        text(
+            "INSERT INTO class_enrollments (id, student_id, class_id) "
+            "VALUES (:id, :sid, :cid) ON CONFLICT DO NOTHING"
+        ),
+        {"id": str(_uuid.uuid4()), "sid": str(student_id), "cid": str(class_id)},
+    )
+    await db.commit()
+
+
 async def _seed_group(
     db: AsyncSession,
     group_id: uuid.UUID,
     class_id: uuid.UUID,
     teacher_id: uuid.UUID,
     skill_key: str = "evidence",
+    student_ids: list[str] | None = None,
 ) -> None:
+    import json as _json
+    sids = _json.dumps(student_ids or [])
+    count = len(student_ids) if student_ids else 0
     await db.execute(
         text(
             "INSERT INTO student_groups "
             "(id, teacher_id, class_id, skill_key, label, student_ids, student_count, stability) "
-            "VALUES (:id, :tid, :cid, :sk, :label, CAST(:sids AS jsonb), 0, 'persistent') "
+            "VALUES (:id, :tid, :cid, :sk, :label, CAST(:sids AS jsonb), :count, 'persistent') "
             "ON CONFLICT DO NOTHING"
         ),
         {
@@ -175,7 +196,8 @@ async def _seed_group(
             "cid": str(class_id),
             "sk": skill_key,
             "label": skill_key.title(),
-            "sids": "[]",
+            "sids": sids,
+            "count": count,
         },
     )
     await db.commit()
@@ -430,3 +452,128 @@ class TestWorklistIntegrationTenantIsolation:
         assert "data" in body
         assert body["data"]["id"] == str(item_id)
         assert body["data"]["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_snooze_own_worklist_item_succeeds(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """POST /worklist/{itemId}/snooze returns 200 and status='snoozed' for the owning teacher."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        item_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_worklist_item(db_session, item_id, teacher_id, student_id)
+
+        from datetime import datetime, timedelta, timezone
+        snooze_until = (datetime.now(tz=timezone.utc) + timedelta(days=7)).isoformat()
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.post(f"/api/v1/worklist/{item_id}/snooze", json={"snooze_until": snooze_until})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        assert body["data"]["id"] == str(item_id)
+        assert body["data"]["status"] == "snoozed"
+
+    @pytest.mark.asyncio
+    async def test_dismiss_own_worklist_item_succeeds(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """DELETE /worklist/{itemId} returns 200 and removes the item for the owning teacher."""
+        teacher_id = _uuid()
+        student_id = _uuid()
+        item_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_worklist_item(db_session, item_id, teacher_id, student_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.delete(f"/api/v1/worklist/{item_id}")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        assert body["data"]["id"] == str(item_id)
+        assert body["data"]["status"] == "dismissed"
+
+
+# ---------------------------------------------------------------------------
+# Student Groups — happy-path mutation tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestStudentGroupsMutationIntegration:
+    """Integration tests for the PATCH /classes/{classId}/groups/{groupId} happy path."""
+
+    @pytest.mark.asyncio
+    async def test_patch_group_updates_student_membership(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """PATCH /classes/{classId}/groups/{groupId} returns 200 and persists the updated student_ids."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+        group_id = _uuid()
+        student1_id = _uuid()
+        student2_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        # Seed both students so the service can resolve their names.
+        await _seed_student(db_session, student1_id, teacher_id)
+        await _seed_student(db_session, student2_id, teacher_id)
+        # Enroll both students in the class so the service includes them after filtering.
+        await _seed_enrollment(db_session, student1_id, class_id)
+        await _seed_enrollment(db_session, student2_id, class_id)
+        # Group starts with both students.
+        await _seed_group(
+            db_session, group_id, class_id, teacher_id,
+            student_ids=[str(student1_id), str(student2_id)],
+        )
+
+        # PATCH to remove student2 — only student1 remains.
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.patch(
+            f"/api/v1/classes/{class_id}/groups/{group_id}",
+            json={"student_ids": [str(student1_id)]},
+        )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "data" in body
+        returned_ids = [s["id"] for s in body["data"]["students"]]
+        assert str(student1_id) in returned_ids
+        assert str(student2_id) not in returned_ids
+
+    @pytest.mark.asyncio
+    async def test_patch_group_with_empty_list_clears_members(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """PATCH with an empty student_ids list clears all group members."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+        group_id = _uuid()
+        student_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_enrollment(db_session, student_id, class_id)
+        await _seed_group(
+            db_session, group_id, class_id, teacher_id,
+            student_ids=[str(student_id)],
+        )
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.patch(
+            f"/api/v1/classes/{class_id}/groups/{group_id}",
+            json={"student_ids": []},
+        )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["data"]["students"] == []

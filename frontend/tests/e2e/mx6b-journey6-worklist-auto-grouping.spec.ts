@@ -140,8 +140,15 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
     if (!state.page || !state.fixture) throw new Error("State not initialized");
     const page = state.page;
 
-    // The page is still on the class detail with the Groups tab active.
-    // Find the first group card and click its expand button.
+    // Re-navigate to the class Groups tab explicitly.  Serial tests share a
+    // browser context but the page may have been reloaded or navigated away
+    // between tests in CI, so we cannot rely on state left by Test 1.
+    await page.goto(`/dashboard/classes/${state.fixture.classId}`);
+    const groupsTab = page.getByRole("tab", { name: /groups/i });
+    await expect(groupsTab).toBeVisible({ timeout: 15_000 });
+    await groupsTab.click();
+
+    // The first group card and click its expand button.
     const firstCard = page.locator('[aria-label^="Skill group:"]').first();
     await expect(firstCard).toBeVisible({ timeout: 10_000 });
 

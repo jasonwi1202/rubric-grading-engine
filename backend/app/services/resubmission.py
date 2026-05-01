@@ -427,3 +427,45 @@ async def get_revision_comparison(
         raise NotFoundError("No revision comparison found for this essay.")
 
     return comparison
+
+
+async def list_essay_versions(
+    db: AsyncSession,
+    essay_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> list[EssayVersion]:
+    """List all submitted versions of an essay in ascending version_number order.
+
+    Enforces tenant isolation via an Assignment → Class → teacher_id JOIN so
+    that cross-tenant essay IDs and nonexistent essay IDs both return a
+    :class:`NotFoundError` (404) — consistent with FORCE-RLS convention.
+
+    Args:
+        db:         Async database session.
+        essay_id:   UUID of the essay whose versions to list.
+        teacher_id: UUID of the authenticated teacher (tenant scope).
+
+    Returns:
+        List of :class:`EssayVersion` rows ordered by ``version_number`` ASC.
+
+    Raises:
+        NotFoundError: Essay does not exist or belongs to a different teacher.
+    """
+    # Confirm essay ownership first.
+    essay_result = await db.execute(
+        select(Essay)
+        .join(Assignment, Essay.assignment_id == Assignment.id)
+        .join(Class, Assignment.class_id == Class.id)
+        .where(Essay.id == essay_id, Class.teacher_id == teacher_id)
+    )
+    essay = essay_result.scalar_one_or_none()
+    if essay is None:
+        raise NotFoundError("Essay not found.")
+
+    # Load all versions for this essay in ascending version_number order.
+    versions_result = await db.execute(
+        select(EssayVersion)
+        .where(EssayVersion.essay_id == essay_id)
+        .order_by(EssayVersion.version_number.asc())
+    )
+    return list(versions_result.scalars().all())

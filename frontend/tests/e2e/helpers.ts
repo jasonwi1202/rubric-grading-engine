@@ -1361,6 +1361,27 @@ export async function seedResubmissionFixture(
     "seedResubmissionFixture (lock original grade)",
   );
 
+  // After all grades are locked the assignment transitions to 'review' status,
+  // which blocks POST /assignments/{id}/grade (requires 'open' or 'grading').
+  // PATCH it back to 'open' so the resubmission grading cycle can be triggered.
+  const reopenRes = await fetch(
+    `${API_BASE}/api/v1/assignments/${assignmentId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status: "open" }),
+    },
+  );
+  if (!reopenRes.ok) {
+    const text = await reopenRes.text().catch(() => "");
+    throw new Error(
+      `seedResubmissionFixture (reopen assignment) failed: ${reopenRes.status} ${reopenRes.statusText} — ${text}`,
+    );
+  }
+
   // Submit the resubmission.  The revised text is substantively different from
   // the original to avoid triggering the low-effort heuristic.
   const revisedText =
