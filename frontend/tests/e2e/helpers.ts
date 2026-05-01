@@ -1066,6 +1066,8 @@ async function pollForGroups(
   const NON_RETRIABLE = new Set([401, 403, 404]);
   const deadline = Date.now() + timeoutMs;
   let lastCount = 0;
+  let lastStatus = 0;
+  let lastBody = "";
   let first = true;
   while (Date.now() < deadline) {
     if (!first) {
@@ -1075,12 +1077,16 @@ async function pollForGroups(
     const res = await fetch(`${API_BASE}/api/v1/classes/${classId}/groups`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    lastStatus = res.status;
     if (NON_RETRIABLE.has(res.status)) {
       throw new Error(
         `${label}: non-retriable status ${res.status} from GET /classes/${classId}/groups`,
       );
     }
-    if (!res.ok) continue;
+    if (!res.ok) {
+      lastBody = (await res.text()).slice(0, 200);
+      continue;
+    }
     const body = (await res.json()) as {
       data: { groups: Array<unknown> };
     };
@@ -1088,7 +1094,10 @@ async function pollForGroups(
     if (lastCount > 0) return;
   }
   throw new Error(
-    `${label}: no groups appeared within ${timeoutMs}ms (last count: ${lastCount})`,
+    `${label}: no groups appeared within ${timeoutMs}ms` +
+      ` (last count: ${lastCount}, last status: ${lastStatus}` +
+      (lastBody ? `, last body: ${lastBody}` : "") +
+      ")",
   );
 }
 
@@ -1104,6 +1113,8 @@ async function pollForWorklistItems(
   const NON_RETRIABLE = new Set([401, 403, 404]);
   const deadline = Date.now() + timeoutMs;
   let lastCount = 0;
+  let lastStatus = 0;
+  let lastBody = "";
   let first = true;
   while (Date.now() < deadline) {
     if (!first) {
@@ -1113,12 +1124,16 @@ async function pollForWorklistItems(
     const res = await fetch(`${API_BASE}/api/v1/worklist`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    lastStatus = res.status;
     if (NON_RETRIABLE.has(res.status)) {
       throw new Error(
         `${label}: non-retriable status ${res.status} from GET /worklist`,
       );
     }
-    if (!res.ok) continue;
+    if (!res.ok) {
+      lastBody = (await res.text()).slice(0, 200);
+      continue;
+    }
     const body = (await res.json()) as {
       data: { items: Array<unknown> };
     };
@@ -1126,7 +1141,10 @@ async function pollForWorklistItems(
     if (lastCount > 0) return;
   }
   throw new Error(
-    `${label}: no worklist items appeared within ${timeoutMs}ms (last count: ${lastCount})`,
+    `${label}: no worklist items appeared within ${timeoutMs}ms` +
+      ` (last count: ${lastCount}, last status: ${lastStatus}` +
+      (lastBody ? `, last body: ${lastBody}` : "") +
+      ")",
   );
 }
 

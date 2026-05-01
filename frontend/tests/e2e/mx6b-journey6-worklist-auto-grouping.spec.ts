@@ -200,8 +200,8 @@ test.describe("Journey 6 — Auto-grouping and Worklist", () => {
       .first();
     await expect(firstRemoveButton).toBeVisible({ timeout: 5_000 });
 
-    // Capture the student ID from the aria-label ("Remove {student_name} from group")
-    // — we do NOT assert on the name itself, only record that a removal happened.
+    // Verify the aria-label is present ("Remove {student_name} from group").
+    // We do NOT assert on the name itself, only that the label exists.
     const removeLabel = await firstRemoveButton.getAttribute("aria-label");
     expect(removeLabel).toBeTruthy();
 
