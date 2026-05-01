@@ -1,7 +1,7 @@
 """revision_comparisons: create table for M6-11 resubmission comparison data
 
-Revision ID: 031_revision_comparisons_create_table
-Revises: 030_essay_versions_unique_version_number
+Revision ID: 031_revision_comparisons
+Revises: 030_ev_unique_version_number
 Create Date: 2026-04-30 12:00:00.000000
 
 Creates the ``revision_comparisons`` table that stores criterion-level score
@@ -51,8 +51,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "031_revision_comparisons_create_table"
-down_revision: str | None = "030_essay_versions_unique_version_number"
+revision: str = "031_revision_comparisons"
+down_revision: str | None = "030_ev_unique_version_number"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

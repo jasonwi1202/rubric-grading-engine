@@ -1,6 +1,6 @@
 """essay_versions: add unique constraint on (essay_id, version_number)
 
-Revision ID: 030_essay_versions_unique_version_number
+Revision ID: 030_ev_unique_version_number
 Revises: 029_instruction_recommendations
 Create Date: 2026-04-30 00:01:00.000000
 
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "030_essay_versions_unique_version_number"
+revision: str = "030_ev_unique_version_number"
 down_revision: str | None = "029_instruction_recommendations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

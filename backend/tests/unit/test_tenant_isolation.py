@@ -412,3 +412,95 @@ class TestWorklistTenantIsolation:
             resp = client.delete(f"/api/v1/worklist/{other_item_id}")
 
         _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Student Groups — GET /api/v1/classes/{classId}/groups
+#                  PATCH /api/v1/classes/{classId}/groups/{groupId}
+# ---------------------------------------------------------------------------
+
+
+class TestStudentGroupTenantIsolation:
+    def test_get_groups_returns_403_for_another_teachers_class(self) -> None:
+        teacher_b = _make_teacher()
+        other_class_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.classes.list_class_groups",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("class not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.get(f"/api/v1/classes/{other_class_id}/groups")
+
+        _assert_403(resp)
+
+    def test_patch_group_returns_403_for_another_teachers_class(self) -> None:
+        teacher_b = _make_teacher()
+        other_class_id = uuid.uuid4()
+        other_group_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.classes.update_group_members",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("class not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.patch(
+                f"/api/v1/classes/{other_class_id}/groups/{other_group_id}",
+                json={"student_ids": []},
+            )
+
+        _assert_403(resp)
+
+
+# ---------------------------------------------------------------------------
+# Recommendations — POST /api/v1/recommendations/{id}/assign
+#                   POST /api/v1/recommendations/{id}/dismiss
+# ---------------------------------------------------------------------------
+
+
+class TestRecommendationTenantIsolation:
+    def test_assign_recommendation_returns_403_for_another_teachers_recommendation(
+        self,
+    ) -> None:
+        teacher_b = _make_teacher()
+        other_rec_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.recommendations.assign_recommendation",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("recommendation not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/recommendations/{other_rec_id}/assign")
+
+        _assert_403(resp)
+
+    def test_dismiss_recommendation_returns_403_for_another_teachers_recommendation(
+        self,
+    ) -> None:
+        teacher_b = _make_teacher()
+        other_rec_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.recommendations.dismiss_recommendation",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("recommendation not accessible"),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/recommendations/{other_rec_id}/dismiss")
+
+        _assert_403(resp)
