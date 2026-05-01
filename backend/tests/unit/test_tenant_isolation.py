@@ -8,7 +8,7 @@ HTTP 404 instead: a cross-tenant ID and a nonexistent ID are
 indistinguishable, so both surface as NOT_FOUND.
 
 Resources that return 403 (ForbiddenError):
-  classes, essays, assignments, rubrics, grades, student_groups
+  classes, students, essays, assignments, rubrics, grades, student_groups
 
 Resources that return 404 (NotFoundError):
   teacher_worklist_items, instruction_recommendations

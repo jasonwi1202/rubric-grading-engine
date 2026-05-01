@@ -1,7 +1,9 @@
-"""Integration tests for cross-teacher tenant isolation — M6 tables.
+"""Integration tests for cross-teacher tenant isolation — selected M6 tables.
 
 Verifies that teacher B cannot read or modify resources owned by teacher A for
-all M6 tables: student_groups, teacher_worklist_items.
+the M6 tables covered in this module: student_groups and
+teacher_worklist_items. Isolation coverage for instruction_recommendations
+lives in separate integration tests.
 
 These tests validate **service-layer ``teacher_id`` scoping** (every query
 carries a ``teacher_id`` predicate that limits results to the authenticated
