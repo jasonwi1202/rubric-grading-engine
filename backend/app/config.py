@@ -283,6 +283,27 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def production_security_guardrails(self) -> "Settings":
+        """Fail fast on insecure auth/session settings in staging/production.
+
+        These guardrails prevent deployments that would weaken cookie/session
+        security assumptions relied upon by the auth flow.
+        """
+        if self.environment in {"staging", "production"}:
+            if not self.trust_proxy_headers:
+                raise ValueError(
+                    "TRUST_PROXY_HEADERS must be true in staging/production "
+                    "when running behind a trusted reverse proxy."
+                )
+            if self.allow_unverified_login_in_test:
+                raise ValueError(
+                    "ALLOW_UNVERIFIED_LOGIN_IN_TEST must be false in staging/production."
+                )
+            if self.frontend_url.lower().startswith("http://"):
+                raise ValueError("FRONTEND_URL must use https:// in staging/production.")
+        return self
+
     # -------------------------------------------------------------------------
     # Derived helpers
     # -------------------------------------------------------------------------

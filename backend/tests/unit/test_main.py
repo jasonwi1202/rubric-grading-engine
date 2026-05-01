@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.exceptions import (
     ConflictError,
@@ -288,3 +289,14 @@ class TestExceptionHandlers:
             assert sensitive_token not in str(record.__dict__), (
                 f"Sensitive value found in log record extras: {record.__dict__!r}"
             )
+
+    def test_http_exception_non_5xx_does_not_expose_detail(self) -> None:
+        secret = "forbidden-student-name"
+        client = _make_client_with_route(StarletteHTTPException(status_code=404, detail=secret))
+
+        resp = client.get("/test-error")
+
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["error"]["message"] == "Resource not found."
+        assert secret not in resp.text

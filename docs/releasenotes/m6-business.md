@@ -79,3 +79,14 @@ The version history tab on any essay lets you browse all submitted versions.
 ## What's Next (M7 — Closed Loop)
 
 M7 brings automation agents that proactively scan for intervention signals on a schedule, predictive trajectory risk detection (students declining across multiple assignments), and a conversational teacher copilot for querying your class data in plain language.
+
+---
+
+## Security & Compliance Updates
+
+M6 also includes a SOC 2 / FERPA hardening sweep (PR #214) with no visible impact on the teacher workflow:
+
+- Student data is no longer exposed in any server error messages or log output
+- Invalid session tokens now correctly trigger a silent re-authentication so teachers are not unexpectedly logged out
+- Referential integrity is now fully enforced at the database level for all audit records
+- A new automated test proves that the database refuses to show one teacher's data to another teacher at the database layer, independent of application code

@@ -5,6 +5,7 @@ and patch.  No real network calls.  No student PII in fixtures.
 """
 
 import uuid
+from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -62,8 +63,8 @@ class TestLoginEndpoint:
         # Refresh token should be in a cookie, not the response body
         assert _REFRESH_COOKIE in resp.cookies
 
-    def test_returns_422_on_invalid_credentials(self) -> None:
-        from app.exceptions import ValidationError
+    def test_returns_401_on_invalid_credentials(self) -> None:
+        from app.exceptions import UnauthorizedError
 
         app = create_app()
 
@@ -71,7 +72,7 @@ class TestLoginEndpoint:
             patch(
                 "app.routers.auth.login_user",
                 new_callable=AsyncMock,
-                side_effect=ValidationError("Invalid email or password."),
+                side_effect=UnauthorizedError("Invalid email or password."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
@@ -80,8 +81,8 @@ class TestLoginEndpoint:
                 json={"email": "bad@school.edu", "password": "wrong"},
             )
 
-        assert resp.status_code == 422
-        assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
     def test_returns_422_for_missing_body(self) -> None:
         app = create_app()
@@ -127,8 +128,8 @@ class TestRefreshEndpoint:
         assert resp.status_code == 401
         assert resp.json()["error"]["code"] == "REFRESH_TOKEN_INVALID"
 
-    def test_returns_422_when_refresh_token_invalid(self) -> None:
-        from app.exceptions import ValidationError
+    def test_returns_401_when_refresh_token_invalid(self) -> None:
+        from app.exceptions import RefreshTokenInvalidError
 
         app = create_app()
 
@@ -136,15 +137,15 @@ class TestRefreshEndpoint:
             patch(
                 "app.routers.auth.refresh_access_token",
                 new_callable=AsyncMock,
-                side_effect=ValidationError("Refresh token is invalid or has expired."),
+                side_effect=RefreshTokenInvalidError("Refresh token is invalid or has expired."),
             ),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             client.cookies.set(_REFRESH_COOKIE, "expired_token")
             resp = client.post("/api/v1/auth/refresh")
 
-        assert resp.status_code == 422
-        assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] == "REFRESH_TOKEN_INVALID"
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +195,7 @@ class TestLogoutEndpoint:
         mock_db = MagicMock()
         mock_db.commit = AsyncMock(return_value=None)
 
-        async def _get_mock_db() -> MagicMock:
+        async def _get_mock_db() -> AsyncGenerator[MagicMock, None]:
             yield mock_db
 
         from app.db.session import get_db

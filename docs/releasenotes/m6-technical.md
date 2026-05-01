@@ -20,8 +20,9 @@ All migrations are reversible. Run order is enforced by the revision chain.
 | 029 | `instruction_recommendations_create_table` | New `instruction_recommendations` table: `id`, `teacher_id`, `student_id`, `group_id`, `grade_level`, `recommendations JSONB`, `evidence_summary`, `status`, `prompt_version` — RLS-isolated by `teacher_id` |
 | 030 | `essay_versions_unique_version_number` | Unique constraint on `(essay_id, version_number)` for `essay_versions`; enables safe resubmission versioning |
 | 031 | `revision_comparisons_create_table` | New `revision_comparisons` table: `id`, `essay_id`, `base_version_id`, `revised_version_id`, `criterion_deltas JSONB`, `addressed_feedback JSONB`, `low_effort_flag BOOLEAN`, `created_at` — RLS-isolated via `essay_id → teacher_id` join |
+| 032 | `validate_audit_logs_users_fk` | Validates the previously `NOT VALID` foreign key constraint `fk_audit_logs_users` on `audit_logs.user_id → users.id`; no schema change, enforces referential integrity for all existing rows |
 
-**New migration head**: `031_revision_comparisons_create_table`  
+**New migration head**: `032_validate_audit_logs_users_fk`  
 **Previous head** (M5): `025_essay_versions_signals`
 
 ---
@@ -128,6 +129,22 @@ Cross-teacher access for all new endpoints is explicitly tested in `tests/integr
 
 ---
 
+## SOC 2 / FERPA Hardening (PR #214)
+
+Seven compliance fixes applied as part of the M6 security sweep:
+
+| Area | Change |
+|---|---||
+| Logging | S3 object key values removed from essay-ingestion error logs (FERPA — keys can encode student PII) |
+| Error responses | All global exception handlers now return stable, static messages — no `str(exc)` leakage in API responses |
+| Auth | Added `RefreshTokenInvalidError`; invalid/expired refresh tokens now return HTTP 401 so the frontend silent-refresh cycle fires correctly |
+| Startup guards | Production and staging environments now validate `TRUST_PROXY`, `FRONTEND_URL` (https), and `ALLOW_UNVERIFIED_LOGIN_IN_TEST=false` at startup |
+| DB integrity | Migration 032 validates the previously `NOT VALID` `fk_audit_logs_users` FK; referential integrity is now enforced for all existing rows |
+| RLS proof | `tests/integration/test_rls_policy_enforcement.py` — non-superuser Postgres role asserts zero rows without tenant context and exactly one row after `SET app.current_teacher_id` |
+| CI | Migration chain check is now dynamic (`alembic heads`) — no longer requires a manual revision bump per migration |
+
+---
+
 ## Test Coverage
 
 ### New backend test files
@@ -164,7 +181,7 @@ Cross-teacher access for all new endpoints is explicitly tested in `tests/integr
 
 ## Upgrade Notes
 
-1. **Run migrations**: `alembic upgrade head` — applies migrations 026 through 031
+1. **Run migrations**: `alembic upgrade head` — applies migrations 026 through 032
 2. **Add new env vars** to `.env` / Railway / secrets store (all have safe defaults — no hard requirement at startup)
 3. **Rebuild Docker images**: `docker compose build backend worker` — new Celery tasks require updated worker image
 4. **No breaking changes** to any existing API endpoints; all additions are new routes or additive fields

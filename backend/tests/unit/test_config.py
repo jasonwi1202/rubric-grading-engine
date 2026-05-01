@@ -98,7 +98,15 @@ class TestJwtSecretKeyValidator:
 class TestEnvironmentValidator:
     @pytest.mark.parametrize("env", ["development", "staging", "production"])
     def test_accepts_valid_environment(self, env: str) -> None:
-        s = _make(environment=env)
+        overrides: dict[str, object] = {"environment": env}
+        if env in {"staging", "production"}:
+            overrides.update(
+                {
+                    "trust_proxy_headers": True,
+                    "frontend_url": "https://app.example.com",
+                }
+            )
+        s = _make(**overrides)
         assert s.environment == env
 
     def test_rejects_invalid_environment(self) -> None:
@@ -210,3 +218,46 @@ class TestDefaults:
 
     def test_s3_endpoint_url_default_is_none(self) -> None:
         assert _make().s3_endpoint_url is None
+
+
+# ---------------------------------------------------------------------------
+# Production/staging security guardrails
+# ---------------------------------------------------------------------------
+
+
+class TestProductionSecurityGuardrails:
+    def test_staging_requires_trusted_proxy_headers(self) -> None:
+        with pytest.raises(ValidationError, match="TRUST_PROXY_HEADERS must be true"):
+            _make(
+                environment="staging",
+                trust_proxy_headers=False,
+                frontend_url="https://app.example.com",
+            )
+
+    def test_production_rejects_unverified_login_bypass(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="ALLOW_UNVERIFIED_LOGIN_IN_TEST must be false",
+        ):
+            _make(
+                environment="production",
+                trust_proxy_headers=True,
+                allow_unverified_login_in_test=True,
+                frontend_url="https://app.example.com",
+            )
+
+    def test_production_requires_https_frontend_url(self) -> None:
+        with pytest.raises(ValidationError, match="FRONTEND_URL must use https://"):
+            _make(
+                environment="production",
+                trust_proxy_headers=True,
+                frontend_url="http://app.example.com",
+            )
+
+    def test_staging_accepts_secure_configuration(self) -> None:
+        s = _make(
+            environment="staging",
+            trust_proxy_headers=True,
+            frontend_url="https://staging.example.com",
+        )
+        assert s.environment == "staging"
