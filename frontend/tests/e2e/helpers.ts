@@ -1277,6 +1277,13 @@ export interface ResubmissionFixture {
   classId: string;
   assignmentId: string;
   essayId: string;
+  /**
+   * Whether the revision comparison has non-null `feedback_addressed` data.
+   * Determined by querying GET /essays/{essayId}/revision-comparison after
+   * both grades are locked.  Used by Test 5 to decide whether to assert the
+   * feedback-addressed section is visible or absent.
+   */
+  hasFeedbackAddressed: boolean;
 }
 
 /**
@@ -1437,6 +1444,21 @@ export async function seedResubmissionFixture(
     classId,
     assignmentId,
     essayId,
+    hasFeedbackAddressed: await (async () => {
+      try {
+        const compRes = await fetch(
+          `${API_BASE}/api/v1/essays/${essayId}/revision-comparison`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!compRes.ok) return false;
+        const body = (await compRes.json()) as {
+          data: { feedback_addressed: unknown[] | null };
+        };
+        return Array.isArray(body.data?.feedback_addressed);
+      } catch {
+        return false;
+      }
+    })(),
   };
 }
 

@@ -301,10 +301,13 @@ async def patch_assignment_endpoint(
     - ``status``: advance the assignment through the state machine.
       Valid transitions: draft → open → grading → review → complete → returned.
       Invalid transitions return 422.
+    - ``resubmission_enabled``: enable or disable student resubmissions.
+      Must be a boolean; explicitly sending ``null`` returns 422.
 
     Returns 403 if the assignment belongs to a different teacher.
     Returns 404 if the assignment does not exist.
-    Returns 422 if the status transition is not allowed.
+    Returns 422 if the status transition is not allowed, or if
+    ``resubmission_enabled`` is explicitly provided as null.
     """
     fields_set = payload.model_fields_set
     if "resubmission_enabled" in fields_set and payload.resubmission_enabled is None:
