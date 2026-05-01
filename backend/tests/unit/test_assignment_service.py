@@ -543,9 +543,9 @@ class TestUpdateAssignment:
             due_date=None,
             update_due_date=False,
             status=None,
-            resubmission_enabled=None,  # omitted — should be a no-op
+            resubmission_enabled=None,  # passed as None — service treats this as "not provided", no-op
         )
-        # Original value should be preserved since None means "not provided".
+        # Original value should be preserved since None signals "not provided" to the service.
         assert result.resubmission_enabled is False
 
 
