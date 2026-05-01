@@ -45,6 +45,29 @@ _HTTP_STATUS_TO_ERROR_CODE: dict[int, str] = {
     429: "RATE_LIMITED",
 }
 
+# Stable public messages for domain exceptions. These are intentionally static
+# so user-controlled exception content never leaks to API clients.
+_DOMAIN_ERROR_MESSAGES: dict[type[RubricGradingError], str] = {
+    NotFoundError: "Resource not found.",
+    UnauthorizedError: "Authentication required.",
+    ForbiddenError: "You do not have access to this resource.",
+    ConflictError: "Request conflicts with current resource state.",
+    RateLimitError: "Too many requests. Please try again later.",
+    ValidationError: "Request validation failed.",
+}
+
+# Static message mapping for framework-raised HTTP errors.
+_HTTP_STATUS_TO_PUBLIC_MESSAGE: dict[int, str] = {
+    400: "Request validation failed.",
+    401: "Authentication required.",
+    403: "You do not have access to this resource.",
+    404: "Resource not found.",
+    405: "Method not allowed.",
+    409: "Request conflicts with current resource state.",
+    422: "Request validation failed.",
+    429: "Too many requests. Please try again later.",
+}
+
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
@@ -164,27 +187,27 @@ def _error_response(
 def _register_exception_handlers(application: FastAPI) -> None:
     @application.exception_handler(NotFoundError)
     async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
-        return _error_response(404, exc.code, str(exc))
+        return _error_response(404, exc.code, _DOMAIN_ERROR_MESSAGES[NotFoundError])
 
     @application.exception_handler(UnauthorizedError)
     async def unauthorized_handler(request: Request, exc: UnauthorizedError) -> JSONResponse:
-        return _error_response(401, exc.code, str(exc))
+        return _error_response(401, exc.code, _DOMAIN_ERROR_MESSAGES[UnauthorizedError])
 
     @application.exception_handler(ForbiddenError)
     async def forbidden_handler(request: Request, exc: ForbiddenError) -> JSONResponse:
-        return _error_response(403, exc.code, str(exc))
+        return _error_response(403, exc.code, _DOMAIN_ERROR_MESSAGES[ForbiddenError])
 
     @application.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
-        return _error_response(409, exc.code, str(exc))
+        return _error_response(409, exc.code, _DOMAIN_ERROR_MESSAGES[ConflictError])
 
     @application.exception_handler(RateLimitError)
     async def rate_limit_handler(request: Request, exc: RateLimitError) -> JSONResponse:
-        return _error_response(429, exc.code, str(exc))
+        return _error_response(429, exc.code, _DOMAIN_ERROR_MESSAGES[RateLimitError])
 
     @application.exception_handler(ValidationError)
     async def domain_validation_handler(request: Request, exc: ValidationError) -> JSONResponse:
-        return _error_response(422, exc.code, str(exc), exc.field)
+        return _error_response(422, exc.code, _DOMAIN_ERROR_MESSAGES[ValidationError], exc.field)
 
     @application.exception_handler(LLMParseError)
     async def llm_parse_error_handler(request: Request, exc: LLMParseError) -> JSONResponse:
@@ -237,8 +260,10 @@ def _register_exception_handlers(application: FastAPI) -> None:
             )
             message = "An unexpected error occurred."
         else:
-            # Surface framework/client error details for non-5xx responses only.
-            message = str(exc.detail) if exc.detail else "An unexpected error occurred."
+            message = _HTTP_STATUS_TO_PUBLIC_MESSAGE.get(
+                exc.status_code,
+                "An unexpected error occurred.",
+            )
         return _error_response(exc.status_code, code, message)
 
     @application.exception_handler(RequestValidationError)

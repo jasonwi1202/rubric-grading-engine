@@ -12,11 +12,11 @@ Fixtures provided:
                          automatically (each test is responsible for its own cleanup or
                          the container is discarded at session end).
 
-Note on RLS: the testcontainers postgres user is a superuser and therefore
-bypasses ``FORCE ROW LEVEL SECURITY`` automatically.  Integration tests validate
-service-layer tenant scoping (WHERE teacher_id = ?) rather than the PostgreSQL
-policy itself — the policy is a DB-level guarantee covered by the migration
-roundtrip test.
+Note on RLS: the default testcontainers postgres user is a superuser and
+therefore bypasses ``FORCE ROW LEVEL SECURITY`` automatically. Most integration
+tests validate service-layer tenant scoping (WHERE teacher_id = ?). A separate
+integration test creates a temporary non-superuser role to verify runtime RLS
+policy enforcement directly.
 """
 
 from __future__ import annotations

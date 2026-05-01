@@ -36,7 +36,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from app.exceptions import ConflictError, RateLimitError, ValidationError
+from app.exceptions import (
+    ConflictError,
+    RateLimitError,
+    RefreshTokenInvalidError,
+    ValidationError,
+)
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -639,7 +644,7 @@ async def refresh_access_token(
     Returns (user, new_access_token, new_refresh_token).
 
     Raises:
-        ValidationError: Refresh token is invalid, expired, or already used.
+        RefreshTokenInvalidError: Refresh token is invalid, expired, or already used.
     """
     from app.config import settings
     from app.models.audit_log import AuditLog
@@ -647,17 +652,17 @@ async def refresh_access_token(
 
     user_id = await consume_refresh_token(redis_client, refresh_token)
     if user_id is None:
-        raise ValidationError("Refresh token is invalid or has expired.", field="token")
+        raise RefreshTokenInvalidError("Refresh token is invalid or has expired.")
 
     result = await db.execute(select(User).where(User.id == user_id))
     db_user: User | None = await _scalar_one_or_none(result)
     if db_user is None:
-        raise ValidationError("Refresh token is invalid or has expired.", field="token")
+        raise RefreshTokenInvalidError("Refresh token is invalid or has expired.")
 
     # Keep refresh behavior consistent with login in CI/test mode where
     # unverified-login bypass can be enabled for deterministic E2E runs.
     if not db_user.email_verified and not settings.allow_unverified_login_in_test:
-        raise ValidationError("Refresh token is invalid or has expired.", field="token")
+        raise RefreshTokenInvalidError("Refresh token is invalid or has expired.")
 
     # Write audit log
     audit = AuditLog(

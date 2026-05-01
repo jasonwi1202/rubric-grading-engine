@@ -35,6 +35,12 @@ class UnauthorizedError(RubricGradingError):
     code = "UNAUTHORIZED"
 
 
+class RefreshTokenInvalidError(UnauthorizedError):
+    """Refresh token is missing, expired, invalid, or already consumed."""
+
+    code = "REFRESH_TOKEN_INVALID"
+
+
 class ForbiddenError(RubricGradingError):
     """Authenticated teacher does not have access to this resource.
 

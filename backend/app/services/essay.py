@@ -501,14 +501,14 @@ async def ingest_essay(
     except Exception:
         logger.exception(
             "Text extraction failed; cleaning up S3 object",
-            extra={"essay_id": str(essay.id), "s3_key": s3_key},
+            extra={"essay_id": str(essay.id)},
         )
         try:
             await loop.run_in_executor(None, delete_file, s3_key)
         except Exception:
             logger.exception(
                 "S3 cleanup after extraction failure also failed",
-                extra={"essay_id": str(essay.id), "s3_key": s3_key},
+                extra={"essay_id": str(essay.id)},
             )
         raise
 

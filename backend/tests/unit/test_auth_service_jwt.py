@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.exceptions import ValidationError
+from app.exceptions import RefreshTokenInvalidError, ValidationError
 from app.services.auth import (
     consume_refresh_token,
     create_access_token,
@@ -265,7 +265,7 @@ class TestRefreshAccessToken:
     async def test_refresh_fails_when_token_invalid(self) -> None:
         db = _make_db(fake_user=None)
         redis = _make_redis(getdel_return=None)
-        with pytest.raises(ValidationError, match="invalid or has expired"):
+        with pytest.raises(RefreshTokenInvalidError, match="invalid or has expired"):
             await refresh_access_token(db, redis, refresh_token="invalid_token")
 
     @pytest.mark.asyncio
@@ -273,7 +273,7 @@ class TestRefreshAccessToken:
         user_id = uuid.uuid4()
         db = _make_db(fake_user=None)
         redis = _make_redis(getdel_return=str(user_id))
-        with pytest.raises(ValidationError, match="invalid or has expired"):
+        with pytest.raises(RefreshTokenInvalidError, match="invalid or has expired"):
             await refresh_access_token(db, redis, refresh_token="valid_token_but_no_user")
 
     @pytest.mark.asyncio
@@ -281,7 +281,7 @@ class TestRefreshAccessToken:
         user = _make_fake_user(verified=False)
         db = _make_db(fake_user=user)
         redis = _make_redis(getdel_return=str(user.id))
-        with pytest.raises(ValidationError, match="invalid or has expired"):
+        with pytest.raises(RefreshTokenInvalidError, match="invalid or has expired"):
             await refresh_access_token(db, redis, refresh_token="token_for_unverified")
 
     @pytest.mark.asyncio
