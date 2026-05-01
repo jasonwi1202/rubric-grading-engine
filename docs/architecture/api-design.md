@@ -496,7 +496,7 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
 | GET | `/classes/{classId}/assignments` | List assignments for a class |
 | POST | `/classes/{classId}/assignments` | Create assignment |
 | GET | `/assignments/{assignmentId}` | Get assignment detail + submission status |
-| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, status, or feedback tone |
+| PATCH | `/assignments/{assignmentId}` | Update title, prompt, due date, status, feedback tone, or resubmission setting |
 | POST | `/assignments/{assignmentId}/grade` | Trigger grading for all queued essays |
 | GET | `/assignments/{assignmentId}/grading-status` | Batch grading progress (polled by frontend) |
 | POST | `/assignments/{assignmentId}/export` | Enqueue export job |
@@ -542,7 +542,8 @@ Suggestions are **advisory only** — the teacher explicitly selects which comme
   "prompt": "Updated prompt.",
   "due_date": "2026-05-15",
   "status": "open",
-  "feedback_tone": "encouraging"
+  "feedback_tone": "encouraging",
+  "resubmission_enabled": true
 }
 ```
 
