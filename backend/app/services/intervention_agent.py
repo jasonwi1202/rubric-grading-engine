@@ -61,6 +61,7 @@ Audit log:
 
 from __future__ import annotations
 
+import inspect
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -68,6 +69,7 @@ from typing import Any, cast
 
 from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError
@@ -380,36 +382,53 @@ async def scan_teacher_for_interventions(
             evidence = _evidence_summary(trigger_type, skill_key, details)
             action = _suggested_action(trigger_type, skill_key)
 
-            rec = InterventionRecommendation(
-                id=uuid.uuid4(),
-                teacher_id=teacher_id,
-                student_id=profile.student_id,
-                trigger_type=trigger_type,
-                skill_key=skill_key,
-                urgency=urgency,
-                trigger_reason=reason,
-                evidence_summary=evidence,
-                suggested_action=action,
-                details=details,
-                status="pending_review",
-            )
-            db.add(rec)
-            # Flush so the row has an ID before we audit-log it.
-            await db.flush()
+            try:
+                # Use a savepoint so duplicate-signal races roll back only this
+                # recommendation, not the entire teacher scan transaction.
+                nested_tx = db.begin_nested()
+                if inspect.isawaitable(nested_tx):
+                    nested_tx = await nested_tx
+                async with nested_tx:
+                    rec = InterventionRecommendation(
+                        id=uuid.uuid4(),
+                        teacher_id=teacher_id,
+                        student_id=profile.student_id,
+                        trigger_type=trigger_type,
+                        skill_key=skill_key,
+                        urgency=urgency,
+                        trigger_reason=reason,
+                        evidence_summary=evidence,
+                        suggested_action=action,
+                        details=details,
+                        status="pending_review",
+                    )
+                    db.add(rec)
+                    # Flush so the row has an ID before we audit-log it.
+                    await db.flush()
 
-            await _write_audit_log(
-                db=db,
-                teacher_id=teacher_id,
-                entity_id=rec.id,
-                action="intervention_recommendation.created",
-                after_value={
-                    "student_id": str(profile.student_id),
-                    "trigger_type": trigger_type,
-                    "skill_key": skill_key,
-                    "urgency": urgency,
-                    "status": "pending_review",
-                },
-            )
+                    await _write_audit_log(
+                        db=db,
+                        teacher_id=teacher_id,
+                        entity_id=rec.id,
+                        action="intervention_recommendation.created",
+                        after_value={
+                            "student_id": str(profile.student_id),
+                            "trigger_type": trigger_type,
+                            "skill_key": skill_key,
+                            "urgency": urgency,
+                            "status": "pending_review",
+                        },
+                    )
+            except IntegrityError:
+                logger.info(
+                    "Intervention recommendation already pending — skipping duplicate",
+                    extra={
+                        "teacher_id": str(teacher_id),
+                        "student_id": str(profile.student_id),
+                        "trigger_type": trigger_type,
+                    },
+                )
+                continue
 
             created.append(rec)
             # Add to pending_keys so subsequent signals in the same scan for

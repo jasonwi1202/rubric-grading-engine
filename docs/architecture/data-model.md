@@ -317,6 +317,9 @@ Append-only record of every consequential action. Never updated or deleted.
 | Email | `email_sent` | `user` | `after_value`: `{"email_type": "<type>"}` — records transactional and lifecycle email deliveries |
 | Instruction | `recommendation_assigned` | `instruction_recommendation` | `before_value`: `{"status": "<previous_status>"}` before assign; `after_value`: `{"status": "accepted"}` |
 | Instruction | `recommendation_dismissed` | `instruction_recommendation` | `before_value`: `{"status": "<previous_status>"}` before dismiss; `after_value`: `{"status": "dismissed"}` |
+| Intervention | `intervention_recommendation.created` | `intervention_recommendation` | `after_value`: `{"student_id": "<student_id>", "trigger_type": "<type>", "skill_key": "<skill_or_null>", "urgency": N, "status": "pending_review"}` |
+| Intervention | `intervention_recommendation.approved` | `intervention_recommendation` | `before_value`: `{"status": "<previous_status>"}`; `after_value`: `{"status": "approved", "actioned_at": "<iso_timestamp>"}` |
+| Intervention | `intervention_recommendation.dismissed` | `intervention_recommendation` | `before_value`: `{"status": "<previous_status>"}`; `after_value`: `{"status": "dismissed", "actioned_at": "<iso_timestamp>"}` |
 
 ---
 
