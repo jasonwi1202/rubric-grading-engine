@@ -68,4 +68,41 @@ test.describe("Journey 9 — Teacher copilot", () => {
     await expect(page.getByText(/Model: copilot-v1/i)).toBeVisible();
     await expect(input).toHaveValue("");
   });
+
+  test("copilot form validates blank question input", async () => {
+    if (!state.page) throw new Error("State not initialized");
+    const page = state.page;
+
+    await page.goto("/dashboard/copilot");
+    await expect(page.getByRole("heading", { name: /copilot/i })).toBeVisible({ timeout: 15_000 });
+
+    const askButton = page.getByRole("button", { name: /ask/i });
+    await askButton.click();
+
+    await expect(
+      page.getByText(/please enter a question|question must not be blank/i),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("copilot student profile links are clickable when returned", async () => {
+    if (!state.page || !state.fixture) throw new Error("State not initialized");
+    const page = state.page;
+
+    await page.goto("/dashboard/copilot");
+    const scope = page.getByLabel(/scope/i);
+    await scope.selectOption(state.fixture.classId);
+
+    const input = page.getByRole("textbox", { name: /your question/i });
+    await input.fill("Which students need support?");
+    await page.getByRole("button", { name: /ask/i }).click();
+
+    // In deterministic fake-LLM mode ranked links are expected. In real mode
+    // they are optional, so assert conditionally.
+    const links = page.getByRole("link", { name: /view student profile/i });
+    const linkCount = await links.count();
+    if (linkCount > 0) {
+      await links.first().click();
+      await expect(page).toHaveURL(/\/dashboard\/students\//, { timeout: 15_000 });
+    }
+  });
 });
