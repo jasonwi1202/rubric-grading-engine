@@ -338,7 +338,7 @@ test.describe("Journey 2 — Grading: upload → auto-assign → batch grade →
     );
 
     // Open the upload dialog.
-    await page.getByRole("button", { name: "Upload essays" }).click();
+    await page.getByRole("button", { name: "Upload essay files" }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
