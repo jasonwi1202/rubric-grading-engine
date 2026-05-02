@@ -121,6 +121,10 @@ class TestCopilotQuery:
         resp = authenticated_client.post("/api/v1/copilot/query", json={"query": ""})
         assert resp.status_code == 422
 
+    def test_returns_422_when_query_whitespace_only(self, authenticated_client: TestClient) -> None:
+        resp = authenticated_client.post("/api/v1/copilot/query", json={"query": "   \n\t  "})
+        assert resp.status_code == 422
+
     def test_returns_422_when_query_exceeds_500_chars(
         self, authenticated_client: TestClient
     ) -> None:

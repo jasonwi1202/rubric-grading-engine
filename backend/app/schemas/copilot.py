@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CopilotQueryRequest(BaseModel):
@@ -34,6 +34,15 @@ class CopilotQueryRequest(BaseModel):
             "to students enrolled in this class."
         ),
     )
+
+    @field_validator("query")
+    @classmethod
+    def validate_query_not_blank(cls, value: str) -> str:
+        """Reject queries that contain only whitespace."""
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("query must not be blank")
+        return trimmed
 
 
 class CopilotRankedItemResponse(BaseModel):

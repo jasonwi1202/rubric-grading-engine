@@ -476,6 +476,41 @@ class TestExecuteCopilotQuery:
         assert call_kwargs["prompt_version"] == "v1"
 
     @pytest.mark.asyncio
+    async def test_class_id_scopes_worklist_items(self, db: AsyncMock) -> None:
+        teacher_id = uuid.uuid4()
+        class_id = uuid.uuid4()
+        parsed = _make_parsed_copilot(ranked_items=[])
+
+        with (
+            patch(
+                "app.services.copilot._assert_class_owned_by",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.copilot._load_skill_profiles",
+                new=AsyncMock(return_value=[]),
+            ) as mock_profiles,
+            patch(
+                "app.services.copilot._load_worklist_items",
+                new=AsyncMock(return_value=[]),
+            ) as mock_worklist,
+            patch("app.services.copilot.call_copilot", new=AsyncMock(return_value=parsed)),
+            patch(
+                "app.services.copilot._load_student_names",
+                new=AsyncMock(return_value={}),
+            ),
+        ):
+            await execute_copilot_query(
+                db,
+                teacher_id=teacher_id,
+                query_text="Who needs help?",
+                class_id=class_id,
+            )
+
+        mock_profiles.assert_awaited_once_with(db, teacher_id, class_id)
+        mock_worklist.assert_awaited_once_with(db, teacher_id, class_id)
+
+    @pytest.mark.asyncio
     async def test_student_names_not_found_produce_none_display_name(self, db: AsyncMock) -> None:
         teacher_id = uuid.uuid4()
         unknown_sid = uuid.uuid4()

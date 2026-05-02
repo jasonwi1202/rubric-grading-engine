@@ -148,33 +148,59 @@ async def _load_skill_profiles(
 async def _load_worklist_items(
     db: AsyncSession,
     teacher_id: uuid.UUID,
+    class_id: uuid.UUID | None,
 ) -> list[TeacherWorklistItem]:
     """Load active worklist items for the given teacher.
 
     Returns items ordered by urgency descending (most urgent first), then
     by creation timestamp descending.
 
+    When ``class_id`` is supplied, items are restricted to students actively
+    enrolled in that class.
+
     Args:
         db: Async database session.
         teacher_id: Requesting teacher's UUID.
+        class_id: Optional class UUID filter.
 
     Returns:
         List of active :class:`~app.models.worklist.TeacherWorklistItem`
         rows, limited to :data:`_MAX_WORKLIST_ITEMS_IN_CONTEXT` entries.
     """
-    stmt = (
-        select(TeacherWorklistItem)
-        .where(
-            TeacherWorklistItem.teacher_id == teacher_id,
-            TeacherWorklistItem.status == "active",
+    if class_id is not None:
+        stmt = (
+            select(TeacherWorklistItem)
+            .join(
+                ClassEnrollment,
+                (ClassEnrollment.student_id == TeacherWorklistItem.student_id)
+                & (ClassEnrollment.class_id == class_id)
+                & (ClassEnrollment.removed_at.is_(None)),
+            )
+            .where(
+                TeacherWorklistItem.teacher_id == teacher_id,
+                TeacherWorklistItem.status == "active",
+            )
+            .order_by(
+                TeacherWorklistItem.urgency.desc(),
+                TeacherWorklistItem.created_at.desc(),
+                TeacherWorklistItem.id.asc(),  # deterministic tie-breaker
+            )
+            .limit(_MAX_WORKLIST_ITEMS_IN_CONTEXT)
         )
-        .order_by(
-            TeacherWorklistItem.urgency.desc(),
-            TeacherWorklistItem.created_at.desc(),
-            TeacherWorklistItem.id.asc(),  # deterministic tie-breaker
+    else:
+        stmt = (
+            select(TeacherWorklistItem)
+            .where(
+                TeacherWorklistItem.teacher_id == teacher_id,
+                TeacherWorklistItem.status == "active",
+            )
+            .order_by(
+                TeacherWorklistItem.urgency.desc(),
+                TeacherWorklistItem.created_at.desc(),
+                TeacherWorklistItem.id.asc(),  # deterministic tie-breaker
+            )
+            .limit(_MAX_WORKLIST_ITEMS_IN_CONTEXT)
         )
-        .limit(_MAX_WORKLIST_ITEMS_IN_CONTEXT)
-    )
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -357,7 +383,7 @@ async def execute_copilot_query(
         await _assert_class_owned_by(db, class_id, teacher_id)
 
     profiles = await _load_skill_profiles(db, teacher_id, class_id)
-    worklist_items = await _load_worklist_items(db, teacher_id)
+    worklist_items = await _load_worklist_items(db, teacher_id, class_id)
 
     logger.info(
         "Copilot query context loaded",
