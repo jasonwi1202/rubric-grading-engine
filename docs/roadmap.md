@@ -25,7 +25,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | ✅ Complete |
 | **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | ✅ Complete |
 | **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | ✅ Complete |
-| **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | 🔲 Planned |
+| **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | ✅ Complete |
 | **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | 🔄 Ongoing |
 | | **Total** | | **95** | |
 
@@ -256,7 +256,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M7 — Closed Loop
+## M7 — Closed Loop ✅ Complete
 
 > Automation agents and teacher copilot. Every prior milestone must be complete before starting this one.
 
@@ -264,10 +264,10 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 | # | Issue Title | Description |
 |---|---|---|
-| M7.1 | Intervention agent | Background Celery task that scans student profiles on a schedule. Detects trigger conditions (persistent gap, regression, non-response). Prepares recommended action and adds to teacher worklist. Teacher approves or dismisses — nothing acts without confirmation. |
-| M7.2 | Predictive insights | Detect early trajectory risk signals from skill profile trends (declining across 3+ assignments, persistent low score with no improvement). Surface as worklist item labeled as prediction. Include confidence indicator and supporting data points. |
-| M7.3 | Teacher copilot — data query layer | LLM-backed query interface backed by real class data. Supports: "Who is falling behind on thesis?", "What should I teach tomorrow?", "Which students haven't improved since my last feedback?". Queries against live Postgres data. Returns ranked lists and summaries. Never fabricates — expresses uncertainty if data is insufficient. Security: strictly scoped to authenticated teacher's classes only. |
-| M7.4 | Teacher copilot UI | Conversational input in sidebar or dedicated panel. Display structured response (ranked list, summary, or recommendation). Link-through to relevant students, assignments, or worklist items. No action taken from copilot — surfacing only. |
+| ~~M7.1~~ | ~~Intervention agent~~ | ✅ Done — PR #221. Scheduled intervention scan task, intervention recommendations API, teacher approve/dismiss lifecycle, audit logging. |
+| ~~M7.2~~ | ~~Predictive insights~~ | ✅ Done — PR #222. Trajectory-risk predictive worklist signal with confidence indicator and supporting trend data. |
+| ~~M7.3~~ | ~~Teacher copilot — data query layer~~ | ✅ Done — PR #223. Teacher-scoped copilot query API backed by live Postgres data with uncertainty handling and schema-validated LLM responses. |
+| ~~M7.4~~ | ~~Teacher copilot UI~~ | ✅ Done — PR #224. Dedicated `/dashboard/copilot` conversational panel with class scoping and structured response rendering. |
 
 ---
 
