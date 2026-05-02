@@ -1166,6 +1166,91 @@ Idempotent when already dismissed.
 
 ---
 
+### Copilot (M7-03)
+
+Teacher-facing instructional query layer.  Answers natural-language questions (skill-risk ranking, next-day lesson priorities, no-improvement cohorts) using live class data from Postgres.  Requires authentication.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/copilot/query` | Answer a teacher's natural-language instructional question using live class data |
+
+**POST /copilot/query body:**
+```json
+{
+  "query": "Which students haven't improved since my last feedback?",
+  "class_id": "uuid"
+}
+```
+
+- `query` (required): Natural-language question, 1–500 characters.
+- `class_id` (optional): Restrict context data to students enrolled in this class.  Omit to aggregate across all of the teacher's classes.
+
+**POST /copilot/query response (200):**
+```json
+{
+  "data": {
+    "query_interpretation": "The teacher wants to identify students who resubmitted but showed little improvement.",
+    "has_sufficient_data": true,
+    "uncertainty_note": null,
+    "response_type": "ranked_list",
+    "ranked_items": [
+      {
+        "student_id": "uuid",
+        "student_display_name": "Fake Student A",
+        "skill_dimension": "thesis",
+        "label": "Student below threshold on thesis",
+        "value": 0.42,
+        "explanation": "avg_score=0.42, trend=stable across 4 assignments."
+      }
+    ],
+    "summary": "Two students have not improved since the last feedback round.",
+    "suggested_next_steps": [
+      "Schedule a one-on-one conference with each student.",
+      "Provide a targeted mini-lesson on thesis construction."
+    ],
+    "prompt_version": "copilot-v1"
+  }
+}
+```
+
+**Response fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `query_interpretation` | string | One sentence summarizing what the LLM understood the teacher to be asking |
+| `has_sufficient_data` | boolean | `false` when class data is too sparse for a reliable answer |
+| `uncertainty_note` | string\|null | Human-readable explanation of data gaps; `null` when data is sufficient |
+| `response_type` | `"ranked_list"` \| `"summary"` \| `"insufficient_data"` | Shape of the answer |
+| `ranked_items` | array | Ranked list of students or skill dimensions (may be empty) |
+| `ranked_items[].student_id` | uuid\|null | Student UUID, or `null` for skill-level items |
+| `ranked_items[].student_display_name` | string\|null | Resolved student display name; `null` if unknown |
+| `ranked_items[].skill_dimension` | string\|null | Canonical skill dimension key; `null` for student-level items |
+| `ranked_items[].label` | string | Short descriptive label |
+| `ranked_items[].value` | float\|null | Normalised score / signal strength `[0.0, 1.0]`, or `null` |
+| `ranked_items[].explanation` | string | Evidence-grounded explanation for this item's ranking |
+| `summary` | string | 2–3 sentence overall answer |
+| `suggested_next_steps` | string[] | Concrete, actionable follow-up steps for the teacher |
+| `prompt_version` | string | Versioned prompt used to generate this response (e.g. `"copilot-v1"`) |
+
+**Security notes:**
+
+- No essay content is included in the LLM context — only aggregate skill dimension data (averages, trends) and worklist signal metadata.
+- Student names are **not** sent to the LLM.  Only student UUIDs appear in the context; names are resolved from the database after the LLM response is parsed.
+- The system prompt instructs the model to ignore any directives found in the class data (prompt injection defense).
+- All responses are validated against the schema before being returned; non-conforming responses trigger one retry then return `500 LLM_PARSE_ERROR`.
+
+**Error behavior:**
+
+| Status | Code | When raised |
+|---|---|---|
+| 422 | `VALIDATION_ERROR` | Invalid request body (e.g., missing query, blank query, query > 500 chars, malformed `class_id`) |
+| 404 | `NOT_FOUND` | `class_id` supplied but the class does not exist |
+| 403 | `FORBIDDEN` | `class_id` supplied but belongs to a different teacher |
+| 503 | `LLM_UNAVAILABLE` | OpenAI API is unreachable or returned a 5xx |
+| 500 | `LLM_PARSE_ERROR` | LLM returned a non-conforming response after one retry |
+
+---
+
 ### Contact (Public — no authentication required)
 
 | Method | Path | Description |
