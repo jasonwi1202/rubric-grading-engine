@@ -1243,6 +1243,7 @@ Teacher-facing instructional query layer.  Answers natural-language questions (s
 
 | Status | Code | When raised |
 |---|---|---|
+| 422 | `VALIDATION_ERROR` | Invalid request body (e.g., missing query, blank query, query > 500 chars, malformed `class_id`) |
 | 404 | `NOT_FOUND` | `class_id` supplied but the class does not exist |
 | 403 | `FORBIDDEN` | `class_id` supplied but belongs to a different teacher |
 | 503 | `LLM_UNAVAILABLE` | OpenAI API is unreachable or returned a 5xx |
