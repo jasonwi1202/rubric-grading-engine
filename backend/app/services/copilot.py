@@ -42,7 +42,7 @@ import contextlib
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Any, Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -242,8 +242,8 @@ def _build_context_json(
                 "trigger_type": w.trigger_type,
                 "skill_key": w.skill_key,
                 "urgency": w.urgency,
-                "trigger_reason": w.trigger_reason,
-                "evidence_summary": w.evidence_summary,
+                "suggested_action": w.suggested_action,
+                "details": w.details,
             }
         )
 
@@ -297,15 +297,17 @@ def _enrich_ranked_items(
 
 def _safe_response_type(
     response_type: str,
-) -> str:
+) -> Literal["ranked_list", "summary", "insufficient_data"]:
     """Coerce the LLM response type to a valid Literal value.
 
     The Pydantic schema expects one of ``"ranked_list"``, ``"summary"``,
     ``"insufficient_data"``.  The parser already normalises unknown values
     to ``"ranked_list"``, so this is a belt-and-suspenders guard.
     """
-    valid = {"ranked_list", "summary", "insufficient_data"}
-    return response_type if response_type in valid else "ranked_list"
+    valid: set[str] = {"ranked_list", "summary", "insufficient_data"}
+    if response_type in valid:
+        return cast(Literal["ranked_list", "summary", "insufficient_data"], response_type)
+    return "ranked_list"
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +390,7 @@ async def execute_copilot_query(
         query_interpretation=parsed.query_interpretation,
         has_sufficient_data=parsed.has_sufficient_data,
         uncertainty_note=parsed.uncertainty_note,
-        response_type=_safe_response_type(parsed.response_type),  # type: ignore[arg-type]
+        response_type=_safe_response_type(parsed.response_type),
         ranked_items=enriched_items,
         summary=parsed.summary,
         suggested_next_steps=parsed.suggested_next_steps,

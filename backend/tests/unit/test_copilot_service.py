@@ -89,8 +89,8 @@ def _make_worklist_item(
     w.trigger_type = trigger_type
     w.skill_key = skill_key
     w.urgency = urgency
-    w.trigger_reason = "Skill is chronically below threshold."
-    w.evidence_summary = "avg_score=0.50, trend=stable, 4 assignments."
+    w.suggested_action = "Review skill dimension with student."
+    w.details = {"avg_score": 0.50, "trend": "stable", "assignment_count": 4}
     return w
 
 
