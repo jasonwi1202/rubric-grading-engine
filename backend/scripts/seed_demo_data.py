@@ -790,9 +790,7 @@ async def _seed_teacher_scoped_data(teacher_id: uuid.UUID) -> None:
                         # match the schema (CriterionDeltaResponse
                         # requires criterion_id as a UUID, not a name).
                         _crit_by_name = {c.name: c for c in criteria}
-                        _evidence_id = str(
-                            _crit_by_name["Evidence and Reasoning"].id
-                        )
+                        _evidence_id = str(_crit_by_name["Evidence and Reasoning"].id)
                         _thesis_id = str(_crit_by_name["Claim and Thesis"].id)
                         db.add(
                             RevisionComparison(
