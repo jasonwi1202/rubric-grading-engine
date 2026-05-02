@@ -991,6 +991,7 @@ Transitions the recommendation from `pending_review` → `accepted`.  Idempotent
 **GET /interventions query params:**
 
 - `status` (optional): `pending_review` (default), `approved`, `dismissed`, or `all`
+- Any other `status` value returns `422 VALIDATION_ERROR`
 
 **GET /interventions response (200):**
 ```json

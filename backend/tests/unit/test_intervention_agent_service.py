@@ -273,8 +273,30 @@ class TestDetectSignals:
         trigger_types = {s["trigger_type"] for s in signals}
         assert "regression" in trigger_types
         # thesis: stable + below threshold + enough assignments + data_points >= 3
-        assert "persistent_gap" in trigger_types
+        # is classified as non_responder and persistent_gap is suppressed to
+        # avoid duplicate recommendations for one root cause.
+        assert "persistent_gap" not in trigger_types
         assert "non_responder" in trigger_types
+
+    def test_non_responder_suppresses_persistent_gap_for_same_skill(self) -> None:
+        student_id = uuid.uuid4()
+        teacher_id = uuid.uuid4()
+        profile = _make_profile(
+            student_id,
+            teacher_id,
+            {
+                "evidence": _skill_entry(
+                    avg_score=0.50,
+                    trend="stable",
+                    data_points=_NON_RESPONDER_MIN_DATA_POINTS,
+                )
+            },
+            assignment_count=_GAP_MIN_ASSIGNMENTS,
+        )
+
+        signals = _detect_signals(profile)
+        trigger_types = [s["trigger_type"] for s in signals if s["skill_key"] == "evidence"]
+        assert trigger_types == ["non_responder"]
 
 
 # ---------------------------------------------------------------------------

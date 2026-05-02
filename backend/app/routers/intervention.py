@@ -12,6 +12,7 @@ Endpoints:
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
@@ -70,7 +71,7 @@ def _rec_response(rec: InterventionRecommendation) -> InterventionRecommendation
     summary="List intervention recommendations for the authenticated teacher",
 )
 async def list_interventions_endpoint(
-    status: str | None = Query(
+    status: Literal["pending_review", "approved", "dismissed", "all"] | None = Query(
         default=None,
         description=(
             "Filter by status.  Omit or pass 'pending_review' for items awaiting "
