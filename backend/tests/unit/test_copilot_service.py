@@ -174,6 +174,24 @@ class TestBuildContextJson:
         assert wi["skill_key"] == "evidence"
         assert wi["urgency"] == 4
 
+    def test_worklist_items_order_preserved_in_context(self) -> None:
+        """Context JSON preserves the order of worklist items as supplied.
+
+        The ``_load_worklist_items`` query orders by urgency DESC, then
+        created_at DESC, then id ASC (deterministic tie-breaker).  The
+        context builder reflects that ordering faithfully without reshuffling.
+        """
+        sid_a = uuid.uuid4()
+        sid_b = uuid.uuid4()
+        item_high = _make_worklist_item(student_id=sid_a, urgency=4, trigger_type="regression")
+        item_low = _make_worklist_item(student_id=sid_b, urgency=2, trigger_type="trajectory_risk")
+        # Pass items already sorted by urgency descending (as the query returns them).
+        result = _build_context_json([], [item_high, item_low])
+        data = json.loads(result)
+        items = data["active_worklist_items"]
+        assert items[0]["urgency"] == 4
+        assert items[1]["urgency"] == 2
+
 
 # ---------------------------------------------------------------------------
 # Tests — _enrich_ranked_items
@@ -256,7 +274,9 @@ class TestExecuteCopilotQuery:
     @pytest.fixture()
     def db(self) -> AsyncMock:
         db = AsyncMock()
-        # _load_skill_profiles and _load_worklist_items use db.execute
+        # db.execute is an awaitable AsyncSession method — must be AsyncMock
+        # (db.add / db.delete are synchronous and would use MagicMock, but
+        # this service only calls db.execute so only AsyncMock is needed here).
         db.execute = AsyncMock()
         return db
 

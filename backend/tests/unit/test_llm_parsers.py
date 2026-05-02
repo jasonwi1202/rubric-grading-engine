@@ -25,12 +25,15 @@ from app.exceptions import LLMParseError
 from app.llm.parsers import (
     FALLBACK_JUSTIFICATION,
     FALLBACK_SUMMARY,
+    CopilotRankedItem,
     CriterionInfo,
+    ParsedCopilotResponse,
     ParsedCriterionFeedback,
     ParsedFeedbackResponse,
     ParsedGradingResponse,
     ParsedInstructionResponse,
     ParsedRecommendation,
+    parse_copilot_response,
     parse_feedback_response,
     parse_grading_response,
     parse_instruction_response,
@@ -954,15 +957,6 @@ class TestGradingV2PromptToneInjection:
 # ===========================================================================
 
 
-import json as _json  # noqa: E402  (late import to avoid shadowing above)
-
-from app.llm.parsers import (  # noqa: E402
-    CopilotRankedItem,
-    ParsedCopilotResponse,
-    parse_copilot_response,
-)
-
-
 def _copilot_payload(
     *,
     query_interpretation: str = "Who is falling behind on thesis?",
@@ -984,7 +978,7 @@ def _copilot_payload(
         if suggested_next_steps is not None
         else ["Review worklist.", "Schedule mini-lesson."],
     }
-    return _json.dumps(payload)
+    return json.dumps(payload)
 
 
 def _item(
@@ -1140,7 +1134,7 @@ class TestParseCopilotResponseHappyPath:
         assert result.ranked_items[0].explanation == "No explanation provided."
 
     def test_has_sufficient_data_string_true(self) -> None:
-        payload = _json.dumps(
+        payload = json.dumps(
             {
                 "query_interpretation": "Test",
                 "has_sufficient_data": "true",
@@ -1154,7 +1148,7 @@ class TestParseCopilotResponseHappyPath:
         assert result.has_sufficient_data is True
 
     def test_has_sufficient_data_string_false(self) -> None:
-        payload = _json.dumps(
+        payload = json.dumps(
             {
                 "query_interpretation": "Test",
                 "has_sufficient_data": "false",
@@ -1168,7 +1162,7 @@ class TestParseCopilotResponseHappyPath:
         assert result.has_sufficient_data is False
 
     def test_ranked_items_non_list_treated_as_empty(self) -> None:
-        payload = _json.dumps(
+        payload = json.dumps(
             {
                 "query_interpretation": "Test",
                 "has_sufficient_data": True,
@@ -1189,7 +1183,7 @@ class TestParseCopilotResponseErrors:
 
     def test_raises_on_non_object_json(self) -> None:
         with pytest.raises(LLMParseError, match="must be a JSON object"):
-            parse_copilot_response(_json.dumps(["array", "value"]))
+            parse_copilot_response(json.dumps(["array", "value"]))
 
     def test_raises_on_missing_query_interpretation(self) -> None:
         payload = {
@@ -1200,7 +1194,7 @@ class TestParseCopilotResponseErrors:
             "summary": "Summary.",
         }
         with pytest.raises(LLMParseError, match="missing required fields"):
-            parse_copilot_response(_json.dumps(payload))
+            parse_copilot_response(json.dumps(payload))
 
     def test_raises_on_missing_ranked_items(self) -> None:
         payload = {
@@ -1211,7 +1205,7 @@ class TestParseCopilotResponseErrors:
             "summary": "Summary.",
         }
         with pytest.raises(LLMParseError, match="missing required fields"):
-            parse_copilot_response(_json.dumps(payload))
+            parse_copilot_response(json.dumps(payload))
 
     def test_raises_on_missing_summary(self) -> None:
         payload = {
@@ -1222,7 +1216,7 @@ class TestParseCopilotResponseErrors:
             "ranked_items": [],
         }
         with pytest.raises(LLMParseError, match="missing required fields"):
-            parse_copilot_response(_json.dumps(payload))
+            parse_copilot_response(json.dumps(payload))
 
     def test_blank_query_interpretation_falls_back(self) -> None:
         result = parse_copilot_response(_copilot_payload(query_interpretation=""))

@@ -541,6 +541,8 @@ async def call_copilot(
             content.
         query_text: The teacher's natural-language question.
         prompt_version: Prompt module version to use (default: ``"v1"``).
+            The value is used as a filename suffix: ``"v1"`` loads
+            ``app/llm/prompts/copilot_v1.py``.
 
     Returns:
         A validated :class:`~app.llm.parsers.ParsedCopilotResponse`.
