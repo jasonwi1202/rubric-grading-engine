@@ -435,6 +435,7 @@ export function CopilotPanel() {
         {/* Loading indicator while mutation is pending */}
         {mutation.isPending && (
           <div
+            role="status"
             className="flex items-center gap-2 text-sm text-gray-500"
           >
             <span

@@ -195,11 +195,9 @@ describe("CopilotPanel", () => {
     const submitBtn = screen.getByRole("button", { name: /ask/i });
     await user.click(submitBtn);
 
-    // "Thinking…" text with ellipsis appears in the conversation area (aria-busy)
+    // "Thinking…" status element appears in the conversation area
     await waitFor(() => {
-      // At least one element should contain "Thinking" text
-      const thinkingElements = screen.getAllByText(/thinking/i);
-      expect(thinkingElements.length).toBeGreaterThan(0);
+      expect(screen.getByRole("status")).toBeInTheDocument();
     });
   });
 
