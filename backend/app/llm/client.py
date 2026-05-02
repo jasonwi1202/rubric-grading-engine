@@ -35,11 +35,13 @@ from app.config import settings
 from app.exceptions import LLMError, LLMParseError, ValidationError
 from app.llm.parsers import (
     CriterionInfo,
+    ParsedCopilotResponse,
     ParsedCriterionScore,
     ParsedFeedbackResponse,
     ParsedGradingResponse,
     ParsedInstructionResponse,
     ParsedRevisionResponse,
+    parse_copilot_response,
     parse_feedback_response,
     parse_grading_response,
     parse_instruction_response,
@@ -521,6 +523,61 @@ async def call_revision_comparison(
         return parse_revision_response(retry_raw)
 
 
+async def call_copilot(
+    *,
+    context_json: str,
+    query_text: str,
+    prompt_version: str = "v1",
+) -> ParsedCopilotResponse:
+    """Answer a teacher's natural-language query using structured class data.
+
+    No essay content is used — only aggregate skill profile data and worklist
+    signal metadata are passed to the LLM.
+
+    Args:
+        context_json: JSON-encoded class context snapshot (student skill
+            profiles with dimension averages and trends, active worklist
+            items).  Contains only student IDs — no student names or essay
+            content.
+        query_text: The teacher's natural-language question.
+        prompt_version: Prompt module version to use (default: ``"v1"``).
+
+    Returns:
+        A validated :class:`~app.llm.parsers.ParsedCopilotResponse`.
+
+    Raises:
+        LLMParseError: If the response cannot be parsed after one retry.
+        LLMError: On timeout or unrecoverable API failure.
+    """
+    if _is_fake_mode():
+        return ParsedCopilotResponse(
+            query_interpretation="Deterministic fake copilot response.",
+            has_sufficient_data=True,
+            uncertainty_note=None,
+            response_type="ranked_list",
+            ranked_items=[],
+            summary="Deterministic test summary from fake LLM mode.",
+            suggested_next_steps=["Review student profiles.", "Check worklist items."],
+        )
+
+    module = _load_prompt_module("copilot", prompt_version)
+    client = _get_openai_client()
+    model = settings.openai_grading_model
+
+    messages: list[dict[str, str]] = module.build_messages(context_json, query_text)
+    raw = await _chat_with_retry(client, model, messages)
+
+    try:
+        return parse_copilot_response(raw)
+    except LLMParseError:
+        logger.warning(
+            "LLM copilot parse failed on first attempt; retrying with corrective prompt",
+        )
+        retry_messages = module.build_retry_messages(context_json, query_text)
+        retry_raw = await _chat_with_retry(client, model, retry_messages)
+        return parse_copilot_response(retry_raw)
+
+
 # Type alias exported for consumers
 # ---------------------------------------------------------------------------
 
@@ -530,9 +587,11 @@ __all__ = [
     "call_instruction",
     "call_embedding",
     "call_revision_comparison",
+    "call_copilot",
     "CriterionInfo",
     "ParsedGradingResponse",
     "ParsedFeedbackResponse",
     "ParsedInstructionResponse",
     "ParsedRevisionResponse",
+    "ParsedCopilotResponse",
 ]

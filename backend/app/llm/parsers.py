@@ -543,3 +543,212 @@ def parse_revision_response(raw_content: str) -> ParsedRevisionResponse:
         )
 
     return ParsedRevisionResponse(criterion_assessments=assessments)
+
+
+# ---------------------------------------------------------------------------
+# Teacher copilot query response (M7-03)
+# ---------------------------------------------------------------------------
+
+#: Valid response type strings returned by the copilot LLM.
+VALID_COPILOT_RESPONSE_TYPES: frozenset[str] = frozenset(
+    {"ranked_list", "summary", "insufficient_data"}
+)
+
+
+@dataclass
+class CopilotRankedItem:
+    """One ranked item in a teacher copilot response.
+
+    Attributes:
+        student_id: Student UUID string, or ``None`` for skill-level items.
+        skill_dimension: Canonical skill dimension name (e.g. ``"thesis"``),
+            or ``None`` for student-level items.
+        label: Short descriptive label for display in the teacher UI.
+        value: Normalised score or signal strength in ``[0.0, 1.0]``, or
+            ``None`` when no numeric value is applicable.
+        explanation: Evidence-grounded explanation for this item's ranking.
+    """
+
+    student_id: str | None
+    skill_dimension: str | None
+    label: str
+    value: float | None
+    explanation: str
+
+
+@dataclass
+class ParsedCopilotResponse:
+    """Fully validated LLM teacher copilot response.
+
+    Attributes:
+        query_interpretation: One-sentence summary of what the LLM
+            understood the teacher to be asking.
+        has_sufficient_data: ``False`` when data is too sparse to produce
+            a reliable answer.
+        uncertainty_note: Human-readable explanation of data gaps, or
+            ``None`` when data is sufficient.
+        response_type: One of ``"ranked_list"``, ``"summary"``, or
+            ``"insufficient_data"``.
+        ranked_items: Ordered list of ranked items (may be empty).
+        summary: 2–3 sentence overall answer.
+        suggested_next_steps: Actionable follow-up steps for the teacher.
+    """
+
+    query_interpretation: str
+    has_sufficient_data: bool
+    uncertainty_note: str | None
+    response_type: str
+    ranked_items: list[CopilotRankedItem] = field(default_factory=list)
+    summary: str = ""
+    suggested_next_steps: list[str] = field(default_factory=list)
+
+
+def parse_copilot_response(raw_content: str) -> ParsedCopilotResponse:
+    """Parse and validate a raw LLM teacher copilot response.
+
+    Applies the following normalization:
+    1. JSON decode — raises ``LLMParseError`` on failure.
+    2. Top-level structure check — must be a JSON object with
+       ``query_interpretation``, ``has_sufficient_data``,
+       ``response_type``, ``ranked_items``, and ``summary``.
+    3. ``response_type`` is normalised to ``"ranked_list"`` if the value
+       returned by the LLM is not in :data:`VALID_COPILOT_RESPONSE_TYPES`.
+    4. Each ranked item is coerced to a :class:`CopilotRankedItem`; items
+       with invalid structure are silently skipped.
+    5. ``value`` is clamped to ``[0.0, 1.0]`` when present; unparseable
+       values are set to ``None``.
+    6. At most 20 ranked items are kept (excess items are dropped).
+    7. Blank ``summary`` falls back to a safe placeholder.
+
+    Args:
+        raw_content: The raw string content from the LLM response.
+
+    Returns:
+        A ``ParsedCopilotResponse``.
+
+    Raises:
+        LLMParseError: If ``raw_content`` is not valid JSON, is not a JSON
+            object, or is missing required top-level fields.
+    """
+    try:
+        data = json.loads(raw_content)
+    except json.JSONDecodeError as exc:
+        raise LLMParseError("LLM copilot response is not valid JSON") from exc
+
+    if not isinstance(data, dict):
+        raise LLMParseError("LLM copilot response must be a JSON object")
+
+    required = {
+        "query_interpretation",
+        "has_sufficient_data",
+        "response_type",
+        "ranked_items",
+        "summary",
+    }
+    missing = required - data.keys()
+    if missing:
+        raise LLMParseError(
+            f"LLM copilot response missing required fields: {', '.join(sorted(missing))}"
+        )
+
+    # --- query_interpretation ---
+    query_interpretation = str(data.get("query_interpretation", "")).strip()
+    if not query_interpretation:
+        query_interpretation = "Query could not be interpreted."
+
+    # --- has_sufficient_data ---
+    raw_sufficient = data.get("has_sufficient_data")
+    if isinstance(raw_sufficient, bool):
+        has_sufficient_data = raw_sufficient
+    elif isinstance(raw_sufficient, str):
+        has_sufficient_data = raw_sufficient.lower() in {"true", "yes", "1"}
+    else:
+        has_sufficient_data = False
+
+    # --- uncertainty_note ---
+    raw_note = data.get("uncertainty_note")
+    if raw_note is None or (isinstance(raw_note, str) and not raw_note.strip()):
+        uncertainty_note: str | None = None
+    else:
+        uncertainty_note = str(raw_note).strip()
+
+    # --- response_type ---
+    response_type = str(data.get("response_type", "")).strip()
+    if response_type not in VALID_COPILOT_RESPONSE_TYPES:
+        logger.warning(
+            "LLM copilot returned unknown response_type; normalising",
+            extra={"response_type": response_type},
+        )
+        response_type = "ranked_list"
+
+    # --- ranked_items ---
+    raw_items = data.get("ranked_items", [])
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    ranked_items: list[CopilotRankedItem] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        # student_id — accept string or null
+        raw_sid = item.get("student_id")
+        student_id: str | None = str(raw_sid).strip() if raw_sid else None
+
+        # skill_dimension — accept string or null
+        raw_skill = item.get("skill_dimension")
+        skill_dimension: str | None = str(raw_skill).strip() if raw_skill else None
+
+        # label — required; skip item if blank
+        label = str(item.get("label", "")).strip()
+        if not label:
+            continue
+
+        # value — optional float clamped to [0.0, 1.0]
+        raw_value = item.get("value")
+        value: float | None = None
+        if raw_value is not None:
+            try:
+                parsed_val = float(raw_value)
+                value = max(0.0, min(1.0, parsed_val))
+            except (TypeError, ValueError):
+                value = None
+
+        # explanation
+        explanation = str(item.get("explanation", "")).strip() or "No explanation provided."
+
+        ranked_items.append(
+            CopilotRankedItem(
+                student_id=student_id,
+                skill_dimension=skill_dimension,
+                label=label,
+                value=value,
+                explanation=explanation,
+            )
+        )
+
+        if len(ranked_items) >= 20:
+            break
+
+    # --- summary ---
+    summary = str(data.get("summary", "")).strip()
+    if not summary:
+        summary = "No summary available."
+
+    # --- suggested_next_steps ---
+    raw_steps = data.get("suggested_next_steps", [])
+    if not isinstance(raw_steps, list):
+        raw_steps = []
+    suggested_next_steps: list[str] = [
+        str(s).strip() for s in raw_steps if isinstance(s, str) and str(s).strip()
+    ]
+
+    return ParsedCopilotResponse(
+        query_interpretation=query_interpretation,
+        has_sufficient_data=has_sufficient_data,
+        uncertainty_note=uncertainty_note,
+        response_type=response_type,
+        ranked_items=ranked_items,
+        summary=summary,
+        suggested_next_steps=suggested_next_steps,
+    )

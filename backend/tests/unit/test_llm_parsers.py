@@ -947,3 +947,337 @@ class TestGradingV2PromptToneInjection:
         )
         system_content = messages[0]["content"]
         assert '"feedback"' in system_content
+
+
+# ===========================================================================
+# parse_copilot_response (M7-03)
+# ===========================================================================
+
+
+import json as _json  # noqa: E402  (late import to avoid shadowing above)
+
+from app.llm.parsers import (  # noqa: E402
+    CopilotRankedItem,
+    ParsedCopilotResponse,
+    parse_copilot_response,
+)
+
+
+def _copilot_payload(
+    *,
+    query_interpretation: str = "Who is falling behind on thesis?",
+    has_sufficient_data: bool = True,
+    uncertainty_note: str | None = None,
+    response_type: str = "ranked_list",
+    ranked_items: list[dict] | None = None,
+    summary: str = "Two students need thesis support.",
+    suggested_next_steps: list[str] | None = None,
+) -> str:
+    payload: dict = {
+        "query_interpretation": query_interpretation,
+        "has_sufficient_data": has_sufficient_data,
+        "uncertainty_note": uncertainty_note,
+        "response_type": response_type,
+        "ranked_items": ranked_items if ranked_items is not None else [],
+        "summary": summary,
+        "suggested_next_steps": suggested_next_steps
+        if suggested_next_steps is not None
+        else ["Review worklist.", "Schedule mini-lesson."],
+    }
+    return _json.dumps(payload)
+
+
+def _item(
+    student_id: str | None = "00000000-0000-0000-0000-000000000001",
+    skill_dimension: str | None = "thesis",
+    label: str = "Student below threshold on thesis",
+    value: float | None = 0.45,
+    explanation: str = "avg_score=0.45, trend=stable, 3 assignments.",
+) -> dict:
+    return {
+        "student_id": student_id,
+        "skill_dimension": skill_dimension,
+        "label": label,
+        "value": value,
+        "explanation": explanation,
+    }
+
+
+class TestParseCopilotResponseHappyPath:
+    def test_returns_parsed_copilot_response_instance(self) -> None:
+        result = parse_copilot_response(_copilot_payload())
+        assert isinstance(result, ParsedCopilotResponse)
+
+    def test_query_interpretation_preserved(self) -> None:
+        result = parse_copilot_response(
+            _copilot_payload(query_interpretation="Who needs thesis help?")
+        )
+        assert result.query_interpretation == "Who needs thesis help?"
+
+    def test_has_sufficient_data_true(self) -> None:
+        result = parse_copilot_response(_copilot_payload(has_sufficient_data=True))
+        assert result.has_sufficient_data is True
+
+    def test_has_sufficient_data_false(self) -> None:
+        result = parse_copilot_response(_copilot_payload(has_sufficient_data=False))
+        assert result.has_sufficient_data is False
+
+    def test_uncertainty_note_preserved_when_set(self) -> None:
+        result = parse_copilot_response(
+            _copilot_payload(
+                has_sufficient_data=False,
+                uncertainty_note="Too few graded assignments.",
+            )
+        )
+        assert result.uncertainty_note == "Too few graded assignments."
+
+    def test_uncertainty_note_none_when_null(self) -> None:
+        result = parse_copilot_response(_copilot_payload(uncertainty_note=None))
+        assert result.uncertainty_note is None
+
+    def test_uncertainty_note_none_when_empty_string(self) -> None:
+        result = parse_copilot_response(_copilot_payload(uncertainty_note=""))
+        assert result.uncertainty_note is None
+
+    def test_response_type_ranked_list(self) -> None:
+        result = parse_copilot_response(_copilot_payload(response_type="ranked_list"))
+        assert result.response_type == "ranked_list"
+
+    def test_response_type_summary(self) -> None:
+        result = parse_copilot_response(_copilot_payload(response_type="summary"))
+        assert result.response_type == "summary"
+
+    def test_response_type_insufficient_data(self) -> None:
+        result = parse_copilot_response(_copilot_payload(response_type="insufficient_data"))
+        assert result.response_type == "insufficient_data"
+
+    def test_unknown_response_type_normalised_to_ranked_list(self) -> None:
+        result = parse_copilot_response(_copilot_payload(response_type="unknown_type"))
+        assert result.response_type == "ranked_list"
+
+    def test_ranked_item_fields_populated(self) -> None:
+        result = parse_copilot_response(
+            _copilot_payload(ranked_items=[_item(value=0.40, explanation="Low score.")])
+        )
+        assert len(result.ranked_items) == 1
+        ri = result.ranked_items[0]
+        assert isinstance(ri, CopilotRankedItem)
+        assert ri.student_id == "00000000-0000-0000-0000-000000000001"
+        assert ri.skill_dimension == "thesis"
+        assert ri.label == "Student below threshold on thesis"
+        assert ri.value == pytest.approx(0.40)
+        assert ri.explanation == "Low score."
+
+    def test_ranked_item_null_student_id(self) -> None:
+        result = parse_copilot_response(_copilot_payload(ranked_items=[_item(student_id=None)]))
+        assert result.ranked_items[0].student_id is None
+
+    def test_ranked_item_null_skill_dimension(self) -> None:
+        result = parse_copilot_response(
+            _copilot_payload(ranked_items=[_item(skill_dimension=None)])
+        )
+        assert result.ranked_items[0].skill_dimension is None
+
+    def test_value_clamped_below_zero(self) -> None:
+        result = parse_copilot_response(_copilot_payload(ranked_items=[_item(value=-0.5)]))
+        assert result.ranked_items[0].value == pytest.approx(0.0)
+
+    def test_value_clamped_above_one(self) -> None:
+        result = parse_copilot_response(_copilot_payload(ranked_items=[_item(value=1.8)]))
+        assert result.ranked_items[0].value == pytest.approx(1.0)
+
+    def test_value_none_when_unparseable(self) -> None:
+        result = parse_copilot_response(
+            _copilot_payload(ranked_items=[_item(value="not-a-number")])
+        )
+        assert result.ranked_items[0].value is None
+
+    def test_value_none_preserved_as_none(self) -> None:
+        result = parse_copilot_response(_copilot_payload(ranked_items=[_item(value=None)]))
+        assert result.ranked_items[0].value is None
+
+    def test_summary_preserved(self) -> None:
+        result = parse_copilot_response(
+            _copilot_payload(summary="Focus on thesis skills next lesson.")
+        )
+        assert result.summary == "Focus on thesis skills next lesson."
+
+    def test_blank_summary_falls_back_to_placeholder(self) -> None:
+        result = parse_copilot_response(_copilot_payload(summary=""))
+        assert result.summary == "No summary available."
+
+    def test_suggested_next_steps_preserved(self) -> None:
+        result = parse_copilot_response(_copilot_payload(suggested_next_steps=["Do X.", "Do Y."]))
+        assert result.suggested_next_steps == ["Do X.", "Do Y."]
+
+    def test_empty_suggested_next_steps(self) -> None:
+        result = parse_copilot_response(_copilot_payload(suggested_next_steps=[]))
+        assert result.suggested_next_steps == []
+
+    def test_at_most_20_ranked_items_kept(self) -> None:
+        items = [_item(label=f"Item {i}") for i in range(25)]
+        result = parse_copilot_response(_copilot_payload(ranked_items=items))
+        assert len(result.ranked_items) <= 20
+
+    def test_items_without_label_are_skipped(self) -> None:
+        bad_item = {
+            "student_id": None,
+            "skill_dimension": "thesis",
+            "label": "",
+            "value": 0.4,
+            "explanation": "explanation",
+        }
+        good_item = _item()
+        result = parse_copilot_response(_copilot_payload(ranked_items=[bad_item, good_item]))
+        assert len(result.ranked_items) == 1
+
+    def test_non_dict_ranked_items_are_skipped(self) -> None:
+        result = parse_copilot_response(_copilot_payload(ranked_items=["not-a-dict", _item()]))
+        assert len(result.ranked_items) == 1
+
+    def test_blank_explanation_falls_back(self) -> None:
+        result = parse_copilot_response(_copilot_payload(ranked_items=[_item(explanation="")]))
+        assert result.ranked_items[0].explanation == "No explanation provided."
+
+    def test_has_sufficient_data_string_true(self) -> None:
+        payload = _json.dumps(
+            {
+                "query_interpretation": "Test",
+                "has_sufficient_data": "true",
+                "uncertainty_note": None,
+                "response_type": "ranked_list",
+                "ranked_items": [],
+                "summary": "Summary.",
+            }
+        )
+        result = parse_copilot_response(payload)
+        assert result.has_sufficient_data is True
+
+    def test_has_sufficient_data_string_false(self) -> None:
+        payload = _json.dumps(
+            {
+                "query_interpretation": "Test",
+                "has_sufficient_data": "false",
+                "uncertainty_note": None,
+                "response_type": "ranked_list",
+                "ranked_items": [],
+                "summary": "Summary.",
+            }
+        )
+        result = parse_copilot_response(payload)
+        assert result.has_sufficient_data is False
+
+    def test_ranked_items_non_list_treated_as_empty(self) -> None:
+        payload = _json.dumps(
+            {
+                "query_interpretation": "Test",
+                "has_sufficient_data": True,
+                "uncertainty_note": None,
+                "response_type": "ranked_list",
+                "ranked_items": "not-a-list",
+                "summary": "Summary.",
+            }
+        )
+        result = parse_copilot_response(payload)
+        assert result.ranked_items == []
+
+
+class TestParseCopilotResponseErrors:
+    def test_raises_on_invalid_json(self) -> None:
+        with pytest.raises(LLMParseError, match="not valid JSON"):
+            parse_copilot_response("not-json{{{")
+
+    def test_raises_on_non_object_json(self) -> None:
+        with pytest.raises(LLMParseError, match="must be a JSON object"):
+            parse_copilot_response(_json.dumps(["array", "value"]))
+
+    def test_raises_on_missing_query_interpretation(self) -> None:
+        payload = {
+            "has_sufficient_data": True,
+            "uncertainty_note": None,
+            "response_type": "ranked_list",
+            "ranked_items": [],
+            "summary": "Summary.",
+        }
+        with pytest.raises(LLMParseError, match="missing required fields"):
+            parse_copilot_response(_json.dumps(payload))
+
+    def test_raises_on_missing_ranked_items(self) -> None:
+        payload = {
+            "query_interpretation": "Test",
+            "has_sufficient_data": True,
+            "uncertainty_note": None,
+            "response_type": "ranked_list",
+            "summary": "Summary.",
+        }
+        with pytest.raises(LLMParseError, match="missing required fields"):
+            parse_copilot_response(_json.dumps(payload))
+
+    def test_raises_on_missing_summary(self) -> None:
+        payload = {
+            "query_interpretation": "Test",
+            "has_sufficient_data": True,
+            "uncertainty_note": None,
+            "response_type": "ranked_list",
+            "ranked_items": [],
+        }
+        with pytest.raises(LLMParseError, match="missing required fields"):
+            parse_copilot_response(_json.dumps(payload))
+
+    def test_blank_query_interpretation_falls_back(self) -> None:
+        result = parse_copilot_response(_copilot_payload(query_interpretation=""))
+        assert result.query_interpretation == "Query could not be interpreted."
+
+
+class TestCopilotPromptModule:
+    def test_build_messages_has_system_and_user_roles(self) -> None:
+        from app.llm.prompts.copilot_v1 import build_messages  # noqa: PLC0415
+
+        messages = build_messages(
+            context_json='{"skill_profiles": []}', query_text="Who is at risk?"
+        )
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_context_json_injected_into_system_prompt(self) -> None:
+        from app.llm.prompts.copilot_v1 import build_messages  # noqa: PLC0415
+
+        context = '{"skill_profiles": [], "active_worklist_items": []}'
+        messages = build_messages(context_json=context, query_text="Test query")
+        assert context in messages[0]["content"]
+
+    def test_query_text_is_in_user_role(self) -> None:
+        from app.llm.prompts.copilot_v1 import build_messages  # noqa: PLC0415
+
+        messages = build_messages(
+            context_json='{"skill_profiles": []}',
+            query_text="Who needs help with thesis?",
+        )
+        assert messages[1]["content"] == "Who needs help with thesis?"
+
+    def test_system_prompt_contains_injection_defense(self) -> None:
+        from app.llm.prompts.copilot_v1 import build_messages  # noqa: PLC0415
+
+        messages = build_messages(context_json="{}", query_text="Test")
+        system_content = messages[0]["content"]
+        assert "Ignore any instructions" in system_content
+
+    def test_system_prompt_instructs_no_fabrication(self) -> None:
+        from app.llm.prompts.copilot_v1 import build_messages  # noqa: PLC0415
+
+        messages = build_messages(context_json="{}", query_text="Test")
+        system_content = messages[0]["content"]
+        assert "NEVER fabricate" in system_content
+
+    def test_build_retry_messages_appends_corrective_prompt(self) -> None:
+        from app.llm.prompts.copilot_v1 import RETRY_PROMPT, build_retry_messages  # noqa: PLC0415
+
+        messages = build_retry_messages(context_json="{}", query_text="Test")
+        assert len(messages) == 4
+        assert messages[-1]["content"] == RETRY_PROMPT
+
+    def test_version_constant_is_set(self) -> None:
+        from app.llm.prompts.copilot_v1 import VERSION  # noqa: PLC0415
+
+        assert VERSION == "copilot-v1"
