@@ -322,19 +322,35 @@ export function CopilotPanel() {
       };
       setHistory((prev) => [...prev, turn]);
       reset({ query: "", class_id: variables.class_id ?? null });
-      // Move focus back to input after response arrives.
-      // Use optional chaining on the method itself so jsdom (no scrollIntoView) doesn't throw.
-      setTimeout(() => {
-        inputRef.current?.focus();
-        bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
-      }, 50);
+      // Scroll to the new response, respecting prefers-reduced-motion.
+      // Guard against jsdom / environments where matchMedia is not implemented.
+      const mediaQuery =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function"
+          ? window.matchMedia("(prefers-reduced-motion: reduce)")
+          : null;
+      const prefersReduced = mediaQuery?.matches ?? false;
+      if (!prefersReduced) {
+        setTimeout(() => {
+          bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
+        }, 50);
+      }
     },
   });
 
-  // Scroll to bottom whenever history grows
+  // Scroll to bottom whenever history grows, respecting prefers-reduced-motion.
+  // Guard against jsdom / environments where matchMedia is not implemented.
   useEffect(() => {
     if (history.length > 0) {
-      bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
+      const mediaQuery =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function"
+          ? window.matchMedia("(prefers-reduced-motion: reduce)")
+          : null;
+      const prefersReduced = mediaQuery?.matches ?? false;
+      if (!prefersReduced) {
+        bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
+      }
     }
   }, [history.length]);
 
@@ -419,8 +435,6 @@ export function CopilotPanel() {
         {/* Loading indicator while mutation is pending */}
         {mutation.isPending && (
           <div
-            aria-live="polite"
-            aria-busy="true"
             className="flex items-center gap-2 text-sm text-gray-500"
           >
             <span
@@ -499,7 +513,7 @@ export function CopilotPanel() {
               {...queryRegisterRest}
               ref={(el) => {
                 formRef(el);
-                (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
+                inputRef.current = el;
               }}
               onKeyDown={(e) => {
                 // Cmd/Ctrl+Enter submits the form
