@@ -146,9 +146,7 @@ function RankedItemRow({
           <Link
             href={`/dashboard/students/${item.student_id}`}
             className="mt-1 inline-block rounded text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-            aria-label={`View student profile${
-              item.student_display_name ? ` for ${item.student_display_name}` : ""
-            }`}
+            aria-label="View student profile"
           >
             View student profile →
           </Link>
