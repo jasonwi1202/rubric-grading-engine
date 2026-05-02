@@ -45,6 +45,7 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
   non_responder: "No Improvement After Feedback",
   persistent_gap: "Persistent Skill Gap",
   high_inconsistency: "High Inconsistency",
+  trajectory_risk: "Trajectory Risk",
 };
 
 const URGENCY_LABELS: Record<number, string> = {
@@ -132,6 +133,16 @@ function WorklistItemCard({
   const urgencyClass = URGENCY_CLASSES[item.urgency] ?? "bg-gray-100 text-gray-700";
   const indicatorClass = URGENCY_INDICATOR_CLASSES[item.urgency] ?? "bg-gray-400";
   const triggerLabel = TRIGGER_LABELS[item.trigger_type] ?? item.trigger_type;
+  const isPredictive = item.trigger_type === "trajectory_risk";
+  const VALID_CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
+  type ConfidenceLevel = (typeof VALID_CONFIDENCE_LEVELS)[number];
+  const rawConfidence = item.details?.confidence_level;
+  const confidenceLevel: ConfidenceLevel | null =
+    isPredictive &&
+    typeof rawConfidence === "string" &&
+    (VALID_CONFIDENCE_LEVELS as readonly string[]).includes(rawConfidence)
+      ? (rawConfidence as ConfidenceLevel)
+      : null;
 
   return (
     <li
@@ -149,7 +160,7 @@ function WorklistItemCard({
 
         {/* Main content */}
         <div className="min-w-0 flex-1">
-          {/* Top row: trigger reason + urgency badge */}
+          {/* Top row: trigger reason + urgency badge + optional badges */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-gray-900">{triggerLabel}</span>
             <span
@@ -162,12 +173,35 @@ function WorklistItemCard({
                 {item.skill_key}
               </span>
             )}
+            {isPredictive && (
+              <span
+                className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700"
+                aria-label="This is a predictive insight, not a confirmed diagnosis"
+              >
+                Predictive Insight
+              </span>
+            )}
+            {confidenceLevel && (
+              <span
+                className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600"
+                aria-label={`Confidence: ${confidenceLevel}`}
+              >
+                {confidenceLevel.charAt(0).toUpperCase() + confidenceLevel.slice(1)} confidence
+              </span>
+            )}
             {item.status === "snoozed" && (
               <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
                 Snoozed
               </span>
             )}
           </div>
+
+          {/* Predictive guidance disclaimer */}
+          {isPredictive && (
+            <p className="mt-1 text-xs italic text-indigo-600">
+              Predictive guidance only — not a confirmed diagnosis. Use your judgment before acting.
+            </p>
+          )}
 
           {/* Suggested action */}
           <p className="mt-1 text-sm text-gray-600">{item.suggested_action}</p>
@@ -335,6 +369,7 @@ export function WorklistPanel() {
                 "non_responder",
                 "persistent_gap",
                 "high_inconsistency",
+                "trajectory_risk",
               ];
               if (valid.includes(v as TriggerType | "all")) {
                 setTriggerFilter(v as TriggerType | "all");
@@ -347,6 +382,7 @@ export function WorklistPanel() {
             <option value="non_responder">No Improvement After Feedback</option>
             <option value="persistent_gap">Persistent Skill Gap</option>
             <option value="high_inconsistency">High Inconsistency</option>
+            <option value="trajectory_risk">Trajectory Risk (Predictive)</option>
           </select>
         </div>
 

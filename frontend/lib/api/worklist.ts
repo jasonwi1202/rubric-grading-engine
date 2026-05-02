@@ -26,7 +26,8 @@ export type TriggerType =
   | "regression"
   | "non_responder"
   | "persistent_gap"
-  | "high_inconsistency";
+  | "high_inconsistency"
+  | "trajectory_risk";
 
 /** Lifecycle status of a worklist item. */
 export type WorklistItemStatus = "active" | "snoozed" | "completed" | "dismissed";

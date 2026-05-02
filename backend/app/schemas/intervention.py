@@ -19,11 +19,18 @@ class InterventionTriggerType(StrEnum):
 
     Ordered from most to least urgent for documentation purposes.
     The actual urgency is stored as an integer on the recommendation row.
+
+    The intervention table stores ``trigger_type`` as ``VARCHAR``. While the
+    current intervention scan writes only the core three trigger types, this
+    enum includes other known worklist trigger strings so response validation
+    remains forward-compatible if additional trigger types are surfaced.
     """
 
     regression = "regression"
     non_responder = "non_responder"
     persistent_gap = "persistent_gap"
+    high_inconsistency = "high_inconsistency"
+    trajectory_risk = "trajectory_risk"
 
 
 class InterventionStatus(StrEnum):

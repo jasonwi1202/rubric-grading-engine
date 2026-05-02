@@ -143,6 +143,18 @@ class TestGetInterventions:
         # Without auth override, the dependency raises UnauthorizedError → 401.
         assert resp.status_code == 401
 
+    def test_invalid_status_returns_422(
+        self, authenticated_client: TestClient, teacher: MagicMock
+    ) -> None:
+        with patch(
+            "app.routers.intervention.list_interventions",
+            new=AsyncMock(return_value=[]),
+        ) as mock_list:
+            resp = authenticated_client.get("/api/v1/interventions?status=invalid")
+
+        assert resp.status_code == 422
+        mock_list.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # POST /api/v1/interventions/{id}/approve

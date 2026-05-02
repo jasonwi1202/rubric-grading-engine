@@ -271,6 +271,26 @@ class TestInterventionActionIntegration:
         assert resp.json()["error"]["code"] == "NOT_FOUND"
 
     @pytest.mark.asyncio
+    async def test_cross_teacher_dismiss_returns_404(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        teacher_a = _uuid()
+        teacher_b = _uuid()
+        student_id = _uuid()
+        rec_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_a)
+        await _seed_teacher(db_session, teacher_b)
+        await _seed_student(db_session, student_id, teacher_a)
+        await _seed_intervention(db_session, rec_id, teacher_a, student_id, status="pending_review")
+
+        client = _client_for(teacher_b, pg_dsn)
+        resp = client.delete(f"/api/v1/interventions/{rec_id}")
+
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+    @pytest.mark.asyncio
     async def test_dismiss_approved_returns_409(
         self, db_session: AsyncSession, pg_dsn: str
     ) -> None:

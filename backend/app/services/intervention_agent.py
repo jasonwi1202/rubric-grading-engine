@@ -21,8 +21,11 @@ Signal detection:
 
   1. **regression**     — A skill dimension is trending downward
                           (``trend == 'declining'``).  Urgency 4.
-  2. **persistent_gap** — A skill dimension is chronically below 0.60 across
-                          ≥ 2 assignments with a non-improving trend.  Urgency 3.
+    2. **persistent_gap** — A skill dimension is chronically below 0.60 across
+                                                    ≥ 2 assignments with a non-improving trend.  Urgency 3.
+                                                    Suppressed when ``non_responder`` is detected for
+                                                    the same skill in the same scan to avoid duplicate
+                                                    recommendations for one root cause.
   3. **non_responder**  — Detected when a student skill profile shows evidence
                           of stagnation (avg_score < 0.60 + stable trend +
                           assignment_count ≥ 3 and data_points ≥ 3 without
@@ -62,6 +65,7 @@ Audit log:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -109,9 +113,21 @@ def _rowcount(result: Any) -> int:
     return cast("CursorResult[Any]", result).rowcount
 
 
+def _safe_skill_label(skill_key: str | None) -> str:
+    """Return a display-safe skill label from a canonical skill key.
+
+    Skill keys should be canonical normalized identifiers (e.g. ``evidence``
+    or ``main_argument``). If an unexpected value arrives, fall back to a
+    neutral label rather than echoing arbitrary text.
+    """
+    if skill_key and re.fullmatch(r"[a-z_]+", skill_key):
+        return skill_key.replace("_", " ")
+    return "identified skill"
+
+
 def _trigger_reason(trigger_type: str, skill_key: str | None, details: dict[str, Any]) -> str:
     """Build a short human-readable trigger reason sentence."""
-    skill_label = skill_key.replace("_", " ") if skill_key else ""
+    skill_label = _safe_skill_label(skill_key)
     avg = details.get("avg_score")
     avg_str = f"{avg:.0%}" if isinstance(avg, float) else "below threshold"
     match trigger_type:
@@ -138,24 +154,25 @@ def _evidence_summary(trigger_type: str, skill_key: str | None, details: dict[st
     avg = details.get("avg_score")
     trend = details.get("trend", "unknown")
     avg_str = f"{avg:.0%}" if isinstance(avg, float) else "N/A"
+    skill_label = _safe_skill_label(skill_key)
     match trigger_type:
         case "regression":
             return (
-                f"Average normalised score for '{skill_key}': {avg_str}. "
+                f"Average normalised score for '{skill_label}': {avg_str}. "
                 f"Trend: {trend}. "
                 "The most recent assignments scored lower than earlier ones."
             )
         case "persistent_gap":
             count = details.get("assignment_count", 0)
             return (
-                f"Average normalised score for '{skill_key}': {avg_str}. "
+                f"Average normalised score for '{skill_label}': {avg_str}. "
                 f"Trend: {trend}. "
                 f"Below {int(_GAP_SCORE_THRESHOLD * 100)}% threshold across {count} assignment(s)."
             )
         case "non_responder":
             data_pts = details.get("data_points", 0)
             return (
-                f"Average normalised score for '{skill_key}': {avg_str}. "
+                f"Average normalised score for '{skill_label}': {avg_str}. "
                 f"Trend: {trend}. "
                 f"Score has remained stagnant across {data_pts} scoring event(s)."
             )
@@ -165,7 +182,7 @@ def _evidence_summary(trigger_type: str, skill_key: str | None, details: dict[st
 
 def _suggested_action(trigger_type: str, skill_key: str | None) -> str:
     """Return a concrete, teacher-actionable suggestion for a trigger type."""
-    skill_label = skill_key.replace("_", " ") if skill_key else "the identified skill"
+    skill_label = _safe_skill_label(skill_key)
     match trigger_type:
         case "regression":
             return (
@@ -194,8 +211,8 @@ def _detect_signals(
     Implements three trigger types using profile-level data only:
 
     1. **regression** — skill trend == 'declining'.
-    2. **persistent_gap** — avg_score < threshold, assignment_count ≥ minimum,
-       trend not improving.
+     2. **persistent_gap** — avg_score < threshold, assignment_count ≥ minimum,
+         trend not improving, and not already classified as non_responder.
     3. **non_responder** — avg_score < threshold, trend == 'stable',
        data_points ≥ minimum (proxy: no improvement despite many assessments).
     """
@@ -209,9 +226,17 @@ def _detect_signals(
         avg_score = entry.get("avg_score")
         trend = entry.get("trend", "stable")
         data_points = entry.get("data_points", 0)
+        data_points_value = float(data_points) if isinstance(data_points, (int, float)) else 0.0
         if not isinstance(avg_score, (int, float)):
             continue
         avg_score = float(avg_score)
+
+        is_non_responder = (
+            avg_score < _GAP_SCORE_THRESHOLD
+            and trend == "stable"
+            and data_points_value >= _NON_RESPONDER_MIN_DATA_POINTS
+            and assignment_count >= _GAP_MIN_ASSIGNMENTS
+        )
 
         # --- regression ---
         if trend == "declining":
@@ -233,6 +258,7 @@ def _detect_signals(
             avg_score < _GAP_SCORE_THRESHOLD
             and assignment_count >= _GAP_MIN_ASSIGNMENTS
             and trend not in ("improving", "declining")
+            and not is_non_responder
         ):
             signals.append(
                 {
@@ -248,12 +274,7 @@ def _detect_signals(
             )
 
         # --- non_responder proxy ---
-        if (
-            avg_score < _GAP_SCORE_THRESHOLD
-            and trend == "stable"
-            and data_points >= _NON_RESPONDER_MIN_DATA_POINTS
-            and assignment_count >= _GAP_MIN_ASSIGNMENTS
-        ):
+        if is_non_responder:
             signals.append(
                 {
                     "trigger_type": "non_responder",
@@ -262,7 +283,7 @@ def _detect_signals(
                     "details": {
                         "avg_score": avg_score,
                         "trend": trend,
-                        "data_points": data_points,
+                        "data_points": int(data_points_value),
                         "assignment_count": assignment_count,
                     },
                 }
