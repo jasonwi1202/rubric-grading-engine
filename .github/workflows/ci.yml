@@ -317,13 +317,18 @@ jobs:
   # Skipped on feature branch PRs to keep the dev loop fast.  Runs on any PR
   # targeting main or release/* (i.e. milestone integration PRs).
   e2e:
-    name: E2E Tests (Playwright)
+    name: E2E Tests (Playwright) — shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
     runs-on: ubuntu-latest
     # Only run on PRs targeting main or a release branch
     if: >
       github.event_name == 'pull_request' &&
       (github.base_ref == 'main' || startsWith(github.base_ref, 'release/'))
     needs: [backend-ruff, frontend-lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
     env:
       E2E_BASE_URL: http://localhost:3000
       API_BASE_URL: http://localhost:8000
@@ -408,14 +413,14 @@ jobs:
           done
 
       - name: Run Playwright E2E tests
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
         working-directory: frontend
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shardIndex }}
           path: frontend/playwright-report/
           retention-days: 7
 
