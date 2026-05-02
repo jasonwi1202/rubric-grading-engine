@@ -170,6 +170,55 @@ describe("CopilotPanel", () => {
     expect(screen.getByText("Period 3 English")).toBeInTheDocument();
   });
 
+  it("submits class_id as null when 'All classes' is selected", async () => {
+    const user = userEvent.setup();
+    mockListClasses.mockResolvedValue([makeClass()]);
+    mockQueryCopilot.mockResolvedValue(makeResponse());
+
+    render(<CopilotPanel />, { wrapper });
+    await waitFor(() => screen.getByRole("textbox", { name: /your question/i }));
+    await waitFor(() => screen.getByLabelText(/scope/i));
+    const scope = screen.getByLabelText(/scope/i);
+    await user.selectOptions(scope, "");
+    await user.type(screen.getByRole("textbox", { name: /your question/i }), "Scope null test");
+    await user.click(screen.getByRole("button", { name: /ask/i }));
+
+    await waitFor(() => {
+      expect(mockQueryCopilot).toHaveBeenCalled();
+    });
+
+    const lastCallArgs = mockQueryCopilot.mock.calls.at(-1)?.[0];
+    expect(lastCallArgs).toMatchObject({
+      query: "Scope null test",
+      class_id: null,
+    });
+  });
+
+  it("submits selected class UUID when a class is selected", async () => {
+    const user = userEvent.setup();
+    const classRow = makeClass({ id: "0f828987-4a70-451f-bd7d-29ff39a2efdb" });
+    mockListClasses.mockResolvedValue([classRow]);
+    mockQueryCopilot.mockResolvedValue(makeResponse());
+
+    render(<CopilotPanel />, { wrapper });
+    await waitFor(() => screen.getByRole("textbox", { name: /your question/i }));
+    await waitFor(() => screen.getByLabelText(/scope/i));
+    const scope = screen.getByLabelText(/scope/i);
+    await user.selectOptions(scope, classRow.id);
+    await user.type(screen.getByRole("textbox", { name: /your question/i }), "Scope uuid test");
+    await user.click(screen.getByRole("button", { name: /ask/i }));
+
+    await waitFor(() => {
+      expect(mockQueryCopilot).toHaveBeenCalled();
+    });
+
+    const lastCallArgs = mockQueryCopilot.mock.calls.at(-1)?.[0];
+    expect(lastCallArgs).toMatchObject({
+      query: "Scope uuid test",
+      class_id: classRow.id,
+    });
+  });
+
   it("does not render class scope selector when no classes exist", async () => {
     mockListClasses.mockResolvedValue([]);
     render(<CopilotPanel />, { wrapper });

@@ -308,7 +308,7 @@ export function CopilotPanel() {
     mutationFn: (values: QueryFormValues) =>
       queryCopilot({
         query: values.query,
-        class_id: values.class_id ?? null,
+        class_id: values.class_id ? values.class_id : null,
       }),
     onSuccess: (data, variables) => {
       const selectedClass = classes?.find((c) => c.id === variables.class_id);
