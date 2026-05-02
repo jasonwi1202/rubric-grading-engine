@@ -304,7 +304,7 @@ def _safe_response_type(
     ``"insufficient_data"``.  The parser already normalises unknown values
     to ``"ranked_list"``, so this is a belt-and-suspenders guard.
     """
-    valid: set[str] = {"ranked_list", "summary", "insufficient_data"}
+    valid = {"ranked_list", "summary", "insufficient_data"}
     if response_type in valid:
         return cast(Literal["ranked_list", "summary", "insufficient_data"], response_type)
     return "ranked_list"

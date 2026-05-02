@@ -1217,7 +1217,7 @@ Teacher-facing instructional query layer.  Answers natural-language questions (s
 
 | Field | Type | Description |
 |---|---|---|
-| `query_interpretation` | string | One sentence summarising what the LLM understood the teacher to be asking |
+| `query_interpretation` | string | One sentence summarizing what the LLM understood the teacher to be asking |
 | `has_sufficient_data` | boolean | `false` when class data is too sparse for a reliable answer |
 | `uncertainty_note` | string\|null | Human-readable explanation of data gaps; `null` when data is sufficient |
 | `response_type` | `"ranked_list"` \| `"summary"` \| `"insufficient_data"` | Shape of the answer |
