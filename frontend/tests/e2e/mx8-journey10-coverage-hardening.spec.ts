@@ -477,7 +477,7 @@ test.describe("Journey 10 — teacher notes + writing process panel", () => {
     const page = state.page;
 
     await page.goto(`/dashboard/classes/${state.fixture.classId}/assignments/new`);
-    await expect(page.getByRole("heading", { name: /new assignment/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: /create assignment/i })).toBeVisible({ timeout: 15_000 });
 
     // Submit empty to trigger validation
     await page.getByRole("button", { name: /create assignment/i }).click();
