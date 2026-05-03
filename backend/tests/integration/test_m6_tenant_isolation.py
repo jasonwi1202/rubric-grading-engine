@@ -589,3 +589,51 @@ class TestStudentGroupsMutationIntegration:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["data"]["students"] == []
+
+
+# ---------------------------------------------------------------------------
+# Class Insights — cross-teacher isolation tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestClassInsightsIntegrationTenantIsolation:
+    """GET /classes/{classId}/insights must return 403 for another teacher's class."""
+
+    @pytest.mark.asyncio
+    async def test_get_insights_returns_403_for_another_teachers_class(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """Teacher B cannot read insights for Teacher A's class."""
+        teacher_a_id = _uuid()
+        teacher_b_id = _uuid()
+        class_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_a_id)
+        await _seed_teacher(db_session, teacher_b_id)
+        await _seed_class(db_session, class_id, teacher_a_id)
+
+        client = _client_for(teacher_b_id, pg_dsn)
+        resp = client.get(f"/api/v1/classes/{class_id}/insights")
+
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    @pytest.mark.asyncio
+    async def test_get_insights_returns_200_for_own_class(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """GET /classes/{classId}/insights returns 200 for the owning teacher."""
+        teacher_id = _uuid()
+        class_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+
+        client = _client_for(teacher_id, pg_dsn)
+        resp = client.get(f"/api/v1/classes/{class_id}/insights")
+
+        # No essays exist yet — service returns an empty-data insights object,
+        # not an error.
+        assert resp.status_code == 200, resp.text
+        assert "data" in resp.json()

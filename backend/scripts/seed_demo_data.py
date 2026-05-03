@@ -37,6 +37,7 @@ from app.models.essay import Essay, EssayStatus, EssayVersion
 from app.models.grade import ConfidenceLevel, CriterionScore, Grade, StrictnessLevel
 from app.models.instruction_recommendation import InstructionRecommendation
 from app.models.integrity_report import IntegrityReport, IntegrityReportStatus
+from app.models.intervention_recommendation import InterventionRecommendation
 from app.models.regrade_request import RegradeRequest, RegradeRequestStatus
 from app.models.rubric import Rubric, RubricCriterion
 from app.models.student import Student
@@ -550,8 +551,9 @@ async def _seed_teacher_scoped_data(teacher_id: uuid.UUID) -> None:
 
         await db.commit()
 
-        # ── M6: Teacher worklist items ────────────────────────────────────────
-        # One persistent_gap item per student for the evidence skill gap.
+        # ── M6 + M7: Teacher worklist items ───────────────────────────────────
+        # Persistent-gap items for both students plus one predictive
+        # trajectory-risk item so the M7 demo has deterministic predictive data.
         for student in students:
             wl_result = await db.execute(
                 select(TeacherWorklistItem).where(
@@ -580,12 +582,79 @@ async def _seed_teacher_scoped_data(teacher_id: uuid.UUID) -> None:
                     )
                 )
 
+        alpha = next((s for s in students if s.full_name == "Student Alpha"), None)
+        beta = next((s for s in students if s.full_name == "Student Beta"), None)
+
+        if alpha is not None:
+            trajectory_result = await db.execute(
+                select(TeacherWorklistItem).where(
+                    TeacherWorklistItem.teacher_id == teacher_id,
+                    TeacherWorklistItem.student_id == alpha.id,
+                    TeacherWorklistItem.trigger_type == "trajectory_risk",
+                    TeacherWorklistItem.skill_key == "thesis",
+                    TeacherWorklistItem.status == "active",
+                )
+            )
+            if trajectory_result.scalar_one_or_none() is None:
+                db.add(
+                    TeacherWorklistItem(
+                        teacher_id=teacher_id,
+                        student_id=alpha.id,
+                        trigger_type="trajectory_risk",
+                        skill_key="thesis",
+                        urgency=4,
+                        suggested_action="Check in early with this student before the next graded assignment.",
+                        details={
+                            "is_predictive": True,
+                            "confidence_level": "medium",
+                            "consecutive_decline_count": 4,
+                            "total_decline": 0.22,
+                            "recent_scores": [0.78, 0.70, 0.62, 0.56],
+                        },
+                        status="active",
+                    )
+                )
+
+        await db.commit()
+
+        # ── M7: Intervention recommendation (pending_review) ────────────────
+        # One seeded recommendation so the M7 API/demo can show a deterministic
+        # teacher-reviewed intervention without waiting for the scheduled scan.
+        if beta is not None:
+            intervention_result = await db.execute(
+                select(InterventionRecommendation).where(
+                    InterventionRecommendation.teacher_id == teacher_id,
+                    InterventionRecommendation.student_id == beta.id,
+                    InterventionRecommendation.trigger_type == "persistent_gap",
+                    InterventionRecommendation.skill_key == "evidence",
+                    InterventionRecommendation.status == "pending_review",
+                )
+            )
+            if intervention_result.scalar_one_or_none() is None:
+                db.add(
+                    InterventionRecommendation(
+                        teacher_id=teacher_id,
+                        student_id=beta.id,
+                        trigger_type="persistent_gap",
+                        skill_key="evidence",
+                        urgency=3,
+                        trigger_reason="Evidence scores have remained below threshold across both demo assignments.",
+                        evidence_summary="Average normalized evidence score is 0.375 across 2 assignments with no clear improvement trend.",
+                        suggested_action="Schedule a short evidence-integration conference and model one paragraph revision.",
+                        details={
+                            "avg_score": 0.375,
+                            "trend": "stable",
+                            "assignment_count": 2,
+                        },
+                        status="pending_review",
+                    )
+                )
+
         await db.commit()
 
         # ── M6: Instruction recommendation (pending_review) ──────────────────
         # One pre-generated recommendation for Student Alpha so the demo UI
         # shows a populated recommendation card without requiring an LLM call.
-        alpha = next((s for s in students if s.full_name == "Student Alpha"), None)
         if alpha is not None:
             rec_result = await db.execute(
                 select(InstructionRecommendation).where(
@@ -637,7 +706,6 @@ async def _seed_teacher_scoped_data(teacher_id: uuid.UUID) -> None:
         # requiring a live LLM call.
         # Student Beta's Assignment A essay was seeded earlier in the loop;
         # locate it by student + assignment.
-        beta = next((s for s in students if s.full_name == "Student Beta"), None)
         if beta is not None and assignments:
             assignment_a = assignments[0]  # Assignment A is index 0 (created first)
             beta_essay_result = await db.execute(
@@ -714,34 +782,44 @@ async def _seed_teacher_scoped_data(teacher_id: uuid.UUID) -> None:
                                 RevisionComparison.essay_id == beta_essay.id,
                             )
                         )
-                        if rc_result.scalar_one_or_none() is None:
-                            db.add(
-                                RevisionComparison(
-                                    essay_id=beta_essay.id,
-                                    base_version_id=v1.id,
-                                    revised_version_id=v2.id,
-                                    base_grade_id=v1_grade.id,
-                                    revised_grade_id=v2_grade.id,
-                                    total_score_delta=Decimal("1.00"),
-                                    criterion_deltas=[
-                                        {
-                                            "criterion_name": "Evidence and Reasoning",
-                                            "base_score": 3,
-                                            "revised_score": 4,
-                                            "delta": 1,
-                                        },
-                                        {
-                                            "criterion_name": "Claim and Thesis",
-                                            "base_score": 3,
-                                            "revised_score": 3,
-                                            "delta": 0,
-                                        },
-                                    ],
-                                    is_low_effort=False,
-                                    low_effort_reasons=[],
-                                    feedback_addressed=None,
-                                )
+                        existing_rc = rc_result.scalar_one_or_none()
+                        if existing_rc is not None:
+                            await db.delete(existing_rc)
+                            await db.flush()
+                        # Look up criterion IDs by name so the deltas
+                        # match the schema (CriterionDeltaResponse
+                        # requires criterion_id as a UUID, not a name).
+                        _crit_by_name = {c.name: c for c in criteria}
+                        _evidence_id = str(_crit_by_name["Evidence and Reasoning"].id)
+                        _thesis_id = str(_crit_by_name["Claim and Thesis"].id)
+                        db.add(
+                            RevisionComparison(
+                                essay_id=beta_essay.id,
+                                base_version_id=v1.id,
+                                revised_version_id=v2.id,
+                                base_grade_id=v1_grade.id,
+                                revised_grade_id=v2_grade.id,
+                                total_score_delta=Decimal("1.00"),
+                                created_at=now,
+                                criterion_deltas=[
+                                    {
+                                        "criterion_id": _evidence_id,
+                                        "base_score": 3,
+                                        "revised_score": 4,
+                                        "delta": 1,
+                                    },
+                                    {
+                                        "criterion_id": _thesis_id,
+                                        "base_score": 3,
+                                        "revised_score": 3,
+                                        "delta": 0,
+                                    },
+                                ],
+                                is_low_effort=False,
+                                low_effort_reasons=[],
+                                feedback_addressed=None,
                             )
+                        )
 
                 await db.commit()
 

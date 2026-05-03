@@ -39,7 +39,8 @@ Reference: `docs/architecture/testing-guide.md#llm-mocking`
 ## Tenant Isolation Tests
 
 - [ ] Integration tests for all endpoints that access teacher-scoped data include a cross-teacher access test
-- [ ] Cross-teacher test: create resource as Teacher A, authenticate as Teacher B, assert `403`
+- [ ] Cross-teacher test: create resource as Teacher A, authenticate as Teacher B, and assert the endpoint's documented behavior (`403` by default; `404` only for explicitly documented non-enumerable endpoints)
+- [ ] If an endpoint uses non-enumerable `404` behavior, tests include both "nonexistent ID" and "cross-tenant ID" so the contract is explicit
 - [ ] Celery task tests verify `teacher_id` ownership check is performed before loading entities
 
 ## Audit Log Tests
@@ -62,6 +63,9 @@ Reference: `docs/architecture/testing-guide.md#llm-mocking`
 - [ ] Meaningful assertion messages: `assert result == expected, f"Got {result}, expected {expected}"`
 - [ ] No `time.sleep()` in tests — use `freeze_time` for time-dependent logic
 - [ ] Database is clean before each test — use transaction rollback fixture or explicit TRUNCATE
+- [ ] State-transition endpoints include concurrency/idempotency tests (conditional UPDATE `rowcount` behavior, duplicate-action no-op behavior, and single-audit-write assertions)
+- [ ] Ranking/grouping/list outputs include deterministic-order tests with explicit tie-breaker expectations
+- [ ] Test module docstrings/comments reflect the real harness behavior (e.g., do not claim DB-level RLS enforcement if tests run as a BYPASSRLS/superuser role)
 
 ## SQLAlchemy Async Mock Correctness
 

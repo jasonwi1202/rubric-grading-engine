@@ -23,12 +23,12 @@ from typing import Optional
 import urllib.request
 import urllib.error
 
-RESET  = "\033[0m"
-GREEN  = "\033[32m"
-RED    = "\033[31m"
+RESET = "\033[0m"
+GREEN = "\033[32m"
+RED = "\033[31m"
 YELLOW = "\033[33m"
-CYAN   = "\033[36m"
-BOLD   = "\033[1m"
+CYAN = "\033[36m"
+BOLD = "\033[1m"
 
 
 @dataclass
@@ -38,7 +38,7 @@ class Check:
     method: str = "GET"
     expected_status: int = 200
     body_contains: Optional[str] = None
-    timeout: int = 10
+    timeout: int = 3
 
 
 @dataclass
@@ -59,9 +59,17 @@ def run_check(c: Check) -> Result:
             body = resp.read().decode("utf-8", errors="replace")
             elapsed = (time.monotonic() - start) * 1000
             if status != c.expected_status:
-                return Result(c, False, status, f"expected {c.expected_status}, got {status}", elapsed)
+                return Result(
+                    c,
+                    False,
+                    status,
+                    f"expected {c.expected_status}, got {status}",
+                    elapsed,
+                )
             if c.body_contains and c.body_contains not in body:
-                return Result(c, False, status, f"body missing {c.body_contains!r}", elapsed)
+                return Result(
+                    c, False, status, f"body missing {c.body_contains!r}", elapsed
+                )
             return Result(c, True, status, elapsed_ms=elapsed)
     except urllib.error.HTTPError as e:
         elapsed = (time.monotonic() - start) * 1000
@@ -74,42 +82,65 @@ def run_check(c: Check) -> Result:
 def build_checks(api: str, frontend: str, mailpit: str) -> list[Check]:
     return [
         # --- Backend ---
-        Check("Backend: health endpoint",           f"{api}/api/v1/health", body_contains='"status"'),
-        Check("Backend: OpenAPI schema reachable",  f"{api}/api/v1/openapi.json",  body_contains='"openapi"'),
-        Check("Backend: API docs page",             f"{api}/api/v1/docs"),
-
+        Check(
+            "Backend: health endpoint", f"{api}/api/v1/health", body_contains='"status"'
+        ),
+        Check(
+            "Backend: OpenAPI schema reachable",
+            f"{api}/api/v1/openapi.json",
+            body_contains='"openapi"',
+        ),
+        Check("Backend: API docs page", f"{api}/api/v1/docs"),
         # --- Frontend public pages ---
-        Check("Frontend: homepage (/)",             f"{frontend}/"),
-        Check("Frontend: /product",                 f"{frontend}/product"),
-        Check("Frontend: /how-it-works",            f"{frontend}/how-it-works"),
-        Check("Frontend: /about",                   f"{frontend}/about"),
-        Check("Frontend: /pricing",                 f"{frontend}/pricing"),
-        Check("Frontend: /legal/terms",             f"{frontend}/legal/terms"),
-        Check("Frontend: /legal/privacy",           f"{frontend}/legal/privacy"),
-        Check("Frontend: /legal/ferpa",             f"{frontend}/legal/ferpa"),
-        Check("Frontend: /legal/dpa",               f"{frontend}/legal/dpa"),
-        Check("Frontend: /legal/ai-policy",         f"{frontend}/legal/ai-policy"),
-        Check("Frontend: /signup",                  f"{frontend}/signup"),
-        Check("Frontend: /login",                   f"{frontend}/login"),
+        Check("Frontend: homepage (/)", f"{frontend}/"),
+        Check("Frontend: /product", f"{frontend}/product"),
+        Check("Frontend: /how-it-works", f"{frontend}/how-it-works"),
+        Check("Frontend: /about", f"{frontend}/about"),
+        Check("Frontend: /pricing", f"{frontend}/pricing"),
+        Check("Frontend: /legal/terms", f"{frontend}/legal/terms"),
+        Check("Frontend: /legal/privacy", f"{frontend}/legal/privacy"),
+        Check("Frontend: /legal/ferpa", f"{frontend}/legal/ferpa"),
+        Check("Frontend: /legal/dpa", f"{frontend}/legal/dpa"),
+        Check("Frontend: /legal/ai-policy", f"{frontend}/legal/ai-policy"),
+        Check("Frontend: /signup", f"{frontend}/signup"),
+        Check("Frontend: /login", f"{frontend}/login"),
         # /dashboard redirects to /login for unauthenticated users;
         # urllib follows the redirect so we verify it responds, not the status code
-        Check("Frontend: /dashboard responds",      f"{frontend}/dashboard"),
-
+        Check("Frontend: /dashboard responds", f"{frontend}/dashboard"),
         # --- M3 dashboard routes (redirect to /login when unauthenticated — confirms pages are registered) ---
-        Check("Frontend: /dashboard/classes responds",              f"{frontend}/dashboard/classes"),
-        Check("Frontend: /dashboard/rubrics/new responds",          f"{frontend}/dashboard/rubrics/new"),
-
+        Check("Frontend: /dashboard/classes responds", f"{frontend}/dashboard/classes"),
+        Check(
+            "Frontend: /dashboard/rubrics/new responds",
+            f"{frontend}/dashboard/rubrics/new",
+        ),
         # --- M4 API endpoints (unauthenticated — confirm routes are registered) ---
-        Check("Backend: integrity endpoint registered",     f"{api}/api/v1/essays/00000000-0000-0000-0000-000000000000/integrity",  expected_status=401),
-        Check("Backend: regrade-requests endpoint registered", f"{api}/api/v1/assignments/00000000-0000-0000-0000-000000000000/regrade-requests", expected_status=401),
-        Check("Backend: media-comments endpoint registered", f"{api}/api/v1/grades/00000000-0000-0000-0000-000000000000/media-comments", expected_status=401),
-
+        Check(
+            "Backend: integrity endpoint registered",
+            f"{api}/api/v1/essays/00000000-0000-0000-0000-000000000000/integrity",
+            expected_status=401,
+        ),
+        Check(
+            "Backend: regrade-requests endpoint registered",
+            f"{api}/api/v1/assignments/00000000-0000-0000-0000-000000000000/regrade-requests",
+            expected_status=401,
+        ),
+        Check(
+            "Backend: media-comments endpoint registered",
+            f"{api}/api/v1/grades/00000000-0000-0000-0000-000000000000/media-comments",
+            expected_status=401,
+        ),
         # --- M4 dashboard routes ---
-        Check("Frontend: assignment review responds",  f"{frontend}/dashboard/classes/test/assignments/test/review"),
-
+        Check(
+            "Frontend: assignment review responds",
+            f"{frontend}/dashboard/classes/test/assignments/test/review",
+        ),
         # --- Mailpit ---
-        Check("Mailpit: web UI reachable",          f"{mailpit}/"),
-        Check("Mailpit: API messages endpoint",     f"{mailpit}/api/v1/messages", body_contains='"messages"'),
+        Check("Mailpit: web UI reachable", f"{mailpit}/"),
+        Check(
+            "Mailpit: API messages endpoint",
+            f"{mailpit}/api/v1/messages",
+            body_contains='"messages"',
+        ),
     ]
 
 
@@ -121,7 +152,12 @@ def _request_json(
     token: str | None = None,
     body: dict[str, object] | None = None,
 ) -> tuple[int, dict[str, object]]:
-    """Send an HTTP request and return (status_code, parsed_json_body)."""
+    """Send an HTTP request and return (status_code, parsed_json_body).
+
+    On HTTP errors (4xx / 5xx) returns (status_code, {}) instead of raising,
+    so callers can handle individual endpoint failures gracefully without
+    aborting the entire check function.
+    """
     headers: dict[str, str] = {"Accept": "application/json"}
     payload: bytes | None = None
     if body is not None:
@@ -131,18 +167,30 @@ def _request_json(
         headers["Authorization"] = f"Bearer {token}"
 
     req = urllib.request.Request(url, data=payload, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        status = resp.status
-        raw = resp.read().decode("utf-8", errors="replace")
-    parsed: dict[str, object] = json.loads(raw)
-    return status, parsed
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = resp.status
+            raw = resp.read().decode("utf-8", errors="replace")
+        parsed: dict[str, object] = json.loads(raw)
+        return status, parsed
+    except urllib.error.HTTPError as exc:
+        # Return the HTTP status so individual checks can fail gracefully
+        # rather than propagating an exception that aborts subsequent checks.
+        try:
+            raw_err = exc.read().decode("utf-8", errors="replace")
+            parsed_err: dict[str, object] = json.loads(raw_err)
+        except Exception:
+            parsed_err = {}
+        return exc.code, parsed_err
 
 
 def run_m5_checks(api: str) -> list[Result]:
     """Run authenticated M5 demo checks using the seeded demo teacher account."""
     checks: list[Result] = []
 
-    def _record(name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0) -> None:
+    def _record(
+        name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0
+    ) -> None:
         checks.append(
             Result(
                 check=Check(name=name, url="(dynamic)", expected_status=200),
@@ -183,20 +231,33 @@ def run_m5_checks(api: str) -> list[Result]:
     try:
         status, classes_body = _request_json(f"{api}/api/v1/classes", token=token)
         classes_data = list(classes_body.get("data", []))
-        demo_class = next((c for c in classes_data if c.get("name") == "Demo English 8"), None)
+        demo_class = next(
+            (c for c in classes_data if c.get("name") == "Demo English 8"), None
+        )
         class_id = str((demo_class or {}).get("id"))
         if status != 200 or demo_class is None or not class_id:
             raise RuntimeError("unable to resolve Demo English 8 class")
 
-        status, students_body = _request_json(f"{api}/api/v1/classes/{class_id}/students", token=token)
+        status, students_body = _request_json(
+            f"{api}/api/v1/classes/{class_id}/students", token=token
+        )
         students_data = list(students_body.get("data", []))
-        alpha = next((s for s in students_data if (s.get("student") or {}).get("full_name") == "Student Alpha"), None)
+        alpha = next(
+            (
+                s
+                for s in students_data
+                if (s.get("student") or {}).get("full_name") == "Student Alpha"
+            ),
+            None,
+        )
         alpha_id = str(((alpha or {}).get("student") or {}).get("id"))
         if status != 200 or alpha is None or not alpha_id:
             raise RuntimeError("unable to resolve Student Alpha enrollment")
 
-        status, student_body = _request_json(f"{api}/api/v1/students/{alpha_id}", token=token)
-        profile = ((student_body.get("data") or {}).get("skill_profile") or {})
+        status, student_body = _request_json(
+            f"{api}/api/v1/students/{alpha_id}", token=token
+        )
+        profile = (student_body.get("data") or {}).get("skill_profile") or {}
         assignment_count = int(profile.get("assignment_count", 0))
         score_count = len(dict(profile.get("skill_scores", {})))
         ok = status == 200 and assignment_count >= 2 and score_count >= 1
@@ -210,12 +271,19 @@ def run_m5_checks(api: str) -> list[Result]:
             ),
         )
 
-        status, insights_body = _request_json(f"{api}/api/v1/classes/{class_id}/insights", token=token)
+        status, insights_body = _request_json(
+            f"{api}/api/v1/classes/{class_id}/insights", token=token
+        )
         insights = dict(insights_body.get("data", {}))
         assignment_count = int(insights.get("assignment_count", 0))
         graded_count = int(insights.get("graded_essay_count", 0))
         skill_averages = dict(insights.get("skill_averages", {}))
-        ok = status == 200 and assignment_count >= 2 and graded_count >= 4 and len(skill_averages) >= 1
+        ok = (
+            status == 200
+            and assignment_count >= 2
+            and graded_count >= 4
+            and len(skill_averages) >= 1
+        )
         _record(
             "M5: class insights seeded (2 assignments, >=4 graded essays)",
             ok,
@@ -232,7 +300,14 @@ def run_m5_checks(api: str) -> list[Result]:
             token=token,
         )
         assignments_data = list(assignments_body.get("data", []))
-        assignment_b = next((a for a in assignments_data if a.get("title") == "Demo Persuasive Essay B"), None)
+        assignment_b = next(
+            (
+                a
+                for a in assignments_data
+                if a.get("title") == "Demo Persuasive Essay B"
+            ),
+            None,
+        )
         assignment_b_id = str((assignment_b or {}).get("id"))
         if status != 200 or assignment_b is None or not assignment_b_id:
             raise RuntimeError("unable to resolve Demo Persuasive Essay B")
@@ -242,7 +317,9 @@ def run_m5_checks(api: str) -> list[Result]:
             token=token,
         )
         essays_data = list(essays_body.get("data", []))
-        beta_essay = next((e for e in essays_data if e.get("student_name") == "Student Beta"), None)
+        beta_essay = next(
+            (e for e in essays_data if e.get("student_name") == "Student Beta"), None
+        )
         beta_essay_id = str((beta_essay or {}).get("essay_id"))
         if status != 200 or beta_essay is None or not beta_essay_id:
             raise RuntimeError("unable to resolve Student Beta essay for assignment B")
@@ -281,15 +358,83 @@ def wait_for_stack(api: str, max_wait: int, retry_delay: float) -> bool:
     print(f"{CYAN}⏳ Waiting for backend to be ready (up to {max_wait}s)...{RESET}")
     while time.monotonic() < deadline:
         attempt += 1
-        result = run_check(Check("backend health", health_url, timeout=5))
+        result = run_check(Check("backend health", health_url, timeout=3))
         if result.passed:
-            print(f"{GREEN}✓ Backend ready after ~{attempt * retry_delay:.0f}s{RESET}\n")
+            print(
+                f"{GREEN}✓ Backend ready after ~{attempt * 2:.0f}s{RESET}\n"
+            )
             return True
-        sys.stdout.write(f"\r  Attempt {attempt} — not yet ready, waiting {retry_delay:.0f}s...")
+        sys.stdout.write(
+            f"\r  Attempt {attempt} — not yet ready, waiting 2s..."
+        )
         sys.stdout.flush()
-        time.sleep(retry_delay)
+        time.sleep(2)
     print(f"\n{RED}✗ Backend did not become ready within {max_wait}s.{RESET}")
-    print("  Check container logs with:  docker compose -f docker-compose.demo.yml logs backend")
+    print(
+        "  Check container logs with:  docker compose -f docker-compose.demo.yml logs backend"
+    )
+    return False
+
+
+def wait_for_frontend(frontend: str, max_wait: int = 180, retry_delay: float = 2.0) -> bool:
+    """Poll the frontend homepage until it responds or max_wait is exceeded.
+
+    The Next.js production build takes 20-40s to start serving requests after
+    the container is running.  This prevents frontend checks from failing with
+    connection-refused errors when the smoke test starts immediately after the
+    backend becomes healthy.
+    """
+    home_url = f"{frontend}/"
+    deadline = time.monotonic() + max_wait
+    attempt = 0
+    print(f"{CYAN}⏳ Waiting for frontend to be ready (up to {max_wait}s)...{RESET}")
+    while time.monotonic() < deadline:
+        attempt += 1
+        result = run_check(Check("frontend home", home_url, timeout=3))
+        if result.passed:
+            print(
+                f"{GREEN}✓ Frontend ready after ~{attempt * 2:.0f}s{RESET}\n"
+            )
+            return True
+        sys.stdout.write(
+            f"\r  Attempt {attempt} — not yet ready, waiting 2s..."
+        )
+        sys.stdout.flush()
+        time.sleep(2)
+    print(
+        f"\n{YELLOW}⚠ Frontend did not respond within {max_wait}s — frontend checks may fail.{RESET}\n"
+    )
+    return False  # non-fatal: continue with API-only checks
+
+
+def wait_for_seed(api: str, max_wait: int = 300) -> bool:
+    """Poll the demo login endpoint until the seeded account becomes usable.
+
+    The demo-seed container runs migrations then seeds all data via async
+    Celery tasks (including essay grading).  This can take 60-120 seconds.
+    We poll /auth/login rather than sleeping a fixed time so we proceed as
+    soon as the account exists and is verified.
+    """
+    deadline = time.monotonic() + max_wait
+    attempt = 0
+    print(f"{CYAN}⏳ Waiting for demo seed to complete (up to {max_wait}s)...{RESET}")
+    while time.monotonic() < deadline:
+        attempt += 1
+        try:
+            status, body = _request_json(
+                f"{api}/api/v1/auth/login",
+                method="POST",
+                body={"email": "demo@gradewise.app", "password": "DemoPass123!"},
+            )
+            if status == 200 and (body.get("data") or {}).get("access_token"):
+                print(f"{GREEN}✓ Demo seed complete after ~{attempt * 2:.0f}s{RESET}\n")
+                return True
+        except Exception:
+            pass
+        sys.stdout.write(f"\r  Attempt {attempt} — seed not ready, waiting 2s...")
+        sys.stdout.flush()
+        time.sleep(2)
+    print(f"\n{YELLOW}⚠ Demo seed did not complete within {max_wait}s.{RESET}\n")
     return False
 
 
@@ -301,7 +446,9 @@ def run_m6_checks(api: str) -> list[Result]:
     """
     checks: list[Result] = []
 
-    def _record(name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0) -> None:
+    def _record(
+        name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0
+    ) -> None:
         checks.append(
             Result(
                 check=Check(name=name, url="(dynamic)", expected_status=200),
@@ -322,7 +469,12 @@ def run_m6_checks(api: str) -> list[Result]:
         token = str(((body.get("data") or {}).get("access_token")))
         ok = status == 200 and token and token != "None"
         if not ok:
-            _record("M6: demo login", False, error=f"status={status}", elapsed_ms=(time.monotonic() - start) * 1000)
+            _record(
+                "M6: demo login",
+                False,
+                error=f"status={status}",
+                elapsed_ms=(time.monotonic() - start) * 1000,
+            )
             return checks
     except Exception as exc:
         _record("M6: demo login", False, error=str(exc))
@@ -332,37 +484,63 @@ def run_m6_checks(api: str) -> list[Result]:
         # Resolve class ID.
         status, classes_body = _request_json(f"{api}/api/v1/classes", token=token)
         classes_data = list(classes_body.get("data", []))
-        demo_class = next((c for c in classes_data if c.get("name") == "Demo English 8"), None)
+        demo_class = next(
+            (c for c in classes_data if c.get("name") == "Demo English 8"), None
+        )
         class_id = str((demo_class or {}).get("id"))
         if not demo_class or not class_id:
             raise RuntimeError("unable to resolve Demo English 8 class")
 
         # Resolve Student Alpha ID.
-        status, students_body = _request_json(f"{api}/api/v1/classes/{class_id}/students", token=token)
+        status, students_body = _request_json(
+            f"{api}/api/v1/classes/{class_id}/students", token=token
+        )
         students_data = list(students_body.get("data", []))
-        alpha = next((s for s in students_data if (s.get("student") or {}).get("full_name") == "Student Alpha"), None)
+        alpha = next(
+            (
+                s
+                for s in students_data
+                if (s.get("student") or {}).get("full_name") == "Student Alpha"
+            ),
+            None,
+        )
         alpha_id = str(((alpha or {}).get("student") or {}).get("id"))
         if not alpha or not alpha_id:
             raise RuntimeError("unable to resolve Student Alpha")
 
         # Resolve Student Beta's Assignment A essay ID for resubmission check.
-        status, asgn_body = _request_json(f"{api}/api/v1/classes/{class_id}/assignments", token=token)
+        status, asgn_body = _request_json(
+            f"{api}/api/v1/classes/{class_id}/assignments", token=token
+        )
         assignments_data = list(asgn_body.get("data", []))
-        assignment_a = next((a for a in assignments_data if a.get("title") == "Demo Persuasive Essay A"), None)
+        assignment_a = next(
+            (
+                a
+                for a in assignments_data
+                if a.get("title") == "Demo Persuasive Essay A"
+            ),
+            None,
+        )
         assignment_a_id = str((assignment_a or {}).get("id"))
         if not assignment_a or not assignment_a_id:
             raise RuntimeError("unable to resolve Demo Persuasive Essay A")
 
-        status, essays_body = _request_json(f"{api}/api/v1/assignments/{assignment_a_id}/essays", token=token)
+        status, essays_body = _request_json(
+            f"{api}/api/v1/assignments/{assignment_a_id}/essays", token=token
+        )
         essays_data = list(essays_body.get("data", []))
-        beta_essay = next((e for e in essays_data if e.get("student_name") == "Student Beta"), None)
+        beta_essay = next(
+            (e for e in essays_data if e.get("student_name") == "Student Beta"), None
+        )
         beta_essay_id = str((beta_essay or {}).get("essay_id"))
         if not beta_essay or not beta_essay_id:
             raise RuntimeError("unable to resolve Student Beta essay for Assignment A")
 
         # ── Check 1: GET /classes/{classId}/groups ───────────────────────────
         start = time.monotonic()
-        status, groups_body = _request_json(f"{api}/api/v1/classes/{class_id}/groups", token=token)
+        status, groups_body = _request_json(
+            f"{api}/api/v1/classes/{class_id}/groups", token=token
+        )
         groups = list((groups_body.get("data") or {}).get("groups", []))
         ok = status == 200 and len(groups) >= 1
         _record(
@@ -386,8 +564,10 @@ def run_m6_checks(api: str) -> list[Result]:
 
         # ── Check 3: GET /students/{studentId}/recommendations ────────────────
         start = time.monotonic()
-        status, rec_body = _request_json(f"{api}/api/v1/students/{alpha_id}/recommendations", token=token)
-        recs = list((rec_body.get("data") or {}).get("recommendations", []))
+        status, rec_body = _request_json(
+            f"{api}/api/v1/students/{alpha_id}/recommendations", token=token
+        )
+        recs = list(rec_body.get("data") or [])
         ok = status == 200 and len(recs) >= 1
         _record(
             "M6: instruction recommendation seeded for Student Alpha",
@@ -398,7 +578,9 @@ def run_m6_checks(api: str) -> list[Result]:
 
         # ── Check 4: GET /essays/{essayId}/versions (Student Beta Asgn A) ────
         start = time.monotonic()
-        status, versions_body = _request_json(f"{api}/api/v1/essays/{beta_essay_id}/versions", token=token)
+        status, versions_body = _request_json(
+            f"{api}/api/v1/essays/{beta_essay_id}/versions", token=token
+        )
         versions = list((versions_body.get("data") or {}).get("versions", []))
         ok = status == 200 and len(versions) >= 2
         _record(
@@ -410,13 +592,17 @@ def run_m6_checks(api: str) -> list[Result]:
 
         # ── Check 5: GET /essays/{essayId}/revision-comparison ────────────────
         start = time.monotonic()
-        status, comp_body = _request_json(f"{api}/api/v1/essays/{beta_essay_id}/revision-comparison", token=token)
+        status, comp_body = _request_json(
+            f"{api}/api/v1/essays/{beta_essay_id}/revision-comparison", token=token
+        )
         comp = comp_body.get("data") or {}
         ok = status == 200 and bool(comp.get("criterion_deltas"))
         _record(
             "M6: revision comparison seeded (criterion_deltas present)",
             ok,
-            error=None if ok else f"status={status}, criterion_deltas={comp.get('criterion_deltas')}",
+            error=None
+            if ok
+            else f"status={status}, criterion_deltas={comp.get('criterion_deltas')}",
             elapsed_ms=(time.monotonic() - start) * 1000,
         )
 
@@ -426,23 +612,158 @@ def run_m6_checks(api: str) -> list[Result]:
     return checks
 
 
+def run_m7_checks(api: str) -> list[Result]:
+    """Run authenticated M7 demo checks using the seeded demo teacher account.
+
+    Validates that the M7 seed data (predictive worklist item, intervention
+    recommendation, copilot endpoint) is present and usable in the demo stack.
+    """
+    checks: list[Result] = []
+
+    def _record(
+        name: str, passed: bool, *, error: str | None = None, elapsed_ms: float = 0.0
+    ) -> None:
+        checks.append(
+            Result(
+                check=Check(name=name, url="(dynamic)", expected_status=200),
+                passed=passed,
+                error=error,
+                elapsed_ms=elapsed_ms,
+            )
+        )
+
+    start = time.monotonic()
+    try:
+        status, body = _request_json(
+            f"{api}/api/v1/auth/login",
+            method="POST",
+            body={"email": "demo@gradewise.app", "password": "DemoPass123!"},
+        )
+        token = str(((body.get("data") or {}).get("access_token")))
+        ok = status == 200 and token and token != "None"
+        if not ok:
+            _record(
+                "M7: demo login",
+                False,
+                error=f"status={status}",
+                elapsed_ms=(time.monotonic() - start) * 1000,
+            )
+            return checks
+    except Exception as exc:
+        _record("M7: demo login", False, error=str(exc))
+        return checks
+
+    try:
+        status, classes_body = _request_json(f"{api}/api/v1/classes", token=token)
+        classes_data = list(classes_body.get("data", []))
+        demo_class = next(
+            (c for c in classes_data if c.get("name") == "Demo English 8"), None
+        )
+        class_id = str((demo_class or {}).get("id"))
+        if not demo_class or not class_id:
+            raise RuntimeError("unable to resolve Demo English 8 class")
+
+        start = time.monotonic()
+        status, wl_body = _request_json(f"{api}/api/v1/worklist", token=token)
+        items = list((wl_body.get("data") or {}).get("items", []))
+        has_predictive = any(
+            item.get("trigger_type") == "trajectory_risk" for item in items
+        )
+        _record(
+            "M7: predictive worklist item seeded (trajectory_risk present)",
+            status == 200 and has_predictive,
+            error=None
+            if status == 200 and has_predictive
+            else f"status={status}, items={items}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+        start = time.monotonic()
+        status, intervention_body = _request_json(
+            f"{api}/api/v1/interventions", token=token
+        )
+        intervention_items = list(
+            ((intervention_body.get("data") or {}).get("items") or [])
+        )
+        has_pending = any(
+            item.get("status") == "pending_review" for item in intervention_items
+        )
+        _record(
+            "M7: intervention recommendation seeded (pending_review present)",
+            status == 200 and has_pending,
+            error=None
+            if status == 200 and has_pending
+            else f"status={status}, items={intervention_items}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+
+        start = time.monotonic()
+        status, copilot_body = _request_json(
+            f"{api}/api/v1/copilot/query",
+            token=token,
+            method="POST",
+            body={
+                "query": "What should I teach tomorrow?",
+                "class_id": class_id,
+            },
+        )
+        copilot_data = copilot_body.get("data") or {}
+        ok = (
+            status == 200
+            and isinstance(copilot_data.get("summary"), str)
+            and isinstance(copilot_data.get("prompt_version"), str)
+        )
+        _record(
+            "M7: teacher copilot endpoint returns structured response",
+            ok,
+            error=None if ok else f"status={status}, body={copilot_body}",
+            elapsed_ms=(time.monotonic() - start) * 1000,
+        )
+    except Exception as exc:
+        _record("M7: API walkthrough checks", False, error=str(exc))
+
+    return checks
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke test for the GradeWise demo stack.")
-    parser.add_argument("--api-url",      default="http://localhost:8000")
+    parser = argparse.ArgumentParser(
+        description="Smoke test for the GradeWise demo stack."
+    )
+    parser.add_argument("--api-url", default="http://localhost:8000")
     parser.add_argument("--frontend-url", default="http://localhost:3000")
-    parser.add_argument("--mailpit-url",  default="http://localhost:8025")
-    parser.add_argument("--max-wait",     type=int,   default=120,
-                        help="Max seconds to wait for backend to become healthy (default: 120)")
-    parser.add_argument("--retries",      type=int,   default=3,
-                        help="Retry each check this many times on failure (default: 3)")
-    parser.add_argument("--retry-delay",  type=float, default=3.0,
-                        help="Seconds between retries (default: 3)")
-    parser.add_argument("--no-wait",      action="store_true",
-                        help="Skip the readiness wait loop and run checks immediately")
-    parser.add_argument("--no-m5",        action="store_true",
-                        help="Skip authenticated M5 demo checks")
-    parser.add_argument("--no-m6",        action="store_true",
-                        help="Skip authenticated M6 demo checks")
+    parser.add_argument("--mailpit-url", default="http://localhost:8025")
+    parser.add_argument(
+        "--max-wait",
+        type=int,
+        default=120,
+        help="Max seconds to wait for backend to become healthy (default: 120)",
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=1,
+        help="Retry each check this many times on failure (default: 1)",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=2.0,
+        help="Seconds between retries (default: 2)",
+    )
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Skip the readiness wait loop and run checks immediately",
+    )
+    parser.add_argument(
+        "--no-m5", action="store_true", help="Skip authenticated M5 demo checks"
+    )
+    parser.add_argument(
+        "--no-m6", action="store_true", help="Skip authenticated M6 demo checks"
+    )
+    parser.add_argument(
+        "--no-m7", action="store_true", help="Skip authenticated M7 demo checks"
+    )
     args = parser.parse_args()
 
     print(f"\n{BOLD}GradeWise demo smoke test{RESET}")
@@ -455,9 +776,21 @@ def main() -> int:
         ready = wait_for_stack(args.api_url, args.max_wait, args.retry_delay)
         if not ready:
             return 1
+        # Frontend (Next.js prod build) takes longer than the backend to start.
+        # This is non-fatal — API checks still run if the frontend is slow.
+        wait_for_frontend(args.frontend_url)
+        # The demo-seed container seeds data asynchronously via Celery (including
+        # essay grading).  Wait until the demo account is usable before running
+        # authenticated M5/M6/M7 checks.
+        wait_for_seed(args.api_url)
 
     checks = build_checks(args.api_url, args.frontend_url, args.mailpit_url)
-    total_checks = len(checks) + (0 if args.no_m5 else 4) + (0 if args.no_m6 else 5)
+    total_checks = (
+        len(checks)
+        + (0 if args.no_m5 else 4)
+        + (0 if args.no_m6 else 5)
+        + (0 if args.no_m7 else 3)
+    )
     print(f"{BOLD}Running {total_checks} checks...{RESET}\n")
 
     results: list[Result] = []
@@ -470,10 +803,14 @@ def main() -> int:
             result = run_check(check)
 
         results.append(result)
-        icon       = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
+        icon = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
         status_str = f"HTTP {result.status}" if result.status else ""
-        elapsed    = f"{result.elapsed_ms:.0f}ms"
-        extra      = f"  {YELLOW}{result.error}{RESET}" if result.error and not result.passed else ""
+        elapsed = f"{result.elapsed_ms:.0f}ms"
+        extra = (
+            f"  {YELLOW}{result.error}{RESET}"
+            if result.error and not result.passed
+            else ""
+        )
         print(f"  {icon}  {check.name:<52} {status_str:<10} {elapsed}{extra}")
 
     passed = sum(1 for r in results if r.passed)
@@ -485,7 +822,11 @@ def main() -> int:
         for result in m5_results:
             icon = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
             elapsed = f"{result.elapsed_ms:.0f}ms" if result.elapsed_ms else ""
-            extra = f"  {YELLOW}{result.error}{RESET}" if result.error and not result.passed else ""
+            extra = (
+                f"  {YELLOW}{result.error}{RESET}"
+                if result.error and not result.passed
+                else ""
+            )
             print(f"  {icon}  {result.check.name:<52} {elapsed}{extra}")
         results.extend(m5_results)
         passed = sum(1 for r in results if r.passed)
@@ -497,21 +838,45 @@ def main() -> int:
         for result in m6_results:
             icon = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
             elapsed = f"{result.elapsed_ms:.0f}ms" if result.elapsed_ms else ""
-            extra = f"  {YELLOW}{result.error}{RESET}" if result.error and not result.passed else ""
+            extra = (
+                f"  {YELLOW}{result.error}{RESET}"
+                if result.error and not result.passed
+                else ""
+            )
             print(f"  {icon}  {result.check.name:<52} {elapsed}{extra}")
         results.extend(m6_results)
         passed = sum(1 for r in results if r.passed)
         failed = len(results) - passed
 
-    print(f"\n{BOLD}Results: {GREEN}{passed} passed{RESET}{BOLD}, "
-          f"{RED if failed else ''}{failed} failed{RESET}{BOLD} / {len(results)} total{RESET}")
+    if not args.no_m7:
+        print(f"\n{BOLD}Running M7 authenticated checks...{RESET}\n")
+        m7_results = run_m7_checks(args.api_url)
+        for result in m7_results:
+            icon = f"{GREEN}✓{RESET}" if result.passed else f"{RED}✗{RESET}"
+            elapsed = f"{result.elapsed_ms:.0f}ms" if result.elapsed_ms else ""
+            extra = (
+                f"  {YELLOW}{result.error}{RESET}"
+                if result.error and not result.passed
+                else ""
+            )
+            print(f"  {icon}  {result.check.name:<52} {elapsed}{extra}")
+        results.extend(m7_results)
+        passed = sum(1 for r in results if r.passed)
+        failed = len(results) - passed
+
+    print(
+        f"\n{BOLD}Results: {GREEN}{passed} passed{RESET}{BOLD}, "
+        f"{RED if failed else ''}{failed} failed{RESET}{BOLD} / {len(results)} total{RESET}"
+    )
 
     if failed == 0:
         print(f"\n{GREEN}{BOLD}✓ Demo stack is healthy.{RESET}")
-        print(f"  Open the app:       http://localhost:3000")
-        print(f"  API docs:           http://localhost:8000/api/v1/docs")
-        print(f"  Mailpit (email UI): http://localhost:8025")
-        print(f"  MinIO console:      http://localhost:9001  (minioadmin / minioadmin)\n")
+        print("  Open the app:       http://localhost:3000")
+        print("  API docs:           http://localhost:8000/api/v1/docs")
+        print("  Mailpit (email UI): http://localhost:8025")
+        print(
+            "  MinIO console:      http://localhost:9001  (minioadmin / minioadmin)\n"
+        )
     else:
         print(f"\n{RED}{BOLD}✗ {failed} check(s) failed.{RESET}")
         print("  Inspect logs:  docker compose -f docker-compose.demo.yml logs")

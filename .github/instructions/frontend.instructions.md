@@ -66,6 +66,7 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 
 - [ ] Every data-fetching component handles `isLoading` → skeleton, `isError` → user-friendly message
 - [ ] **Never render `error.message` or server-supplied error text directly to users** — server error strings can be unstable, expose internal details, or include student PII. Map to a small set of safe UI strings based on `err.code` or HTTP status (e.g., `'invalid_credentials'` → "Email or password is incorrect", generic fallback otherwise).
+- [ ] Mutation errors are visible without obstruction — if a modal/overlay closes on error, the error state remains visible in the underlying screen context
 - [ ] Skeleton components use `shadcn/ui Skeleton` for consistency
 - [ ] Empty states (zero results) are explicitly handled and not left blank
 
@@ -75,6 +76,8 @@ When reviewing a PR that touches `frontend/**`, check every item below.
 - [ ] No icon-only buttons without `aria-label`
 - [ ] Form errors linked to inputs via `aria-describedby`
 - [ ] **Every new modal/dialog must implement the full accessibility baseline** — use the shared dialog primitive or verify all four properties are present: (1) focus moves into the dialog on open, (2) focus is trapped inside while open (Tab/Shift-Tab cycle within), (3) Escape closes the dialog, (4) focus returns to the triggering element on close. Radix UI / shadcn `Dialog` handles this automatically — do not override `onOpenAutoFocus`, `onCloseAutoFocus`, or `onEscapeKeyDown` in ways that disable these behaviors.
+- [ ] Dialog keyboard handlers are scoped to the dialog container (no global `window` listeners for Escape/Tab focus management)
+- [ ] Repeated interactive controls use unique `id` values and, where applicable, matching `aria-controls` / `aria-labelledby` attributes
 - [ ] **`role="listbox"` / `role="option"` require matching keyboard semantics** — Arrow key navigation and `aria-activedescendant` or roving tabindex. If keyboard semantics are not implemented, use `role="list"` / `role="listitem"` with plain buttons instead.
 - [ ] Color is not the only means of conveying state (score badges, status indicators include text)
 - [ ] Real-time updates (grading progress) announced via `aria-live="polite"` region

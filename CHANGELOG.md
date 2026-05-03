@@ -8,7 +8,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
-Changes on active feature branches not yet merged to a release branch.
+No unreleased changes on `release/m7` beyond the release-finalization checklist PR.
+
+---
+
+## [v0.8.0] — M7 Closed Loop — Unreleased (pending merge to main)
+
+### Added
+- **Intervention agent** — scheduled background scan over `StudentSkillProfile` data to create teacher-reviewed `intervention_recommendations`; trigger types include `persistent_gap`, `regression`, and `non_responder`; teachers explicitly approve or dismiss recommendations before any follow-up action is taken
+- **Intervention API** — `GET /interventions`, `POST /interventions/{id}/approve`, `DELETE /interventions/{id}` with non-enumerable `404` behavior for inaccessible rows and full audit logging of creation / approval / dismissal
+- **Predictive trajectory risk signal** — worklist generation now emits `trajectory_risk` items when recent assignment-over-assignment scores show a consistent downward trend before a confirmed regression; items carry confidence level and supporting decline data
+- **Teacher copilot data query layer** — `POST /copilot/query` answers natural-language instructional questions from live teacher-scoped Postgres data (skill profiles + worklist signals), resolves student display names after parsing, and expresses uncertainty when data is sparse instead of fabricating
+- **Teacher copilot UI** — dedicated `/dashboard/copilot` conversational panel with optional class scope selector, structured ranked-list / summary rendering, and read-only notice; responses link to student profiles via UUID-only URLs and never take autonomous action
+- **Demo-ready M7 seed data** — demo seed now includes a `trajectory_risk` worklist item, a pending intervention recommendation, and deterministic fake-LLM copilot responses so M7 can be demonstrated without an OpenAI key
+- **M7 demo smoke coverage** — `scripts/smoke_test_demo.py` now validates seeded trajectory-risk worklist data, intervention recommendations, and the teacher copilot endpoint
+- **M7 E2E coverage** — Playwright journey for the teacher copilot conversational UI, plus E2E hardening for essay upload strict-mode and M4 login hydration timing
+
+### Security
+- Copilot remains read-only: no grade changes, assignments, or interventions occur from the copilot UI without explicit teacher action elsewhere
+- No student names are sent to the LLM in the copilot context; only UUIDs and aggregate skill/worklist data are provided, and names are resolved after response parsing
+- Copilot query input is validated server-side and client-side for non-blank content; invalid request bodies return `422 VALIDATION_ERROR`
+- Copilot UI student-profile links no longer include student display names in accessible labels; the link uses a generic aria-label to avoid leaking PII in accessibility metadata
+
+### Tests added
+- Backend unit: `test_intervention_agent_service`, `test_intervention_router`, `test_intervention_task`, `test_copilot_service`, `test_copilot_router`, extended `test_worklist_service`, and parser coverage in `test_llm_parsers`
+- Backend integration: `test_interventions`, `test_copilot`
+- Frontend unit: `copilot-panel.test.tsx`, extended `worklist-panel.test.tsx`
+- Frontend E2E: teacher copilot journey plus hardening updates to existing M3/M4 workflows
 
 ---
 

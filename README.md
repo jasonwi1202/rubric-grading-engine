@@ -11,10 +11,15 @@ A **teacher-facing AI grading assistant** for K-12 writing instruction. Teachers
 - **AI Grading** — score essays against any rubric, per criterion, with evidence-grounded justifications
 - **Teacher Review** — override scores, edit feedback, and lock grades before anything is shared
 - **Batch Processing** — grade a full class in the background; review results as they complete
+- **Teacher Worklist** — prioritize who needs intervention first, with actionable status workflows
+- **Intervention Recommendations** — review and approve agent-generated intervention suggestions before any follow-up action
+- **Teacher Copilot** — ask natural-language questions about class trends and risk signals in a read-only conversational UI
+- **Auto-Grouping** — cluster students by shared skill gaps for small-group instruction
 - **Export** — PDF feedback packets, CSV gradebook exports, clipboard copy for any LMS
 - **Student Profiles** — persistent skill tracking across assignments and academic years
 - **Class Insights** — skill heatmaps, common issues, score distributions, cross-assignment trends
-- **Instruction Engine** — targeted exercises, mini-lesson recommendations, and student groupings by skill gap
+- **Instruction Engine** — targeted exercises and mini-lesson recommendations tied to observed gaps
+- **Resubmission Loop** — versioned essay resubmissions with revision comparison and improvement signals
 - **Academic Integrity** — AI-generated content detection and cross-submission similarity signals
 
 ---
@@ -40,12 +45,14 @@ Currently in active development. See [`docs/roadmap.md`](docs/roadmap.md) for mi
 
 | Milestone | Status |
 |---|---|
-| M0 — Project Scaffold | Not started |
-| M1 — Foundation (core grading MVP) | Not started |
-| M2 — Workflow | Not started |
-| M3 — Student Intelligence | Not started |
-| M4 — Prioritization & Instruction | Not started |
-| M5 — Closed Loop | Not started |
+| M1 — Project Scaffold | Complete |
+| M2 — Public Website & Onboarding | Complete |
+| M3 — Foundation | Complete |
+| M4 — Workflow | Complete |
+| M5 — Student Intelligence | Complete |
+| M6 — Prioritization & Instruction | Complete |
+| M7 — Closed Loop | Complete |
+| MX — Cross-Cutting | Ongoing |
 
 ---
 

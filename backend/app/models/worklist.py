@@ -57,7 +57,7 @@ class TeacherWorklistItem(Base):
         nullable=False,
         index=True,
     )
-    # Signal type: 'persistent_gap' | 'regression' | 'high_inconsistency' | 'non_responder'
+    # Signal type: 'persistent_gap' | 'regression' | 'high_inconsistency' | 'non_responder' | 'trajectory_risk'
     trigger_type: Mapped[str] = mapped_column(String(30), nullable=False)
     # Canonical skill dimension key (e.g. 'evidence').  NULL for student-level signals.
     skill_key: Mapped[str | None] = mapped_column(String(200), nullable=True)

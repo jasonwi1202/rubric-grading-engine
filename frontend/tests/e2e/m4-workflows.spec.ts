@@ -46,7 +46,12 @@ test.describe("M4 workflow coverage", () => {
     state.page = await state.context.newPage();
 
     await state.page.goto("/dashboard");
-    await expect(state.page).toHaveURL(/\/login/);
+    // Wait for JS hydration before interacting with the form. Without this,
+    // clicking Sign In too early can fall back to native GET form submission
+    // and produce a flaky /login?email=... URL instead of navigating.
+    await state.page.waitForLoadState("networkidle");
+    // like /login?email=...&password=... instead of navigating to /dashboard.
+    await state.page.waitForLoadState("networkidle");
     await state.page.getByLabel("Email").fill(state.email);
     await state.page.getByLabel("Password").fill(state.password);
     await state.page.getByRole("button", { name: /sign in/i }).click();

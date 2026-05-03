@@ -25,9 +25,13 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **M4** | Workflow | Confidence scoring, academic integrity detection, regrade requests, and media (audio/video) feedback. | 12 | ✅ Complete |
 | **M5** | Student Intelligence | Persistent student skill profiles, longitudinal tracking, class insights heatmap, and writing process visibility. | 11 | ✅ Complete |
 | **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | ✅ Complete |
-| **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | 🔲 Planned |
-| **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | 🔄 Ongoing |
-| | **Total** | | **95** | |
+| **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | ✅ Complete |
+| **M8** | Polish & Hardening | Complete missing feature UIs (interventions, text comments), review UI/UX, refactor/upgrade components, database migration resilience, and final hardening. | 9 | 🔄 In Progress |
+| **M9** | Production Readiness & Compliance | Monitoring, operational runbooks, security scanning, upload safety, and performance validation required for reliable Railway production deployment. | 7 | 🔄 Planned |
+| **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | ✅ Complete |
+| | **Total** | | **111** | |
+
+> Note: Milestone counts are issue-specific only. MX runs in parallel with any milestone.
 
 ---
 
@@ -254,7 +258,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 ---
 
-## M7 — Closed Loop
+## M7 — Closed Loop ✅ Complete
 
 > Automation agents and teacher copilot. Every prior milestone must be complete before starting this one.
 
@@ -262,10 +266,58 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 
 | # | Issue Title | Description |
 |---|---|---|
-| M7.1 | Intervention agent | Background Celery task that scans student profiles on a schedule. Detects trigger conditions (persistent gap, regression, non-response). Prepares recommended action and adds to teacher worklist. Teacher approves or dismisses — nothing acts without confirmation. |
-| M7.2 | Predictive insights | Detect early trajectory risk signals from skill profile trends (declining across 3+ assignments, persistent low score with no improvement). Surface as worklist item labeled as prediction. Include confidence indicator and supporting data points. |
-| M7.3 | Teacher copilot — data query layer | LLM-backed query interface backed by real class data. Supports: "Who is falling behind on thesis?", "What should I teach tomorrow?", "Which students haven't improved since my last feedback?". Queries against live Postgres data. Returns ranked lists and summaries. Never fabricates — expresses uncertainty if data is insufficient. Security: strictly scoped to authenticated teacher's classes only. |
-| M7.4 | Teacher copilot UI | Conversational input in sidebar or dedicated panel. Display structured response (ranked list, summary, or recommendation). Link-through to relevant students, assignments, or worklist items. No action taken from copilot — surfacing only. |
+| ~~M7.1~~ | ~~Intervention agent~~ | ✅ Done — PR #221. Scheduled intervention scan task, intervention recommendations API, teacher approve/dismiss lifecycle, audit logging. |
+| ~~M7.2~~ | ~~Predictive insights~~ | ✅ Done — PR #222. Trajectory-risk predictive worklist signal with confidence indicator and supporting trend data. |
+| ~~M7.3~~ | ~~Teacher copilot — data query layer~~ | ✅ Done — PR #223. Teacher-scoped copilot query API backed by live Postgres data with uncertainty handling and schema-validated LLM responses. |
+| ~~M7.4~~ | ~~Teacher copilot UI~~ | ✅ Done — PR #224. Dedicated `/dashboard/copilot` conversational panel with class scoping and structured response rendering. |
+
+---
+
+## M8 — Polish & Hardening 🔄 In Progress
+
+> Complete missing feature UIs, review all component implementations for correctness, improve visual design and UX, ensure clean database migrations, and final hardening. This milestone focuses on quality, completeness, and resilience rather than new features.
+
+### Missing Feature UIs
+
+| # | Issue Title | Description |
+|---|---|---|
+| M8.1 | Build interventions page UI | Backend API exists (`/interventions` CRUD). Build a `/dashboard/interventions` page that lists pending recommendations, lets teachers approve/dismiss them with notes, shows approval history, and integrates with class worklist. |
+| M8.2 | Build text comment-bank UI | Backend API exists (`/comment-bank` CRUD and suggestions). Build a UI for teachers to manage reusable text feedback snippets within the review panel: save comments to bank, search/suggest, apply to grades (like media comment bank already does). |
+| M8.3 | Migrate BrowserWritingInterface to Selection/Range API | Currently uses deprecated `document.execCommand`. Migrate to modern Selection/Range API or adopt maintained library (e.g., TipTap) for text formatting (bold, italic, underline, etc.) in the browser composition interface. |
+| M8.4 | Add deterministic export failure injection for E2E | Expose a test-mode toggle in the backend (via env or config) that allows Playwright tests to inject deterministic failures into the export Celery task. Enable E2E test: `export failure + retry UX using deterministic backend failure`. |
+| M8.5 | Add deterministic short-lived token mode for E2E | Expose a test-mode endpoint or config that lets Playwright tests generate access tokens with very short TTL (seconds). Enable E2E test: `auth silent-refresh real expiry path with deterministic token expiration`. |
+
+### Quality & UX Review
+
+| # | Issue Title | Description |
+|---|---|---|
+| M8.6 | UI component implementation review | Audit all React components in `components/` for correct hook usage, proper accessibility (ARIA labels, roles, focus management), consistent prop interfaces, and correct error boundary placement. Document or refactor any components that violate React patterns or shadcn/ui conventions. |
+| M8.7 | Visual design & brand review | Review the entire UI (public site, dashboard, modals, forms) against educational product standards. Check: color contrast, typography hierarchy, spacing consistency, responsive design, icon usage, and alignment with a professional K-12 ed-tech aesthetic. Refine CSS/Tailwind where needed. |
+| M8.8 | Database migration resilience | Audit all Alembic migrations for: zero-downtime patterns, reversibility on rollback, data safety (no data loss or corruption), idempotency, and documentation of breaking changes. Ensure migrations can be applied/rolled back cleanly in production. Document any edge cases or manual steps required. |
+| M8.9 | Final security & error handling pass | Review all error messages (never log PII), all API responses (match `{"data": ...}` envelope), all auth checks (401 vs 403 vs 404 semantics), all tenant isolation (teacher_id in WHERE clause), and all LLM prompts (essay in user role, injection defense present). Verify no hardcoded secrets, credentials, or student data in source. |
+
+---
+
+## M9 — Production Readiness & Compliance 🔄 Planned
+
+> Close the final operational and compliance gaps before Railway production launch. This milestone is deployment-focused: reliability, security posture, incident readiness, and performance confidence.
+
+### Must-Have Before Production
+
+| # | Issue Title | Description |
+|---|---|---|
+| M9.1 | Monitoring and alerting baseline | Add production metrics and alerting for API availability, worker queue depth, error rate, and latency. Include practical thresholds and escalation targets. |
+| M9.2 | Operational runbook and incident response | Write a concrete runbook for on-call operation: common failures, investigation steps, rollback triggers, comms templates, and incident timeline/checklist. |
+| M9.3 | File upload malware scanning | Add scanning (e.g., ClamAV or equivalent managed service) for uploaded PDF/DOCX/TXT files before they are processed for extraction/grading. |
+| M9.4 | CI security scanning expansion | Add automated AppSec checks in CI (e.g., OWASP dependency checks and Python static security scanning) and define fail gates for high/critical findings. |
+| M9.5 | Load and performance validation | Add repeatable load tests that validate key targets in `docs/architecture/performance.md` (grading throughput, p95 latencies, queue drain behavior). |
+
+### Nice-to-Have Shortly After Launch
+
+| # | Issue Title | Description |
+|---|---|---|
+| M9.6 | Feature flag framework | Introduce feature flags for high-risk or in-progress features so production rollout can be gradual and reversible without hotfix deploys. |
+| M9.7 | APM and distributed tracing | Add APM/tracing to connect request latency, DB spans, Celery tasks, and third-party calls for faster root-cause analysis in production incidents. |
 
 ---
 

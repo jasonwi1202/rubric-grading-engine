@@ -25,6 +25,7 @@ class TriggerType(StrEnum):
     non_responder = "non_responder"
     persistent_gap = "persistent_gap"
     high_inconsistency = "high_inconsistency"
+    trajectory_risk = "trajectory_risk"
 
 
 class WorklistItemStatus(StrEnum):

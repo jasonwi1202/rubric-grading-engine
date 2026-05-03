@@ -307,6 +307,7 @@ def _register_routers(application: FastAPI) -> None:
     from app.routers.classes import router as classes_router
     from app.routers.comment_bank import router as comment_bank_router
     from app.routers.contact import router as contact_router
+    from app.routers.copilot import router as copilot_router
     from app.routers.essays import essay_router
     from app.routers.essays import router as essays_router
     from app.routers.exports import router as exports_router
@@ -317,6 +318,7 @@ def _register_routers(application: FastAPI) -> None:
         essay_integrity_router,
         integrity_reports_router,
     )
+    from app.routers.intervention import router as intervention_router
     from app.routers.media_comments import grade_media_router, media_comments_router
     from app.routers.onboarding import router as onboarding_router
     from app.routers.recommendations import router as recommendations_router
@@ -356,6 +358,8 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(media_comments_router, prefix="/api/v1")
     application.include_router(worklist_router, prefix="/api/v1")
     application.include_router(recommendations_router, prefix="/api/v1")
+    application.include_router(intervention_router, prefix="/api/v1")
+    application.include_router(copilot_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

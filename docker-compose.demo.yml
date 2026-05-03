@@ -5,7 +5,7 @@
 # This is NOT for development or production.  Everything here runs on a single
 # machine with no external dependencies.
 #
-# Seeded data includes M4 + M5 + M6 walkthrough artifacts:
+# Seeded data includes M4 + M5 + M6 + M7 walkthrough artifacts:
 # - 2 assignments with locked grades and skill profiles
 # - student skill profiles with assignment_count=2
 # - browser writing snapshots + process signals on one essay
@@ -13,6 +13,9 @@
 # - worklist items pre-computed from seeded skill profiles
 # - one instruction recommendation in pending_review state
 # - one resubmission with revision comparison data
+# - one predictive trajectory-risk worklist item (M7)
+# - one intervention recommendation awaiting teacher review (M7)
+# - deterministic fake-LLM copilot responses with no external API dependency (M7)
 #
 # Usage:
 #   cp .env.demo .env.demo.local   # copy template (first time only)
@@ -151,6 +154,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-demo-key-not-set}
       OPENAI_GRADING_MODEL: gpt-4o
       OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+      LLM_FAKE_MODE: "true"
       LLM_REQUEST_TIMEOUT_SECONDS: "60"
       LLM_MAX_RETRIES: "3"
       GRADING_PROMPT_VERSION: v1
@@ -214,6 +218,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-demo-key-not-set}
       OPENAI_GRADING_MODEL: gpt-4o
       OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+      LLM_FAKE_MODE: "true"
       LLM_REQUEST_TIMEOUT_SECONDS: "60"
       LLM_MAX_RETRIES: "3"
       GRADING_PROMPT_VERSION: v1
@@ -262,6 +267,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-demo-key-not-set}
       OPENAI_GRADING_MODEL: gpt-4o
       OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+      LLM_FAKE_MODE: "true"
       LLM_REQUEST_TIMEOUT_SECONDS: "60"
       LLM_MAX_RETRIES: "3"
       GRADING_PROMPT_VERSION: v1
