@@ -212,7 +212,10 @@ describe("InterventionsPanel — card rendering", () => {
     );
     render(<InterventionsPanel />, { wrapper });
     await waitFor(() => {
-      expect(screen.queryByText("evidence")).not.toBeInTheDocument();
+      // The card renders without a skill_key badge — verify no purple badge appears
+      expect(
+        document.querySelector(".bg-purple-100"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -227,14 +230,14 @@ describe("InterventionsPanel — card rendering", () => {
     });
   });
 
-  it("renders interventions link on list items", async () => {
+  it("renders interventions page link on list items", async () => {
     mockListInterventions.mockResolvedValue(makeListResponse());
     render(<InterventionsPanel />, { wrapper });
     await waitFor(() => {
-      const link = screen.getByRole("link", {
+      const studentLink = screen.getByRole("link", {
         name: /view student profile/i,
       });
-      expect(link).toBeInTheDocument();
+      expect(studentLink).toBeInTheDocument();
     });
   });
 });
