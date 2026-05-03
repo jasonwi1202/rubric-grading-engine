@@ -206,14 +206,25 @@ function WorklistItemCard({
           {/* Suggested action */}
           <p className="mt-1 text-sm text-gray-600">{item.suggested_action}</p>
 
-        {/* Student profile link — accessible name uses no PII, only UUID in href */}
-          <Link
-            href={`/dashboard/students/${item.student_id}`}
-            aria-label={`View student profile (ID: ${item.student_id})`}
-            className="mt-1 inline-block text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            View student profile →
-          </Link>
+          {/* Links — student profile and interventions page */}
+          <div className="mt-1 flex flex-wrap gap-3">
+            {/* Student profile link — accessible name uses no PII, only UUID in href */}
+            <Link
+              href={`/dashboard/students/${item.student_id}`}
+              aria-label={`View student profile (ID: ${item.student_id})`}
+              className="text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              View student profile →
+            </Link>
+            {/* Interventions page link with pending filter preserved */}
+            <Link
+              href="/dashboard/interventions?status=pending_review"
+              aria-label="View pending intervention recommendations"
+              className="text-xs font-medium text-indigo-600 underline hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              View interventions →
+            </Link>
+          </div>
         </div>
 
         {/* Action controls */}
