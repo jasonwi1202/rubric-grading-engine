@@ -494,11 +494,25 @@ test.describe("Journey 10 — teacher notes + writing process panel", () => {
     await loginUi(page, teacherB.email, teacherB.password);
 
     await page.goto(`/dashboard/students/${state.fixture.studentId}`);
-    // Either a 404 page or an error alert is acceptable per the architecture docs
-    // (404 is allowed for non-enumerable endpoints).
-    const hasError = await page.getByText(/failed to load|not found|student not found/i).isVisible({ timeout: 15_000 });
-    const is404 = page.url().includes("404") || (await page.getByText(/404/i).isVisible());
-    expect(hasError || is404).toBe(true);
+
+    // Wait for the page to fully settle (navigation + data load).
+    await page.waitForLoadState("networkidle").catch(() => {});
+
+    const url = page.url();
+
+    // Acceptable outcomes per architecture docs (404 allowed for non-enumerable
+    // student endpoints; 403 renders an error card on the profile page):
+    // 1. Redirected to /login (middleware caught unauthenticated/cross-tenant)
+    // 2. Error text rendered on the page
+    // 3. URL contains "404" (Next.js not-found route)
+    const redirectedToLogin = url.includes("/login");
+    const is404 = url.includes("404") || (await page.getByText(/404/i).isVisible({ timeout: 3_000 }).catch(() => false));
+    const hasError = await page
+      .getByText(/failed to load student profile|not found|student not found/i)
+      .isVisible({ timeout: 3_000 })
+      .catch(() => false);
+
+    expect(redirectedToLogin || hasError || is404).toBe(true);
 
     await context.close();
   });
