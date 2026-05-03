@@ -2,10 +2,9 @@
 
 This guide walks you through spinning up the full GradeWise stack locally in a single command using Docker Compose, and verifying everything is healthy with the included smoke test.
 
-**No API keys are required to explore the UI and backend.**  
-You only need an OpenAI key if you want to run actual AI grading jobs.
+**No API keys are required to explore the UI and backend.** The demo stack runs with deterministic fake LLM outputs enabled, so copilot queries and AI-backed demo workflows work locally without external API access.
 
-The demo stack now seeds a ready-to-login teacher account and sample M4 + M5 + M6 data automatically.
+The demo stack now seeds a ready-to-login teacher account and sample M4 + M5 + M6 + M7 data automatically.
 
 
 ## Prerequisites
@@ -47,7 +46,7 @@ The first run downloads ~1 GB of images and builds the backend and frontend imag
 python scripts/smoke_test_demo.py
 ```
 
-The script automatically waits up to 120 seconds for the backend to become healthy, then runs baseline plus authenticated M5 checks across all services. Example output:
+The script automatically waits up to 120 seconds for the backend to become healthy, then runs baseline plus authenticated M5, M6, and M7 checks across all services. Example output:
 
 ```
 GradeWise demo smoke test
@@ -58,7 +57,7 @@ GradeWise demo smoke test
 ⏳ Waiting for backend to be ready (up to 120s)...
 ✓ Backend ready after ~45s
 
-Running 28 checks...
+Running 31 checks...
 
   ✓  Backend: health endpoint                        HTTP 200   38ms
   ✓  Backend: OpenAPI schema reachable               HTTP 200   12ms
@@ -105,6 +104,9 @@ Seeded data includes:
 - Student skill profiles seeded with `assignment_count=2`
 - 1 browser-written essay with writing snapshots + process signals
 - 1 integrity report and 1 open regrade request
+- 1 predictive trajectory-risk worklist item
+- 1 intervention recommendation awaiting teacher review
+- working copilot queries via deterministic fake-LLM mode
 
 
 
@@ -190,26 +192,36 @@ pre-seeded data.
 3. Open the writing-process panel
 4. Confirm session timeline/process signal metrics are present
 
-### AI grading (optional — requires OpenAI API key)
+### M7 feature walkthrough
 
-If you want to test AI grading, set `OPENAI_API_KEY` before starting the stack:
+The demo stack includes seeded M7 data and fake-LLM copilot responses, so these flows work without any external API key.
 
-```bash
-# macOS / Linux
-OPENAI_API_KEY=sk-... docker compose -f docker-compose.demo.yml up -d
+#### Predictive insights and intervention recommendations
 
-# Windows PowerShell
-$env:OPENAI_API_KEY="sk-..."
-docker compose -f docker-compose.demo.yml up -d
-```
+1. Log in with the seeded demo account
+2. Open the **Worklist** on the dashboard home
+3. Confirm there is at least one predictive item with a `trajectory_risk` trigger and supporting decline details
+4. Open the API docs at [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs)
+5. Use `GET /api/v1/interventions` to confirm there is a pending intervention recommendation seeded for the demo teacher
 
-Without a key the app starts normally; grading tasks will fail with an API error when submitted.
+#### Teacher copilot
+
+1. Navigate to [http://localhost:3000/dashboard/copilot](http://localhost:3000/dashboard/copilot)
+2. Ask a question such as `What should I teach tomorrow?`
+3. Optionally scope the query to `Demo English 8`
+4. Confirm the panel returns a structured, read-only response and does not trigger any action automatically
+
+### AI behavior in demo mode
+
+The demo stack runs with `LLM_FAKE_MODE=true`, so grading-adjacent and copilot flows use deterministic fake responses rather than real OpenAI calls. This keeps the demo fully local and reproducible.
+
+If you want to test real OpenAI-backed behavior, use the normal development stack (`docker-compose.yml`) instead of the demo stack.
 
 
 ## Smoke Test Options
 
 ```bash
-# Default: wait up to 120s, retry each check 3 times (includes M5 checks)
+# Default: wait up to 120s, retry each check 3 times (includes M5/M6/M7 checks)
 python scripts/smoke_test_demo.py
 
 # Skip the readiness wait (useful if you know the stack is already up)
@@ -217,6 +229,9 @@ python scripts/smoke_test_demo.py --no-wait
 
 # Connectivity-only smoke (skip authenticated M5 checks)
 python scripts/smoke_test_demo.py --no-m5
+
+# Skip only the M7 authenticated checks
+python scripts/smoke_test_demo.py --no-m7
 
 # Increase wait time for slow machines
 python scripts/smoke_test_demo.py --max-wait 180

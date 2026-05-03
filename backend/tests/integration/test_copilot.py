@@ -246,3 +246,46 @@ class TestCopilotQueryIntegration:
 
         assert resp.status_code == 403, resp.text
         assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+    @pytest.mark.asyncio
+    async def test_class_with_no_data_returns_insufficient_data(
+        self, db_session: AsyncSession, pg_dsn: str
+    ) -> None:
+        """Copilot returns has_sufficient_data=False when class has no skill data.
+
+        A class with enrolled students but no graded essays / skill profiles
+        should receive a graceful uncertainty response rather than a 500.
+        """
+        teacher_id = _uuid()
+        class_id = _uuid()
+        student_id = _uuid()
+
+        await _seed_teacher(db_session, teacher_id)
+        await _seed_class(db_session, class_id, teacher_id)
+        await _seed_student(db_session, student_id, teacher_id)
+        await _seed_enrollment(db_session, class_id, student_id)
+        # Deliberately omit skill profile and worklist — no data to reason about.
+
+        client = _client_for(teacher_id, pg_dsn)
+
+        parsed = ParsedCopilotResponse(
+            query_interpretation="Identify students needing support.",
+            has_sufficient_data=False,
+            uncertainty_note="No skill data is available for this class yet.",
+            response_type="insufficient_data",
+            ranked_items=[],
+            summary="",
+            suggested_next_steps=[],
+        )
+
+        with patch("app.services.copilot.call_copilot", new=AsyncMock(return_value=parsed)):
+            resp = client.post(
+                "/api/v1/copilot/query",
+                json={"query": "Who needs help?", "class_id": str(class_id)},
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()["data"]
+        assert body["has_sufficient_data"] is False
+        assert body["response_type"] == "insufficient_data"
+        assert body["ranked_items"] == []

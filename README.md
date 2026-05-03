@@ -12,6 +12,8 @@ A **teacher-facing AI grading assistant** for K-12 writing instruction. Teachers
 - **Teacher Review** — override scores, edit feedback, and lock grades before anything is shared
 - **Batch Processing** — grade a full class in the background; review results as they complete
 - **Teacher Worklist** — prioritize who needs intervention first, with actionable status workflows
+- **Intervention Recommendations** — review and approve agent-generated intervention suggestions before any follow-up action
+- **Teacher Copilot** — ask natural-language questions about class trends and risk signals in a read-only conversational UI
 - **Auto-Grouping** — cluster students by shared skill gaps for small-group instruction
 - **Export** — PDF feedback packets, CSV gradebook exports, clipboard copy for any LMS
 - **Student Profiles** — persistent skill tracking across assignments and academic years
@@ -49,7 +51,7 @@ Currently in active development. See [`docs/roadmap.md`](docs/roadmap.md) for mi
 | M4 — Workflow | Complete |
 | M5 — Student Intelligence | Complete |
 | M6 — Prioritization & Instruction | Complete |
-| M7 — Closed Loop | Planned |
+| M7 — Closed Loop | Complete |
 | MX — Cross-Cutting | Ongoing |
 
 ---
