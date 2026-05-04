@@ -35,7 +35,7 @@ export function SiteFooter() {
           {/* Brand */}
           <div>
             <p className="text-lg font-bold text-gray-900">{PRODUCT_NAME}</p>
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-2 text-sm text-gray-600">
               AI-assisted grading for K-12 writing instruction. Teachers are
               always in control.
             </p>

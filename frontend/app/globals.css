@@ -29,22 +29,15 @@ body {
 /*
   Accessibility hardening for MX.4:
   gray-400 (#9ca3af) and gray-500 (#6b7280) on white/gray-50 backgrounds both
-  fail WCAG 2.1 AA (contrast ratios ~2.3 and ~3.5, respectively — both below
-  the 4.5:1 threshold for normal-size text).  Override these utilities scoped
-  to the public marketing layout (.public-page) so only the public site
-  benefits without breaking hover-state affordances in the dashboard (e.g.
-  `text-gray-400 hover:text-gray-600` would render identically before/after
-  hover if the override were global).
+  fail WCAG 2.1 AA (contrast ratios ~2.3 and ~3.5, respectively — below the
+  4.5:1 threshold for normal-size text).
 
-  Note: text-blue-100 is intentionally excluded.  Its primary usage is as
-  light-coloured subtitle text on blue-600 backgrounds (CTA sections), where
-  it achieves ~4.8:1 contrast and already passes WCAG AA.  A global override
-  that darkens it would break those dark-background instances.
+  Rather than overriding Tailwind utility classes — which collapses hover-state
+  pairs like `text-gray-500 hover:text-gray-700` and `text-gray-400
+  hover:text-gray-600` (e.g. the billing-period toggle in the Pricing page) —
+  all body and subtitle text on public marketing pages is set explicitly to
+  text-gray-600 (7:1) or text-gray-700 (10:1) at the point of use.
+
+  Note: text-blue-100 on bg-blue-600 achieves ~4.8:1 and already passes WCAG
+  AA; no override needed there.
 */
-.public-page .text-gray-400 {
-  color: #4b5563; /* gray-600 — 7:1 on white, passes WCAG AA */
-}
-
-.public-page .text-gray-500 {
-  color: #374151; /* gray-700 — 10:1 on white, passes WCAG AAA */
-}

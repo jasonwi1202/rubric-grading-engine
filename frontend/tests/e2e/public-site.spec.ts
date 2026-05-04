@@ -217,8 +217,12 @@ test.describe("Public site — mobile navigation", () => {
     await expect(toggle).toBeFocused();
   });
 
-  test("drawer closes on pathname change (logo click)", async ({ page }) => {
-    await page.goto("/");
+  test("drawer closes when navigating to a different page (logo click)", async ({
+    page,
+  }) => {
+    // Start on a page other than / so that clicking the logo (href="/") causes
+    // a real pathname change and exercises the usePathname reset.
+    await page.goto("/product");
 
     const toggle = page.locator('[aria-controls="mobile-nav"]');
     await toggle.click();
@@ -226,7 +230,7 @@ test.describe("Public site — mobile navigation", () => {
       page.getByRole("navigation", { name: "Mobile navigation" }),
     ).toBeVisible();
 
-    // Navigate via the logo link — simulates a client-side route change.
+    // Navigate via the logo link — pathname changes from /product to /.
     await page.getByRole("link", { name: /GradeWise home/i }).click();
     await expect(
       page.getByRole("navigation", { name: "Mobile navigation" }),

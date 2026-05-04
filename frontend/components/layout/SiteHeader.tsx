@@ -83,6 +83,7 @@ export function SiteHeader() {
           href="/"
           className="text-xl font-bold text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           aria-label={`${PRODUCT_NAME} home`}
+          onClick={() => setMobileMenuOpen(false)}
         >
           {PRODUCT_NAME}
         </Link>
