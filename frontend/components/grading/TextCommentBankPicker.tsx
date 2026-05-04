@@ -51,18 +51,6 @@ function saveErrorMessage(err: unknown): string {
   return "Failed to save comment. Please try again.";
 }
 
-function applyErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case "NOT_FOUND":
-        return "Comment not found. It may have been deleted.";
-      default:
-        return "Failed to apply comment. Please try again.";
-    }
-  }
-  return "Failed to apply comment. Please try again.";
-}
-
 function deleteErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
