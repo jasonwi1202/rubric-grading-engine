@@ -716,7 +716,7 @@ describe("applyInlineFormat — bold", () => {
     expect(editor.textContent).toBe("Hello world");
   });
 
-  it("removes <b> wrapper when bold is toggled off (selection inside <b>)", () => {
+  it("removes <b> wrapper when bold is toggled off (selection covers full element)", () => {
     editor.innerHTML = "<b>Hello</b> world";
     const bEl = editor.querySelector("b")!;
     const textNode = bEl.firstChild!;
@@ -729,6 +729,92 @@ describe("applyInlineFormat — bold", () => {
 
     expect(editor.querySelector("b")).toBeNull();
     expect(editor.textContent).toBe("Hello world");
+  });
+
+  it("removes bold only from the selected prefix, keeping the suffix bold", () => {
+    // <b>Hello world</b>: select "Hello" (0–5) — " world" must stay bold
+    editor.innerHTML = "<b>Hello world</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5); // "Hello"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("Hello world");
+    // The unformatted "Hello" should sit outside any <b>
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls).toHaveLength(1);
+    expect(bEls[0].textContent).toBe(" world");
+  });
+
+  it("removes bold only from the selected suffix, keeping the prefix bold", () => {
+    // <b>Hello world</b>: select "world" (6–11) — "Hello " must stay bold
+    editor.innerHTML = "<b>Hello world</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 6); // "world"
+    range.setEnd(textNode, 11);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("Hello world");
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls).toHaveLength(1);
+    expect(bEls[0].textContent).toBe("Hello ");
+  });
+
+  it("removes bold from a middle selection only, keeping prefix and suffix bold", () => {
+    // <b>Hello world foo</b>: select "world" (6–11) — "Hello " and " foo" stay bold
+    editor.innerHTML = "<b>Hello world foo</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 6); // "world"
+    range.setEnd(textNode, 11);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("Hello world foo");
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls).toHaveLength(2);
+    expect(bEls[0].textContent).toBe("Hello ");
+    expect(bEls[1].textContent).toBe(" foo");
+  });
+
+  it("removes bold from a selection whose container is nested inside the ancestor", () => {
+    // <b>before <u>mid</u> after</b>: select "mid" inside <u> — bold is lifted
+    // from that portion only; "before " and " after" remain bold, <u> is preserved.
+    editor.innerHTML = "<b>before <u>mid</u> after</b>";
+    const uEl = editor.querySelector("u")!;
+    const textNode = uEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 3); // "mid"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("before mid after");
+    // The <u> element must still be present (only bold removed, not underline)
+    expect(editor.querySelector("u")).not.toBeNull();
+    // "before" and "after" portions must each still be inside a <b>
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls.length).toBeGreaterThanOrEqual(1);
+    const boldText = Array.from(bEls)
+      .map((el) => el.textContent ?? "")
+      .join("");
+    expect(boldText).toContain("before");
+    expect(boldText).toContain("after");
+    // "mid" must not be directly inside any <b>
+    expect(
+      Array.from(bEls).some((el) => el.textContent?.trim() === "mid"),
+    ).toBe(false);
   });
 
   it("does nothing when the selection is collapsed (no text selected)", () => {
