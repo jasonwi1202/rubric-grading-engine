@@ -103,7 +103,8 @@ export function applyInlineFormat(
   const ancestor = findFormatAncestor(range.commonAncestorContainer, tagName, editor);
   if (ancestor) {
     // Toggle off: lift the children of the wrapping element into its parent.
-    const parent = ancestor.parentNode!;
+    const parent = ancestor.parentNode;
+    if (!parent) return;
     while (ancestor.firstChild) {
       parent.insertBefore(ancestor.firstChild, ancestor);
     }
