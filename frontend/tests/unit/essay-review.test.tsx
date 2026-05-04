@@ -55,6 +55,16 @@ vi.mock("@/lib/api/media-comments", () => ({
   applyBankedComment: () => Promise.resolve({}),
 }));
 
+// Mock comment-bank so the embedded TextCommentBankPicker components do not
+// trigger real network calls in these tests.
+vi.mock("@/lib/api/comment-bank", () => ({
+  listCommentBank: () => Promise.resolve([]),
+  createCommentBankEntry: () =>
+    Promise.resolve({ id: "cb-001", text: "test", created_at: "2026-01-01T00:00:00Z" }),
+  deleteCommentBankEntry: () => Promise.resolve(undefined),
+  getCommentBankSuggestions: () => Promise.resolve([]),
+}));
+
 import {
   EssayReviewPanel,
   computeTotalScore,
