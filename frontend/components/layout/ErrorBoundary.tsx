@@ -12,7 +12,16 @@
  *     <SomeComplexPanel />
  *   </ErrorBoundary>
  *
+ *   // Static fallback (no reset button):
  *   <ErrorBoundary fallback={<p>Custom fallback</p>}>
+ *     <SomeComplexPanel />
+ *   </ErrorBoundary>
+ *
+ *   // Render-prop fallback — receives resetErrorBoundary so the custom UI
+ *   // can expose its own reset action:
+ *   <ErrorBoundary fallbackRender={({ resetErrorBoundary }) => (
+ *     <button onClick={resetErrorBoundary}>Retry</button>
+ *   )}>
  *     <SomeComplexPanel />
  *   </ErrorBoundary>
  *
@@ -35,10 +44,17 @@ interface ErrorBoundaryProps {
   /** Content to render when no error has occurred. */
   children: ReactNode;
   /**
-   * Optional custom fallback.  When omitted the default "something went wrong"
-   * panel is rendered.
+   * Optional static fallback node.  When omitted the default "something went
+   * wrong" panel is rendered.  Cannot itself trigger a boundary reset — use
+   * `fallbackRender` when the custom UI needs a reset action.
    */
   fallback?: ReactNode;
+  /**
+   * Render-prop fallback that receives `{ resetErrorBoundary }`.  Takes
+   * precedence over `fallback` when both are provided.  Use this when the
+   * custom fallback needs to expose a reset action to the user.
+   */
+  fallbackRender?: (props: { resetErrorBoundary: () => void }) => ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -108,6 +124,11 @@ export class ErrorBoundary extends Component<
 
   render(): ReactNode {
     if (this.state.hasError) {
+      if (this.props.fallbackRender !== undefined) {
+        return this.props.fallbackRender({
+          resetErrorBoundary: this.handleReset,
+        });
+      }
       if (this.props.fallback !== undefined) {
         return this.props.fallback;
       }
