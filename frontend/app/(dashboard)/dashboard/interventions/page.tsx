@@ -38,7 +38,7 @@ function InterventionsPageContent() {
 
 export default function InterventionsPage() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-3xl">
       <h1 className="mb-1 text-2xl font-bold text-gray-900">Interventions</h1>
       <p className="mb-6 text-sm text-gray-500">
         Review agent-generated intervention recommendations for your students. Approve
@@ -55,6 +55,6 @@ export default function InterventionsPage() {
       >
         <InterventionsPageContent />
       </Suspense>
-    </main>
+    </div>
   );
 }
