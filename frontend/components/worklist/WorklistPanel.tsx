@@ -211,6 +211,7 @@ function WorklistItemCard({
             {/* Student profile link */}
             <Link
               href={`/dashboard/students/${item.student_id}`}
+              aria-label={`View student profile for ${triggerLabel} worklist item`}
               className="text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               View student profile →
