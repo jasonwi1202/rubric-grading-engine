@@ -208,10 +208,9 @@ function WorklistItemCard({
 
           {/* Links — student profile and interventions page */}
           <div className="mt-1 flex flex-wrap gap-3">
-            {/* Student profile link — accessible name uses no PII, only UUID in href */}
+            {/* Student profile link */}
             <Link
               href={`/dashboard/students/${item.student_id}`}
-              aria-label={`View student profile (ID: ${item.student_id})`}
               className="text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               View student profile →

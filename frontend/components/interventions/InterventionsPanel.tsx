@@ -21,7 +21,7 @@
  *   - No student data written to localStorage or sessionStorage.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -113,7 +113,7 @@ function InterventionCard({
   });
 
   const formattedActionedAt = item.actioned_at
-    ? new Date(item.actioned_at).toLocaleDateString(undefined, {
+    ? new Date(item.actioned_at).toLocaleString(undefined, {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -169,10 +169,9 @@ function InterventionCard({
             Suggested: {item.suggested_action}
           </p>
 
-          {/* Student profile link — accessible name uses no PII, only UUID in href */}
+          {/* Student profile link */}
           <Link
             href={`/dashboard/students/${item.student_id}`}
-            aria-label={`View student profile (ID: ${item.student_id})`}
             className="mt-1 inline-block text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             View student profile →
@@ -238,6 +237,12 @@ export function InterventionsPanel({
   // ----- Filter state -----
   const [statusFilter, setStatusFilter] =
     useState<InterventionStatusFilter>(initialStatus);
+
+  // Sync filter when the parent passes a new initialStatus (e.g., same-route
+  // navigation with a different ?status= search param).
+  useEffect(() => {
+    setStatusFilter(initialStatus);
+  }, [initialStatus]);
 
   // ----- Data fetch -----
   const {

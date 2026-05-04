@@ -21,7 +21,7 @@
  * - InterventionsPanel: renders actioned_at timestamp for approved items
  * - InterventionsPanel: renders actioned_at timestamp for dismissed items
  * - InterventionsPanel: renders student profile link using student_id UUID
- * - InterventionsPanel: renders student profile link with correct href on each card
+ * - InterventionsPanel: renders student profile link using student_id UUID
  *
  * Security:
  * - No student PII in fixtures — synthetic IDs and placeholder text only.
@@ -220,17 +220,6 @@ describe("InterventionsPanel — card rendering", () => {
   });
 
   it("renders student profile link using student_id UUID", async () => {
-    mockListInterventions.mockResolvedValue(makeListResponse());
-    render(<InterventionsPanel />, { wrapper });
-    await waitFor(() => {
-      const profileLink = screen.getByRole("link", {
-        name: /view student profile/i,
-      });
-      expect(profileLink).toHaveAttribute("href", "/dashboard/students/stu-001");
-    });
-  });
-
-  it("renders student profile link with correct href on each card", async () => {
     mockListInterventions.mockResolvedValue(makeListResponse());
     render(<InterventionsPanel />, { wrapper });
     await waitFor(() => {
