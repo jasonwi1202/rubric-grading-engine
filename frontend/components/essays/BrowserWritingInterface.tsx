@@ -5,6 +5,7 @@
  *
  * Features:
  * - contentEditable rich-text surface with Bold / Italic / Underline toolbar
+ * - Formatting implemented with the Selection/Range API (no deprecated execCommand)
  * - Debounced autosave: sends a snapshot to the backend every 12 seconds of
  *   activity (within the 10–15 s window specified by M5-09)
  * - Recovers content from the latest snapshot on mount (refresh/navigation safe)
@@ -49,6 +50,169 @@ export interface BrowserWritingInterfaceProps {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Walk up the DOM from `node` toward `boundary` looking for an element whose
+ * tag name matches `tagName` (case-insensitive). Returns the first ancestor
+ * that matches, or `null` if none is found before reaching `boundary`.
+ */
+function findFormatAncestor(node: Node, tagName: string, boundary: Node): Element | null {
+  let current: Node | null = node;
+  while (current && current !== boundary) {
+    if (
+      current.nodeType === Node.ELEMENT_NODE &&
+      (current as Element).tagName.toLowerCase() === tagName
+    ) {
+      return current as Element;
+    }
+    current = current.parentNode;
+  }
+  return null;
+}
+
+/**
+ * Remove redundant nested elements with the same tag name from `root` by
+ * lifting their children into their parent. Used after the surroundContents
+ * fallback path to prevent double-wrapping such as `<b><b>…</b></b>`.
+ *
+ * Deep traversal is intentional: `extractContents` can clone ancestor elements
+ * at arbitrary depth when the selection crosses element boundaries, so any
+ * pre-existing same-tag descendants inside the resulting fragment are also
+ * redundant once we wrap the whole fragment in the new element.
+ */
+function flattenNestedTags(root: ParentNode, tagName: string): void {
+  const nested = Array.from(root.querySelectorAll(tagName));
+  for (const n of nested) {
+    const p = n.parentNode;
+    if (!p) continue;
+    while (n.firstChild) p.insertBefore(n.firstChild, n);
+    p.removeChild(n);
+  }
+}
+
+/**
+ * Remove inline formatting from the selected portion of `ancestor` only,
+ * preserving formatting on any non-selected text within the same element.
+ *
+ * Algorithm:
+ * 1. Extract content after range.end (if any text content exists) and
+ *    re-wrap it in a new element of the same tag.
+ * 2. Extract content before range.start (if any text content exists) and
+ *    re-wrap it in a new element of the same tag.
+ * 3. Lift the remaining selected content out of ancestor into the parent.
+ * 4. Remove the now-empty ancestor.
+ *
+ * Example: `<b>pre[selected]post</b>` → `<b>pre</b>[selected]<b>post</b>`
+ *
+ * Safety: `ancestor` is discovered via `findFormatAncestor(
+ * range.commonAncestorContainer, …)`, so by definition it is an ancestor of
+ * `range.commonAncestorContainer`, which in turn contains both
+ * `range.startContainer` and `range.endContainer`. Both endpoints are
+ * therefore guaranteed to be within `ancestor`. The `ancestor.contains()`
+ * guards below are an extra defensive check.
+ */
+function partialToggleOff(ancestor: Element, range: Range, tagName: string): void {
+  const parent = ancestor.parentNode;
+  if (!parent) return;
+  // Capture the original next sibling before any DOM mutations so we have a
+  // stable insertion point for the re-wrapped "after" content.
+  const nextSibling = ancestor.nextSibling;
+
+  // Step 1: Extract content after the selection end and re-wrap it.
+  if (ancestor.lastChild && ancestor.contains(range.endContainer)) {
+    const afterRange = document.createRange();
+    afterRange.setStart(range.endContainer, range.endOffset);
+    afterRange.setEndAfter(ancestor.lastChild);
+    const afterFrag = afterRange.extractContents();
+    // Only re-wrap if the fragment contains actual text — empty structural
+    // fragments (e.g. partial element clones with no text) are discarded.
+    if (afterFrag.textContent) {
+      const afterWrapper = document.createElement(tagName);
+      afterWrapper.appendChild(afterFrag);
+      parent.insertBefore(afterWrapper, nextSibling);
+    }
+  }
+
+  // Step 2: Extract content before the selection start and re-wrap it.
+  if (ancestor.firstChild && ancestor.contains(range.startContainer)) {
+    const beforeRange = document.createRange();
+    beforeRange.setStartBefore(ancestor.firstChild);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+    const beforeFrag = beforeRange.extractContents();
+    if (beforeFrag.textContent) {
+      const beforeWrapper = document.createElement(tagName);
+      beforeWrapper.appendChild(beforeFrag);
+      parent.insertBefore(beforeWrapper, ancestor);
+    }
+  }
+
+  // Steps 3 & 4: Lift the remaining selected content into the parent and
+  // remove the now-empty ancestor wrapper.
+  while (ancestor.firstChild) {
+    parent.insertBefore(ancestor.firstChild, ancestor);
+  }
+  parent.removeChild(ancestor);
+}
+
+/**
+ * Apply or remove inline formatting (bold / italic / underline) on the current
+ * selection using the Selection/Range API.
+ *
+ * Replaces the deprecated `document.execCommand` calls. Behaviour:
+ * - If the selection's common ancestor is already wrapped in the target tag,
+ *   only the selected portion loses the formatting; surrounding text in the
+ *   same wrapper element stays formatted (partial toggle-off via
+ *   `partialToggleOff`).
+ * - Otherwise the selected content is wrapped in a new element (toggle on).
+ * - Falls back gracefully when `surroundContents` is not applicable (partial
+ *   element boundary selections); any nested duplicate tags introduced by
+ *   `extractContents` are flattened before re-inserting.
+ * - Does nothing when the selection is outside the editor or is collapsed.
+ */
+export function applyInlineFormat(
+  editor: HTMLElement,
+  command: "bold" | "italic" | "underline",
+): void {
+  const tagMap: Record<string, string> = { bold: "b", italic: "i", underline: "u" };
+  const tagName = tagMap[command];
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
+
+  const range = selection.getRangeAt(0);
+
+  // Do nothing if the selection is entirely outside the editor.
+  if (!editor.contains(range.commonAncestorContainer)) return;
+
+  // Do nothing for collapsed (zero-width) selections — no text to format.
+  if (range.collapsed) return;
+
+  const ancestor = findFormatAncestor(range.commonAncestorContainer, tagName, editor);
+  if (ancestor) {
+    // Toggle off: split the ancestor at the range boundaries so only the
+    // selected portion loses formatting; non-selected text stays formatted.
+    partialToggleOff(ancestor, range, tagName);
+  } else {
+    // Toggle on: wrap the selected content in the target element.
+    const wrapper = document.createElement(tagName);
+    try {
+      range.surroundContents(wrapper);
+    } catch {
+      // surroundContents throws when the range partially selects an element
+      // boundary. Extract, flatten any pre-existing same-tag nesting (which
+      // extractContents may clone into the fragment), re-wrap, and re-insert.
+      const fragment = range.extractContents();
+      flattenNestedTags(fragment, tagName);
+      wrapper.appendChild(fragment);
+      range.insertNode(wrapper);
+      range.selectNodeContents(wrapper);
+    }
+  }
+
+  // Restore the selection to its post-modification position.
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
 
 /**
  * Count words in an HTML string by stripping tags, decoding HTML entities,
@@ -312,16 +476,16 @@ export function BrowserWritingInterface({
 
   // ── Toolbar formatting commands ───────────────────────────────────────────
 
-  const execFormat = (command: string) => {
-    // document.execCommand is deprecated by the HTML spec but has near-universal
-    // browser support and avoids pulling in a full rich-text library for this
-    // initial implementation.
-    // TODO(M5-09 follow-up): migrate to Selection/Range API or adopt a maintained
-    // rich-text library (e.g., TipTap) if execCommand support is dropped.
-    document.execCommand(command, false);
-    editorRef.current?.focus();
-    handleInput();
-  };
+  const execFormat = useCallback(
+    (command: "bold" | "italic" | "underline") => {
+      if (editorRef.current) {
+        applyInlineFormat(editorRef.current, command);
+      }
+      editorRef.current?.focus();
+      handleInput();
+    },
+    [handleInput],
+  );
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
