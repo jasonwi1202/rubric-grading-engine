@@ -125,7 +125,7 @@ function ProgressBar({
 }) {
   const pct = total > 0 ? Math.round(((complete + failed) / total) * 100) : 0;
   return (
-    <div aria-label={`Grading progress: ${pct}%`}>
+    <div>
       <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
         <span>
           {complete} of {total} complete
@@ -139,9 +139,7 @@ function ProgressBar({
         <progress
           value={pct}
           max={100}
-          aria-valuenow={pct}
-          aria-valuemin={0}
-          aria-valuemax={100}
+          aria-label={`Grading progress: ${pct}%`}
           className="h-full w-full accent-blue-500"
         />
       </div>

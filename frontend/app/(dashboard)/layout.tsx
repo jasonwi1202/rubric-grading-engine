@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { getTrialStatus } from "@/lib/api/account";
+import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 
 // ---------------------------------------------------------------------------
 // Trial banner helpers
@@ -95,7 +96,9 @@ export default function DashboardLayout({
       {loaded && daysRemaining !== null && (
         <TrialBanner daysRemaining={daysRemaining} />
       )}
-      <main className="flex-1">{children}</main>
+      <main className="flex-1">
+        <ErrorBoundary>{children}</ErrorBoundary>
+      </main>
     </div>
   );
 }

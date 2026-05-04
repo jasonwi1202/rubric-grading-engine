@@ -186,8 +186,9 @@ describe("BatchGradingPanel — Progress bar", () => {
 
     // 5 out of 10 (complete + failed) = 50%
     const bar = await screen.findByRole("progressbar");
-    expect(bar).toHaveAttribute("aria-valuenow", "50");
-    expect(bar).toHaveAttribute("aria-valuemax", "100");
+    expect(bar).toHaveAttribute("value", "50");
+    expect(bar).toHaveAttribute("max", "100");
+    expect(bar).toHaveAttribute("aria-label", "Grading progress: 50%");
     // Visible text showing counts
     expect(screen.getByText(/4 of 10 complete/i)).toBeInTheDocument();
     expect(screen.getByText(/1 failed/i)).toBeInTheDocument();
@@ -214,7 +215,7 @@ describe("BatchGradingPanel — Progress bar", () => {
 
     // 1 out of 2 = 50%
     const bar = await screen.findByRole("progressbar");
-    expect(bar).toHaveAttribute("aria-valuenow", "50");
+    expect(bar).toHaveAttribute("value", "50");
     // Essay list also rendered
     expect(screen.getByText("Complete")).toBeInTheDocument();
     expect(screen.getByText("Grading…")).toBeInTheDocument();
@@ -231,7 +232,7 @@ describe("BatchGradingPanel — Progress bar", () => {
     );
 
     const bar = await screen.findByRole("progressbar");
-    expect(bar).toHaveAttribute("aria-valuenow", "0");
+    expect(bar).toHaveAttribute("value", "0");
   });
 });
 
