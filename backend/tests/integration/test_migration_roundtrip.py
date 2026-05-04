@@ -27,6 +27,17 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
+# Skip the entire module if testcontainers is not installed.
+testcontainers_postgres = pytest.importorskip(
+    "testcontainers.postgres",
+    reason="testcontainers package not installed — skipping migration roundtrip test",
+)
+
+# Path to alembic.ini, located at the root of the ``backend/`` package
+# (three directory levels above this file: backend/tests/integration/ → backend/).
+# This mirrors the path used in backend/tests/integration/conftest.py.
+_ALEMBIC_INI = Path(__file__).parent.parent.parent / "alembic.ini"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -39,7 +50,7 @@ def _run_alembic(command_name: str, async_url: str, revision: str) -> None:
 
     from app.config import settings as app_settings
 
-    cfg = AlembicConfig(Path(__file__).parent.parent.parent / "alembic.ini")
+    cfg = AlembicConfig(_ALEMBIC_INI)
     with patch.object(app_settings, "database_url", async_url):
         getattr(alembic_command, command_name)(cfg, revision)
 
@@ -87,14 +98,9 @@ def test_migration_upgrade_downgrade_upgrade_roundtrip() -> None:
     shared session-scoped container used by other integration tests is not
     affected by the downgrade.
     """
-    try:
-        from testcontainers.postgres import PostgresContainer
-    except ImportError:
-        pytest.skip("testcontainers package not installed — skipping migration roundtrip test")
-
     container = None
     try:
-        container = PostgresContainer("pgvector/pgvector:pg16")
+        container = testcontainers_postgres.PostgresContainer("pgvector/pgvector:pg16")
         container.start()
     except Exception as exc:
         pytest.skip(

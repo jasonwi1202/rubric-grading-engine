@@ -344,7 +344,7 @@ def downgrade() -> None:
         sa.text("SELECT COUNT(*) FROM rubrics WHERE teacher_id IS NULL")
     )
     null_count = result.scalar()
-    if null_count:
+    if null_count is not None and null_count > 0:
         raise RuntimeError(
             f"Cannot downgrade migration 008: {null_count} rubric row(s) still have "
             "teacher_id IS NULL after removing the seeded system templates. "
