@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.security import HTTPAuthorizationCredentials
 
+from app.config import settings
 from app.dependencies import get_current_teacher, get_current_teacher_optional
 from app.exceptions import UnauthorizedError
 from app.services.auth import create_access_token
@@ -47,6 +48,12 @@ def _make_credentials(token: str) -> HTTPAuthorizationCredentials:
 # ---------------------------------------------------------------------------
 # get_current_teacher — direct async tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _force_dependency_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep dependency tests deterministic regardless of local .env settings."""
+    monkeypatch.setattr(settings, "allow_unverified_login_in_test", False)
 
 
 class TestGetCurrentTeacher:

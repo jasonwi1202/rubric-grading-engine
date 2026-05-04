@@ -320,41 +320,6 @@ function SidebarContent({
 }
 
 // ---------------------------------------------------------------------------
-// Mobile top bar
-// ---------------------------------------------------------------------------
-
-function MobileTopBar({
-  pathname,
-  onMenuToggle,
-  menuOpen,
-}: {
-  pathname: string;
-  onMenuToggle: () => void;
-  menuOpen: boolean;
-}) {
-  return (
-    <div className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden">
-      <Link
-        href="/dashboard"
-        className="text-base font-bold text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-      >
-        {PRODUCT_NAME}
-      </Link>
-      <button
-        type="button"
-        aria-label={menuOpen ? "Close menu" : "Open menu"}
-        aria-expanded={menuOpen}
-        aria-controls="mobile-sidebar-drawer"
-        onClick={onMenuToggle}
-        className="rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-      >
-        {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 

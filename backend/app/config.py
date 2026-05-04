@@ -326,15 +326,11 @@ class Settings(BaseSettings):
                     "ALLOW_UNVERIFIED_LOGIN_IN_TEST must be false in staging/production."
                 )
             if self.llm_fake_mode:
-                raise ValueError(
-                    "LLM_FAKE_MODE must be false in staging/production."
-                )
+                raise ValueError("LLM_FAKE_MODE must be false in staging/production.")
             if self.frontend_url.lower().startswith("http://"):
                 raise ValueError("FRONTEND_URL must use https:// in staging/production.")
             if self.export_task_force_fail:
-                raise ValueError(
-                    "EXPORT_TASK_FORCE_FAIL must be false in staging/production."
-                )
+                raise ValueError("EXPORT_TASK_FORCE_FAIL must be false in staging/production.")
             if self.short_lived_token_ttl_seconds is not None:
                 raise ValueError(
                     "SHORT_LIVED_TOKEN_TTL_SECONDS must not be set in staging/production."

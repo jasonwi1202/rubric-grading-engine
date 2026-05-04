@@ -31,6 +31,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import type { ClassResponse } from "@/lib/api/classes";
 import type { AssignmentDetailResponse } from "@/lib/api/assignments";
 
@@ -47,17 +48,13 @@ interface Crumb {
 // Cache name helpers — resolve entity names without extra fetches
 // ---------------------------------------------------------------------------
 
-function useQueryClient_() {
-  return useQueryClient();
-}
-
-function getClassName(qc: ReturnType<typeof useQueryClient_>, classId: string): string {
+function getClassName(qc: QueryClient, classId: string): string {
   const cached = qc.getQueryData<ClassResponse>(["class", classId]);
   return cached?.name ?? "…";
 }
 
 function getAssignmentData(
-  qc: ReturnType<typeof useQueryClient_>,
+  qc: QueryClient,
   assignmentId: string,
 ): { title: string; classId: string | null } {
   const cached = qc.getQueryData<AssignmentDetailResponse>(["assignment", assignmentId]);
@@ -70,7 +67,7 @@ function getAssignmentData(
 
 function resolveCrumbs(
   pathname: string,
-  qc: ReturnType<typeof useQueryClient_>,
+  qc: QueryClient,
 ): Crumb[] | null {
   const seg = pathname.split("/").filter(Boolean); // strip empty strings
 

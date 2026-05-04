@@ -71,9 +71,7 @@ async def _get_current_revision_async(async_url: str) -> str | None:
             )
             if not exists_result.scalar():
                 return None
-            result = await conn.execute(
-                sa.text("SELECT version_num FROM alembic_version LIMIT 1")
-            )
+            result = await conn.execute(sa.text("SELECT version_num FROM alembic_version LIMIT 1"))
             row = result.fetchone()
             return row[0] if row else None
     finally:
@@ -127,9 +125,7 @@ def test_migration_upgrade_downgrade_upgrade_roundtrip() -> None:
         # ------------------------------------------------------------------
         _run_alembic("downgrade", async_url, "base")
         base_rev = _current_revision(async_url)
-        assert base_rev is None, (
-            f"Expected no revision after downgrade to base, got '{base_rev}'"
-        )
+        assert base_rev is None, f"Expected no revision after downgrade to base, got '{base_rev}'"
 
         # ------------------------------------------------------------------
         # Step 3: Re-upgrade to head.  Must succeed cleanly (no duplicate
