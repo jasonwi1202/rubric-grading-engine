@@ -76,8 +76,8 @@ function decodeJwtPayload(token: string): { exp: number; iat: number } {
  * Probe whether the backend is running in short-lived token mode.
  *
  * Returns `{ active: true, ttlSeconds }` when `exp − iat` of a freshly
- * issued JWT is ≤ SHORT_TTL_THRESHOLD_SECONDS, or `{ active: false }` when
- * the standard 15-min TTL is detected or the login call fails.
+ * issued JWT is ≤ SHORT_TTL_THRESHOLD_SECONDS, or `{ active: false, ttlSeconds: 0 }`
+ * when the standard 15-min TTL is detected or the login call fails.
  */
 async function probeShortLivedMode(
   email: string,
@@ -265,8 +265,11 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
     // which confirms that silent refresh succeeded.
     await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
 
-    // Confirm the page displays authenticated content (not a login prompt).
-    const loginHeading = page.getByRole("heading", { name: /sign in|log in/i });
-    await expect(loginHeading).not.toBeVisible({ timeout: 5_000 });
+    // Confirm the page displays authenticated content: a level-1 heading is
+    // only present on protected routes (dashboard "Your Worklist", onboarding
+    // step headings, etc.) and is absent on the login page.
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });

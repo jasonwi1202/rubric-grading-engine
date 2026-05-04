@@ -117,7 +117,6 @@ class TestCreateDecodeAccessToken:
         )
         ttl = payload["exp"] - payload["iat"]
         assert ttl == 5
-        monkeypatch.setattr(settings, "short_lived_token_ttl_seconds", None)  # restore
 
     def test_expired_token_raises_validation_error(self) -> None:
         import jwt as pyjwt
