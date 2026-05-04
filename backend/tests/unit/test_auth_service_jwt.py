@@ -84,6 +84,41 @@ class TestCreateDecodeAccessToken:
         assert payload["email"] == email
         assert payload["type"] == "access"
 
+    def test_default_ttl_is_fifteen_minutes(self) -> None:
+        """create_access_token uses the 15-min default when short_lived_token_ttl_seconds is None."""
+        import jwt as pyjwt
+
+        from app.config import settings
+
+        assert settings.short_lived_token_ttl_seconds is None
+        token = create_access_token(uuid.uuid4(), "teacher@school.edu")
+        payload = pyjwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": False},
+        )
+        ttl = payload["exp"] - payload["iat"]
+        assert ttl == 15 * 60
+
+    def test_short_lived_ttl_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """create_access_token uses short_lived_token_ttl_seconds when set."""
+        import jwt as pyjwt
+
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "short_lived_token_ttl_seconds", 5)
+        token = create_access_token(uuid.uuid4(), "teacher@school.edu")
+        payload = pyjwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": False},
+        )
+        ttl = payload["exp"] - payload["iat"]
+        assert ttl == 5
+        monkeypatch.setattr(settings, "short_lived_token_ttl_seconds", None)  # restore
+
     def test_expired_token_raises_validation_error(self) -> None:
         import jwt as pyjwt
 
