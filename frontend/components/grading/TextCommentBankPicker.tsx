@@ -255,7 +255,6 @@ export function TextCommentBankPicker({
           {/* Locked notice */}
           {isLocked && (
             <p
-              role="note"
               className="mb-3 rounded-md bg-yellow-50 px-3 py-2 text-xs text-yellow-800"
             >
               This grade is locked. Save and apply controls are disabled.
@@ -400,7 +399,7 @@ function BankEntryRow({
           type="button"
           disabled={isLocked}
           onClick={onApply}
-          aria-label={`Apply saved comment: ${entry.text.slice(0, 50)}`}
+          aria-label="Apply saved comment"
           className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isApplied ? "Applied!" : "Apply"}
@@ -409,7 +408,7 @@ function BankEntryRow({
           type="button"
           disabled={isDeleting}
           onClick={onDelete}
-          aria-label={`Delete saved comment: ${entry.text.slice(0, 50)}`}
+          aria-label="Delete saved comment"
           className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isDeleting ? "Deleting…" : "Delete"}

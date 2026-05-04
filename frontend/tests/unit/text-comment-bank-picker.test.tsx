@@ -305,8 +305,8 @@ describe("TextCommentBankPicker — save to bank", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("note"),
-      ).toHaveTextContent(/this grade is locked/i);
+        screen.getByText(/this grade is locked/i),
+      ).toBeInTheDocument();
     });
   });
 });
@@ -552,14 +552,14 @@ describe("TextCommentBankPicker — apply flow", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("button", {
-          name: /apply saved comment: good use of evidence/i,
+          name: /apply saved comment/i,
         }),
       ).toBeInTheDocument(),
     );
 
     await user.click(
       screen.getByRole("button", {
-        name: /apply saved comment: good use of evidence/i,
+        name: /apply saved comment/i,
       }),
     );
 
@@ -587,13 +587,13 @@ describe("TextCommentBankPicker — apply flow", () => {
 
     await waitFor(() =>
       screen.getByRole("button", {
-        name: /apply saved comment: good use of evidence/i,
+        name: /apply saved comment/i,
       }),
     );
 
     await user.click(
       screen.getByRole("button", {
-        name: /apply saved comment: good use of evidence/i,
+        name: /apply saved comment/i,
       }),
     );
 
