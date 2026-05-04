@@ -37,10 +37,12 @@ RLS:
 
 Zero-downtime: Two ``CREATE INDEX CONCURRENTLY`` calls build the
   ``teacher_id`` and ``student_id`` indexes without holding a table-level
-  lock.  Each runs inside ``autocommit_block()`` so PostgreSQL sees them
-  outside a transaction, which is required for ``CONCURRENTLY`` index
-  builds.  Alembic's per-migration transaction is therefore disabled via
-  ``transaction_per_migration = False``.
+  lock.  Each runs inside ``op.get_context().autocommit_block()`` so
+  PostgreSQL sees them outside a transaction, which is required for
+  ``CONCURRENTLY`` index builds.  The env.py ``transaction_per_migration=True``
+  setting is used for the rest of the migration; ``autocommit_block()`` is the
+  correct per-operation mechanism for CONCURRENTLY steps within an otherwise
+  transactional migration.
 
 Downgrade:
   Drops the policy, disables RLS, then drops the table.
@@ -57,11 +59,6 @@ revision: str = "028_teacher_worklist_items"
 down_revision: str | None = "027_student_groups_add_stability"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
-# Setting this to False tells Alembic to run this migration outside the
-# default per-migration transaction so the concurrent index builds succeed.
-transaction_per_migration = False
 
 
 def upgrade() -> None:
@@ -148,9 +145,11 @@ def upgrade() -> None:
 
     # ------------------------------------------------------------------
     # 2. Indexes — teacher_id and student_id for fast tenant-scoped reads.
-    #    Created concurrently outside a transaction so the table is not
-    #    locked during the migration.  autocommit_block() is required by
-    #    CREATE INDEX CONCURRENTLY.
+    #    Created concurrently so the table is not locked during the migration.
+    #    autocommit_block() is required by CREATE INDEX CONCURRENTLY — the
+    #    operation must run outside a transaction.  The rest of the migration
+    #    (table creation, RLS) runs inside the per-migration transaction
+    #    provided by env.py (transaction_per_migration=True).
     # ------------------------------------------------------------------
     with op.get_context().autocommit_block():
         op.create_index(

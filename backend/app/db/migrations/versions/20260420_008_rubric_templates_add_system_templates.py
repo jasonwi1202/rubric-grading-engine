@@ -334,5 +334,23 @@ def downgrade() -> None:
     )
     op.execute(rubrics_t.delete().where(rubrics_t.c.id.in_(_SYSTEM_TEMPLATE_IDS)))
 
-    # 3. Re-add NOT NULL constraint (only safe if no NULL rows remain).
+    # 3. Guard: verify no remaining NULL teacher_id rows exist before
+    #    restoring the NOT NULL constraint.  Any such rows would be
+    #    application-layer bugs (teacher_id may only be NULL for the seeded
+    #    system templates removed above).  Failing loudly here prevents a
+    #    silent data-integrity hole; recovery requires removing the rogue
+    #    rows manually and re-running the downgrade.
+    result = op.get_bind().execute(
+        sa.text("SELECT COUNT(*) FROM rubrics WHERE teacher_id IS NULL")
+    )
+    null_count = result.scalar()
+    if null_count:
+        raise RuntimeError(
+            f"Cannot downgrade migration 008: {null_count} rubric row(s) still have "
+            "teacher_id IS NULL after removing the seeded system templates. "
+            "Remove or reassign these rows manually before re-running the downgrade."
+        )
+
+    # 4. Re-add NOT NULL constraint (safe because the guard above confirmed
+    #    no NULL rows remain).
     op.alter_column("rubrics", "teacher_id", nullable=False)

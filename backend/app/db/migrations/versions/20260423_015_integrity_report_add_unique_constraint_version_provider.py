@@ -12,6 +12,8 @@ creating a second row.
 
 Zero-downtime: ``CREATE UNIQUE INDEX CONCURRENTLY`` builds the index without
 holding a table-level lock; the constraint is then attached from the index.
+The concurrent index operation is wrapped in ``op.get_context().autocommit_block()``
+so it runs outside PostgreSQL's transaction scope (required for CONCURRENTLY).
 """
 
 from collections.abc import Sequence
@@ -24,11 +26,6 @@ revision: str = "015_ir_unique_version_provider"
 down_revision: str | None = "014_essay_embedding"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-# CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
-# Setting this to False tells Alembic to run this migration outside the default
-# per-migration transaction so the concurrent index build succeeds.
-transaction_per_migration = False
 
 _INDEX_NAME = "ix_uq_integrity_reports_version_provider"
 _CONSTRAINT_NAME = "uq_integrity_reports_version_provider"
@@ -58,6 +55,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Dropping the constraint also drops the backing index (PostgreSQL
+    # automatically drops an index that was attached to a constraint via
+    # USING INDEX).  The subsequent DROP INDEX is therefore a no-op, but
+    # the IF NOT EXISTS guard makes it safe to re-run and documents intent.
     op.drop_constraint(_CONSTRAINT_NAME, _TABLE, type_="unique")
     with op.get_context().autocommit_block():
         op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}"))
