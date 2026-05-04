@@ -420,17 +420,23 @@ def create_access_token(user_id: uuid.UUID, email: str) -> str:
 
     The token carries ``sub`` (user UUID string), ``email``, ``iat``, and
     ``exp`` claims.  It is signed with HS256 using ``settings.jwt_secret_key``.
-    TTL is ``settings.access_token_expire_minutes`` (default 15 min).
+    TTL is ``settings.short_lived_token_ttl_seconds`` (seconds) when set —
+    used only in CI E2E to enable deterministic token-expiry testing — or
+    ``settings.access_token_expire_minutes`` (minutes, default 15) otherwise.
     """
     from app.config import settings
 
     now = datetime.now(UTC)
+    if settings.short_lived_token_ttl_seconds is not None:
+        ttl = timedelta(seconds=settings.short_lived_token_ttl_seconds)
+    else:
+        ttl = timedelta(minutes=settings.access_token_expire_minutes)
     payload: dict[str, object] = {
         "sub": str(user_id),
         "email": email,
         "type": "access",
         "iat": now,
-        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
+        "exp": now + ttl,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 

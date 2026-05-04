@@ -139,6 +139,13 @@ class Settings(BaseSettings):
     # and production (enforced by production_security_guardrails).  Used in E2E
     # tests to exercise the failure → retry → success flow deterministically.
     export_task_force_fail: bool = False
+    # When set to a positive integer, overrides the access token TTL (in
+    # seconds) for ALL tokens issued by the /auth/login and /auth/refresh
+    # endpoints.  Use in CI E2E runs to issue tokens that expire in a few
+    # seconds so that the silent-refresh path can be exercised deterministically
+    # without waiting 15 minutes.  Must be None (unset) in staging and
+    # production (enforced by production_security_guardrails).
+    short_lived_token_ttl_seconds: int | None = None
 
     # -------------------------------------------------------------------------
     # Application
@@ -220,6 +227,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "auto_grouping_underperformance_threshold must be between 0.0 and 1.0 inclusive"
             )
+        return v
+
+    @field_validator("short_lived_token_ttl_seconds")
+    @classmethod
+    def short_lived_token_ttl_seconds_min_value(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("SHORT_LIVED_TOKEN_TTL_SECONDS must be at least 1 when set")
         return v
 
     @field_validator("jwt_secret_key")
@@ -320,6 +334,10 @@ class Settings(BaseSettings):
             if self.export_task_force_fail:
                 raise ValueError(
                     "EXPORT_TASK_FORCE_FAIL must be false in staging/production."
+                )
+            if self.short_lived_token_ttl_seconds is not None:
+                raise ValueError(
+                    "SHORT_LIVED_TOKEN_TTL_SECONDS must not be set in staging/production."
                 )
         return self
 
