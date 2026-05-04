@@ -19,7 +19,7 @@
  * - Entity IDs only in error payloads.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createCommentBankEntry,
@@ -124,7 +124,7 @@ export function TextCommentBankPicker({
   // ---- Queries ----
 
   // Derive trimmed query first so both queries can use it.
-  const trimmedQuery = searchQuery.trim();
+  const trimmedQuery = useMemo(() => searchQuery.trim(), [searchQuery]);
 
   // Full list — fetched when picker opens and the search box is empty.
   const {
