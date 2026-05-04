@@ -5,6 +5,7 @@
  *
  * Features:
  * - contentEditable rich-text surface with Bold / Italic / Underline toolbar
+ * - Formatting implemented with the Selection/Range API (no deprecated execCommand)
  * - Debounced autosave: sends a snapshot to the backend every 12 seconds of
  *   activity (within the 10–15 s window specified by M5-09)
  * - Recovers content from the latest snapshot on mount (refresh/navigation safe)
@@ -49,6 +50,83 @@ export interface BrowserWritingInterfaceProps {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Walk up the DOM from `node` toward `boundary` looking for an element whose
+ * tag name matches `tagName` (case-insensitive). Returns the first ancestor
+ * that matches, or `null` if none is found before reaching `boundary`.
+ */
+function findFormatAncestor(node: Node, tagName: string, boundary: Node): Element | null {
+  let current: Node | null = node;
+  while (current && current !== boundary) {
+    if (
+      current.nodeType === Node.ELEMENT_NODE &&
+      (current as Element).tagName.toLowerCase() === tagName
+    ) {
+      return current as Element;
+    }
+    current = current.parentNode;
+  }
+  return null;
+}
+
+/**
+ * Apply or remove inline formatting (bold / italic / underline) on the current
+ * selection using the Selection/Range API.
+ *
+ * Replaces the deprecated `document.execCommand` calls. Behaviour:
+ * - If the selection's common ancestor is already wrapped in the target tag,
+ *   the wrapper element is removed (toggle off).
+ * - Otherwise the selected content is wrapped in a new element (toggle on).
+ * - Falls back gracefully when `surroundContents` is not applicable (partial
+ *   element boundary selections).
+ * - Does nothing when the selection is outside the editor or is collapsed.
+ */
+export function applyInlineFormat(
+  editor: HTMLElement,
+  command: "bold" | "italic" | "underline",
+): void {
+  const tagMap: Record<string, string> = { bold: "b", italic: "i", underline: "u" };
+  const tagName = tagMap[command];
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
+
+  const range = selection.getRangeAt(0);
+
+  // Do nothing if the selection is entirely outside the editor.
+  if (!editor.contains(range.commonAncestorContainer)) return;
+
+  // Do nothing for collapsed (zero-width) selections — no text to format.
+  if (range.collapsed) return;
+
+  const ancestor = findFormatAncestor(range.commonAncestorContainer, tagName, editor);
+  if (ancestor) {
+    // Toggle off: lift the children of the wrapping element into its parent.
+    const parent = ancestor.parentNode!;
+    while (ancestor.firstChild) {
+      parent.insertBefore(ancestor.firstChild, ancestor);
+    }
+    parent.removeChild(ancestor);
+  } else {
+    // Toggle on: wrap the selected content in the target element.
+    const wrapper = document.createElement(tagName);
+    try {
+      range.surroundContents(wrapper);
+    } catch {
+      // surroundContents throws when the range partially selects an element
+      // boundary. Extract and re-insert as a fragment wrapped in the element.
+      const fragment = range.extractContents();
+      wrapper.appendChild(fragment);
+      range.insertNode(wrapper);
+      range.selectNode(wrapper);
+    }
+  }
+
+  // Restore the selection to its post-modification position.
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
 
 /**
  * Count words in an HTML string by stripping tags, decoding HTML entities,
@@ -312,16 +390,16 @@ export function BrowserWritingInterface({
 
   // ── Toolbar formatting commands ───────────────────────────────────────────
 
-  const execFormat = (command: string) => {
-    // document.execCommand is deprecated by the HTML spec but has near-universal
-    // browser support and avoids pulling in a full rich-text library for this
-    // initial implementation.
-    // TODO(M5-09 follow-up): migrate to Selection/Range API or adopt a maintained
-    // rich-text library (e.g., TipTap) if execCommand support is dropped.
-    document.execCommand(command, false);
-    editorRef.current?.focus();
-    handleInput();
-  };
+  const execFormat = useCallback(
+    (command: "bold" | "italic" | "underline") => {
+      if (editorRef.current) {
+        applyInlineFormat(editorRef.current, command);
+      }
+      editorRef.current?.focus();
+      handleInput();
+    },
+    [handleInput],
+  );
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
