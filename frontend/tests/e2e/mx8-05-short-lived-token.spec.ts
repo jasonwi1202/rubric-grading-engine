@@ -66,8 +66,8 @@ function decodeJwtPayload(token: string): { exp: number; iat: number } {
   if (parts.length !== 3) {
     throw new Error("decodeJwtPayload: token does not have three parts");
   }
-  // Node.js Buffer handles both standard and URL-safe base64 transparently
-  // when the encoding is "base64url".
+  // JWTs (RFC 7519) always use base64url encoding for the payload section.
+  // Node.js Buffer decodes base64url when the encoding is "base64url".
   const json = Buffer.from(parts[1], "base64url").toString("utf8");
   return JSON.parse(json) as { exp: number; iat: number };
 }
@@ -235,7 +235,7 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
   test("browser: UI recovers transparently after access token expiry via silent refresh", async () => {
     skipUnlessActive();
     if (!state.page || !state.context) {
-      throw new Error("Browser context not initialised");
+      throw new Error("Browser context not initialized");
     }
     const page = state.page;
 

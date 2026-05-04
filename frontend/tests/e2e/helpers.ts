@@ -125,7 +125,12 @@ export async function loginApiWithCookie(
   const accessToken = body.data.access_token;
 
   // Parse the refresh_token value from the Set-Cookie response header.
-  // The header value looks like: refresh_token=<value>; HttpOnly; Path=/; ...
+  // The /auth/login endpoint sets exactly one cookie (`refresh_token`), so
+  // `res.headers.get("set-cookie")` contains only that header value, which
+  // looks like: refresh_token=<value>; HttpOnly; Path=/; ...
+  // The leading `(?:^|,)` handles the edge case where a runtime joins
+  // multiple Set-Cookie entries with ", " — the refresh_token entry may not
+  // start at the beginning of the joined string.
   const setCookie = res.headers.get("set-cookie") ?? "";
   const match = setCookie.match(/(?:^|,)\s*refresh_token=([^;,]+)/);
   if (!match) {
