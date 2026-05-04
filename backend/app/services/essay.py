@@ -494,10 +494,12 @@ async def ingest_essay(
         extra={"essay_id": str(essay.id), "assignment_id": str(assignment.id)},
     )
 
-    # 7. Extract text.  On failure, clean up the uploaded S3 object so we don't
-    #    leave orphaned objects with no matching DB record, then re-raise.
+    # 7. Extract text.  PDF/DOCX extraction is CPU-heavy; run it in a
+    #    thread-pool executor so it does not block the event loop.
+    #    On failure, clean up the uploaded S3 object so we don't leave
+    #    orphaned objects with no matching DB record, then re-raise.
     try:
-        raw_text = extract_text(data, mime_type)
+        raw_text = await loop.run_in_executor(None, extract_text, data, mime_type)
     except Exception as exc:
         logger.error(
             "Text extraction failed; cleaning up S3 object",

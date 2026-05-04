@@ -304,8 +304,10 @@ async def login_endpoint(
     """Validate teacher credentials and issue a JWT access token + refresh token.
 
     - The JWT access token is returned in the response body (15 min TTL).
-    - The refresh token is set as an httpOnly, Secure, SameSite=Strict cookie
-      (7 day TTL). It is never exposed in the response body.
+    - The refresh token is set as an httpOnly, Secure cookie (7 day TTL).
+      SameSite is ``Strict`` in staging/production and ``Lax`` in development
+      to support cross-port localhost flows (e.g. :3000 → :8000).
+      It is never exposed in the response body.
     - Returns 401 for invalid credentials or unverified email.
     """
     client_ip = _get_client_ip(request)
