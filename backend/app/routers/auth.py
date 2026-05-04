@@ -146,7 +146,7 @@ async def signup(
             raw_token=raw_token,
         )
     except Exception as exc:
-        logger.exception(
+        logger.error(
             "Failed to enqueue verification email task",
             extra={"user_id": str(new_user.id), "error_type": type(exc).__name__},
         )
@@ -191,7 +191,7 @@ async def verify_email_endpoint(
     try:
         send_welcome_email.delay(user_id=str(db_user.id))
     except Exception as exc:
-        logger.exception(
+        logger.error(
             "Failed to enqueue welcome email task",
             extra={"user_id": str(db_user.id), "error_type": type(exc).__name__},
         )
@@ -244,7 +244,7 @@ async def resend_verification_endpoint(
                 raw_token=raw_token,
             )
         except Exception as exc:
-            logger.exception(
+            logger.error(
                 "Failed to enqueue verification email resend task",
                 extra={"user_id": str(db_user.id), "error_type": type(exc).__name__},
             )
@@ -306,7 +306,7 @@ async def login_endpoint(
     - The JWT access token is returned in the response body (15 min TTL).
     - The refresh token is set as an httpOnly, Secure, SameSite=Strict cookie
       (7 day TTL). It is never exposed in the response body.
-    - Returns 422 for invalid credentials or unverified email.
+    - Returns 401 for invalid credentials or unverified email.
     """
     client_ip = _get_client_ip(request)
     _user, access_token, refresh_token = await login_user(

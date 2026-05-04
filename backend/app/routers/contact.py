@@ -92,10 +92,10 @@ async def submit_inquiry(
         from app.tasks.email import send_inquiry_notification
 
         send_inquiry_notification.delay(inquiry_id=str(inquiry.id))
-    except Exception:
-        logger.exception(
+    except Exception as exc:
+        logger.error(
             "Failed to enqueue inquiry notification task",
-            extra={"inquiry_id": str(inquiry.id)},
+            extra={"inquiry_id": str(inquiry.id), "error_type": type(exc).__name__},
         )
 
     response_data = ContactInquiryResponse.model_validate(inquiry)
@@ -133,10 +133,10 @@ async def submit_dpa_request(
         from app.tasks.email import send_dpa_request_notification
 
         send_dpa_request_notification.delay(dpa_request_id=str(dpa_req.id))
-    except Exception:
-        logger.exception(
+    except Exception as exc:
+        logger.error(
             "Failed to enqueue DPA request notification task",
-            extra={"dpa_request_id": str(dpa_req.id)},
+            extra={"dpa_request_id": str(dpa_req.id), "error_type": type(exc).__name__},
         )
 
     response_data = DpaRequestResponse.model_validate(dpa_req)

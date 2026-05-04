@@ -498,17 +498,17 @@ async def ingest_essay(
     #    leave orphaned objects with no matching DB record, then re-raise.
     try:
         raw_text = extract_text(data, mime_type)
-    except Exception:
-        logger.exception(
+    except Exception as exc:
+        logger.error(
             "Text extraction failed; cleaning up S3 object",
-            extra={"essay_id": str(essay.id)},
+            extra={"essay_id": str(essay.id), "error_type": type(exc).__name__},
         )
         try:
             await loop.run_in_executor(None, delete_file, s3_key)
-        except Exception:
-            logger.exception(
+        except Exception as cleanup_exc:
+            logger.error(
                 "S3 cleanup after extraction failure also failed",
-                extra={"essay_id": str(essay.id)},
+                extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
             )
         raise
 
@@ -1518,14 +1518,14 @@ async def resubmit_essay(
     try:
         raw_text = await loop.run_in_executor(None, extract_text, data, mime_type)
     except Exception as exc:
-        logger.exception(
+        logger.error(
             "Text extraction failed for resubmission; cleaning up S3 object",
             extra={"essay_id": str(essay.id), "error_type": type(exc).__name__},
         )
         try:
             await loop.run_in_executor(None, delete_file, s3_key)
         except Exception as cleanup_exc:
-            logger.exception(
+            logger.error(
                 "S3 cleanup after resubmission extraction failure also failed",
                 extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
             )
@@ -1564,7 +1564,7 @@ async def resubmit_essay(
         try:
             await loop.run_in_executor(None, delete_file, s3_key)
         except Exception as cleanup_exc:
-            logger.exception(
+            logger.error(
                 "S3 cleanup after resubmission commit failure also failed",
                 extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
             )
@@ -1576,7 +1576,7 @@ async def resubmit_essay(
         try:
             await loop.run_in_executor(None, delete_file, s3_key)
         except Exception as cleanup_exc:
-            logger.exception(
+            logger.error(
                 "S3 cleanup after resubmission commit failure also failed",
                 extra={"essay_id": str(essay.id), "error_type": type(cleanup_exc).__name__},
             )
