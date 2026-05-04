@@ -21,7 +21,6 @@
  * - InterventionsPanel: renders actioned_at timestamp for approved items
  * - InterventionsPanel: renders actioned_at timestamp for dismissed items
  * - InterventionsPanel: renders student profile link using student_id UUID
- * - InterventionsPanel: renders student profile link using student_id UUID
  *
  * Security:
  * - No student PII in fixtures — synthetic IDs and placeholder text only.
@@ -212,10 +211,8 @@ describe("InterventionsPanel — card rendering", () => {
     );
     render(<InterventionsPanel />, { wrapper });
     await waitFor(() => {
-      // The card renders without a skill_key badge — verify no purple badge appears
-      expect(
-        document.querySelector(".bg-purple-100"),
-      ).not.toBeInTheDocument();
+      // The card renders but the skill key value should not appear in the DOM
+      expect(screen.queryByText("evidence")).not.toBeInTheDocument();
     });
   });
 
