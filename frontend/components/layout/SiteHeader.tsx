@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants";
@@ -45,6 +46,14 @@ const AUTH_LINKS: Array<{ label: string; href: string; variant: LinkVariant }> =
 export function SiteHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
+
+  // Close the drawer whenever the pathname changes (e.g. logo click, browser
+  // back/forward, or any nav-link click that Next.js handles client-side).
+  // This prevents the drawer from remaining open after page navigation.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   // Close on Escape and return focus to the toggle button.
   useEffect(() => {

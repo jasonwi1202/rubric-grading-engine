@@ -132,9 +132,12 @@ test.describe("Public site — mobile navigation", () => {
   }) => {
     await page.goto("/");
 
-    // Button should start with "Open menu" label, confirming the drawer is closed.
-    const toggle = page.getByRole("button", { name: /open menu/i });
+    // Locate the toggle by its stable aria-controls attribute so the locator
+    // remains valid even after the aria-label changes from "Open menu" to
+    // "Close menu" when the drawer is open.
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
     await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
     // Drawer should not be present yet.
     const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
@@ -154,7 +157,7 @@ test.describe("Public site — mobile navigation", () => {
   test("mobile drawer contains all primary nav links", async ({ page }) => {
     await page.goto("/");
 
-    const toggle = page.getByRole("button", { name: /open menu/i });
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
     await toggle.click();
 
     const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
@@ -178,7 +181,7 @@ test.describe("Public site — mobile navigation", () => {
   }) => {
     await page.goto("/");
 
-    const toggle = page.getByRole("button", { name: /open menu/i });
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
     await toggle.click();
 
     const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
@@ -193,16 +196,38 @@ test.describe("Public site — mobile navigation", () => {
     await expect(trial).toHaveAttribute("href", "/signup");
   });
 
-  test("Escape key closes the mobile drawer", async ({ page }) => {
+  test("Escape key closes the mobile drawer and returns focus to toggle", async ({
+    page,
+  }) => {
     await page.goto("/");
 
-    const toggle = page.getByRole("button", { name: /open menu/i });
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
     await toggle.click();
     await expect(
       page.getByRole("navigation", { name: "Mobile navigation" }),
     ).toBeVisible();
 
     await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).not.toBeVisible();
+
+    // Focus must return to the toggle button so keyboard / SR users are not
+    // stranded at an invisible element.
+    await expect(toggle).toBeFocused();
+  });
+
+  test("drawer closes on pathname change (logo click)", async ({ page }) => {
+    await page.goto("/");
+
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
+    await toggle.click();
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).toBeVisible();
+
+    // Navigate via the logo link — simulates a client-side route change.
+    await page.getByRole("link", { name: /GradeWise home/i }).click();
     await expect(
       page.getByRole("navigation", { name: "Mobile navigation" }),
     ).not.toBeVisible();
