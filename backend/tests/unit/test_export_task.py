@@ -44,8 +44,7 @@ def _make_redis_mock(record: dict[str, str] | None = None) -> AsyncMock:
     redis.hset = AsyncMock()
     redis.expire = AsyncMock()
     redis.aclose = AsyncMock()
-    # Default: no one-shot force-fail key present (delete returns 0 = not found).
-    redis.delete = AsyncMock(return_value=0)
+    redis.delete = AsyncMock(return_value=0)  # Default: no one-shot key present.
     return redis
 
 

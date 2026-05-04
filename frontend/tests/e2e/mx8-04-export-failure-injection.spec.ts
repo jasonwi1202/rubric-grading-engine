@@ -112,11 +112,11 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     state.password = fixture.password;
     state.assignmentId = fixture.assignmentId;
 
-    // Log in via the API to get a token for the arm-failure call.
+    # Log in via the API to get a token for the arm-failure call.
     const loginRes = await fetch(`${API_BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: fixture.email, password: "JourneyPass1!" }),
+      body: JSON.stringify({ email: state.email, password: state.password }),
     });
     if (!loginRes.ok) {
       throw new Error(`Login failed: ${loginRes.status}`);
@@ -133,8 +133,8 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
 
     await state.page.goto("/dashboard");
     await expect(state.page).toHaveURL(/\/login/);
-    await state.page.getByLabel("Email").fill(fixture.email);
-    await state.page.getByLabel("Password").fill("JourneyPass1!");
+    await state.page.getByLabel("Email").fill(state.email);
+    await state.page.getByLabel("Password").fill(state.password);
     await state.page.getByRole("button", { name: /sign in/i }).click();
     await expect(state.page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
   });

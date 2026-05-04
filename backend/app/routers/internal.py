@@ -39,11 +39,11 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 # ---------------------------------------------------------------------------
 
 
-async def _get_redis() -> AsyncGenerator[Redis, None]:  # type: ignore[type-arg]
+async def _get_redis() -> AsyncGenerator[Redis[str], None]:
     """FastAPI dependency that yields an async Redis client."""
     from app.config import settings  # noqa: PLC0415
 
-    client: Redis = Redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[type-arg]
+    client: Redis[str] = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         yield client
     finally:
@@ -60,7 +60,7 @@ async def _get_redis() -> AsyncGenerator[Redis, None]:  # type: ignore[type-arg]
     summary="Arm one-shot export task failure injection (test-only)",
 )
 async def arm_export_failure(
-    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+    redis_client: Redis[str] = Depends(_get_redis),
 ) -> JSONResponse:
     """Set a one-shot Redis flag that causes the next export task to fail.
 
@@ -90,7 +90,7 @@ async def arm_export_failure(
     summary="Disarm the one-shot export task failure injection (test-only)",
 )
 async def disarm_export_failure(
-    redis_client: Redis = Depends(_get_redis),  # type: ignore[type-arg]
+    redis_client: Redis[str] = Depends(_get_redis),
 ) -> JSONResponse:
     """Clear the one-shot export failure flag without consuming it via a task.
 
