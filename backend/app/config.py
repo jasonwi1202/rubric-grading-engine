@@ -311,6 +311,10 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ALLOW_UNVERIFIED_LOGIN_IN_TEST must be false in staging/production."
                 )
+            if self.llm_fake_mode:
+                raise ValueError(
+                    "LLM_FAKE_MODE must be false in staging/production."
+                )
             if self.frontend_url.lower().startswith("http://"):
                 raise ValueError("FRONTEND_URL must use https:// in staging/production.")
             if self.export_task_force_fail:

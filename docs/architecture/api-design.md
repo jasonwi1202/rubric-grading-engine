@@ -1404,6 +1404,36 @@ Error `code` values are `SCREAMING_SNAKE_CASE` strings. The frontend should bran
 
 ---
 
+## Internal Test-Only Endpoints
+
+These endpoints are **only registered** when `EXPORT_TASK_FORCE_FAIL=true` in the backend environment. They are blocked in `staging` and `production` by the startup validator in `app.config`. All endpoints require a valid JWT Bearer token.
+
+### `POST /api/v1/internal/export-test-controls/arm-failure`
+
+Arms a one-shot export failure flag in Redis (TTL: 5 minutes). The next export Celery task to run will atomically consume the flag and fail with `FORCED_FAILURE`. Subsequent exports proceed normally. Used by E2E tests to exercise the failure → retry → success flow.
+
+**Authentication:** Required — `Authorization: Bearer <token>`
+
+**Response (200):**
+```json
+{"data": {"armed": true}}
+```
+
+### `DELETE /api/v1/internal/export-test-controls/arm-failure`
+
+Clears the one-shot export failure flag without consuming it via a task. Used in E2E test teardown to prevent flag bleed between tests.
+
+**Authentication:** Required — `Authorization: Bearer <token>`
+
+**Response (200):**
+```json
+{"data": {"armed": false}}
+```
+
+> **Note:** These endpoints return `404` when `EXPORT_TASK_FORCE_FAIL=false` because the router is not registered. The Playwright spec (`mx8-04-export-failure-injection.spec.ts`) probes for `404` and skips the test suite gracefully when the flag is not enabled.
+
+---
+
 ## Versioning
 
 The API is versioned at the URL level (`/api/v1`). Breaking changes require a new version prefix. Non-breaking additions (new fields, new optional params) do not require a version bump. The frontend and backend are deployed together — tight versioning is not required at this stage, but the prefix is established now to avoid painful retrofitting later.

@@ -11,18 +11,25 @@ Endpoints:
 Security:
 - These endpoints are unreachable in production/staging because the router is
   never included in the application when ``EXPORT_TASK_FORCE_FAIL=False``.
+- All endpoints require a valid JWT Bearer token (``get_current_teacher``).
+  This prevents unauthenticated requests from arming the failure flag and
+  ensures only legitimate test users can manipulate the injection state.
 - No student PII is handled by these endpoints.
-- No authentication is required; the endpoints manipulate only a transient
-  Redis flag used exclusively in E2E test environments.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
+
+from app.dependencies import get_current_teacher
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 # One-shot force-fail key — must match the constant in app.tasks.export.
 _EXPORT_FORCE_FAIL_ONCE_KEY = "export:force_fail_once"
@@ -61,6 +68,7 @@ async def _get_redis() -> AsyncGenerator[Redis[str], None]:
 )
 async def arm_export_failure(
     redis_client: Redis[str] = Depends(_get_redis),
+    _teacher: User = Depends(get_current_teacher),
 ) -> JSONResponse:
     """Set a one-shot Redis flag that causes the next export task to fail.
 
@@ -75,6 +83,7 @@ async def arm_export_failure(
         {"data": {"armed": true}}
 
     This endpoint is only available when ``EXPORT_TASK_FORCE_FAIL=true``.
+    Requires a valid JWT Bearer token.
     """
     await redis_client.set(_EXPORT_FORCE_FAIL_ONCE_KEY, "1", ex=_ARM_TTL_SECONDS)
     return JSONResponse(status_code=200, content={"data": {"armed": True}})
@@ -91,6 +100,7 @@ async def arm_export_failure(
 )
 async def disarm_export_failure(
     redis_client: Redis[str] = Depends(_get_redis),
+    _teacher: User = Depends(get_current_teacher),
 ) -> JSONResponse:
     """Clear the one-shot export failure flag without consuming it via a task.
 
@@ -101,6 +111,7 @@ async def disarm_export_failure(
         {"data": {"armed": false}}
 
     This endpoint is only available when ``EXPORT_TASK_FORCE_FAIL=true``.
+    Requires a valid JWT Bearer token.
     """
     await redis_client.delete(_EXPORT_FORCE_FAIL_ONCE_KEY)
     return JSONResponse(status_code=200, content={"data": {"armed": False}})

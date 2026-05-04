@@ -52,10 +52,13 @@ async function armExportFailure(token: string): Promise<boolean> {
 }
 
 /** Call the test-only disarm endpoint (teardown safety). */
-async function disarmExportFailure(): Promise<void> {
+async function disarmExportFailure(token: string): Promise<void> {
   await fetch(
     `${API_BASE}/api/v1/internal/export-test-controls/arm-failure`,
-    { method: "DELETE" },
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    },
   ).catch(() => {
     // Ignore errors during teardown — the endpoint may already be unavailable.
   });
@@ -67,7 +70,9 @@ async function isFailureInjectionAvailable(): Promise<boolean> {
     `${API_BASE}/api/v1/internal/export-test-controls/arm-failure`,
     { method: "DELETE" },
   ).catch(() => null);
-  // Endpoint returns 200 when available; 404 when EXPORT_TASK_FORCE_FAIL=false.
+  // Endpoint returns 200/401 when registered; 404 when EXPORT_TASK_FORCE_FAIL=false.
+  // We treat any status other than 404 (including 401 Unauthorized) as "available"
+  // because 401 confirms the router exists but requires auth.
   return res !== null && res.status !== 404;
 }
 
@@ -112,7 +117,7 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     state.password = fixture.password;
     state.assignmentId = fixture.assignmentId;
 
-    # Log in via the API to get a token for the arm-failure call.
+    // Log in via the API to get a token for the arm-failure call.
     const loginRes = await fetch(`${API_BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -143,7 +148,7 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     // Safety: clear any lingering armed failure flag so it does not bleed into
     // other test specs.
     if (state.injectionAvailable) {
-      await disarmExportFailure();
+      await disarmExportFailure(state.token);
     }
     await state.context?.close();
   });
@@ -159,7 +164,7 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     // Arm and immediately disarm to verify the endpoint round-trips correctly.
     const armed = await armExportFailure(state.token);
     expect(armed).toBe(true);
-    await disarmExportFailure();
+    await disarmExportFailure(state.token);
   });
 
   // ── Test 2: Forced failure produces failure UI ────────────────────────────

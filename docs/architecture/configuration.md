@@ -104,20 +104,23 @@ These variables are blocked in `staging` and `production` by a startup validator
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `LLM_FAKE_MODE` | No | `false` | Bypass real OpenAI calls; return deterministic synthetic outputs. Use in CI E2E and unit tests. |
-| `EXPORT_TASK_FORCE_FAIL` | No | `false` | **Test-only.** When `true`, every export Celery task fails immediately with error code `FORCED_FAILURE` instead of generating real PDFs. Also enables the test-only `POST /api/v1/internal/export-test-controls/arm-failure` endpoint for one-shot failure injection (failure → retry → success flow). Cannot be `true` in `staging` or `production`. |
+| `LLM_FAKE_MODE` | No | `false` | Bypass real OpenAI calls; return deterministic synthetic outputs. Use in CI E2E and unit tests. Blocked in staging/production by the startup validator. |
+| `EXPORT_TASK_FORCE_FAIL` | No | `false` | **Test-only.** When `true`, enables the internal test-control router (`POST /api/v1/internal/export-test-controls/arm-failure`) for one-shot export failure injection (failure → retry → success flow). Tasks do **not** fail unconditionally — arm the endpoint to trigger a single failure; subsequent exports proceed normally. Cannot be `true` in `staging` or `production`. |
 | `ALLOW_UNVERIFIED_LOGIN_IN_TEST` | No | `false` | Skip email-verification check on login. CI E2E bypass when email delivery is intentionally bypassed. |
 
 #### Using `EXPORT_TASK_FORCE_FAIL` for E2E failure injection
 
-Two failure modes are supported:
+Setting `EXPORT_TASK_FORCE_FAIL=true` registers the test-only internal router
+and activates the one-shot failure check in the export Celery task.  Tasks do
+**not** fail automatically — a failure must be explicitly armed via the endpoint:
 
-1. **Global always-fail** (`EXPORT_TASK_FORCE_FAIL=true`): every export task fails immediately.
-   Use this to test the failure UI path in isolation.
+**One-shot failure** (arm-failure endpoint): arms a single-use Redis flag that is atomically consumed
+by the next export task, which then fails. Subsequent exports proceed normally.
+Use this to exercise the full **failure → retry → success** flow in a single test run.
 
-2. **One-shot failure** (arm-failure endpoint): arms a single-use Redis flag that is atomically consumed
-   by the next export task, which then fails. Subsequent exports proceed normally.
-   Use this to exercise the full **failure → retry → success** flow in a single test run.
+> **Note:** The one-shot key is a single global Redis key. Ensure no other export
+> tasks are running in parallel while the key is armed, as the first task to run
+> will consume the key regardless of which test armed it.
 
 **Local dev:**
 ```bash
@@ -132,7 +135,7 @@ npx playwright test mx8-04-export-failure-injection
 **CI (GitHub Actions / Docker Compose E2E):**
 
 Add `EXPORT_TASK_FORCE_FAIL=true` to your `.env.ci` or Docker Compose environment override for the
-shard that runs the failure injection spec. The arm-failure endpoint is a no-op when the flag is
+shard that runs the failure injection spec. The arm-failure endpoint is not registered when the flag is
 not set, so other specs are unaffected.
 
 ```bash
