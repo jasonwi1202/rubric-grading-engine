@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants";
@@ -25,9 +25,34 @@ const NAV_LINKS = [
  *   fully keyboard-reachable in document order.
  * - The mobile menu toggle uses aria-expanded and aria-controls so screen-reader
  *   users know the state of the disclosure.
+ * - Focus returns to the toggle button when the mobile drawer closes via a nav
+ *   link click (keyboard / screen-reader UX).
+ * - Pressing Escape while the drawer is open closes it and returns focus to the
+ *   toggle button.
  */
 export function SiteHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+
+  // Close on Escape and return focus to the toggle button.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileMenuOpen(false);
+        toggleRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileMenuOpen]);
+
+  /** Close the mobile drawer and return focus to the toggle button. */
+  function closeMobileMenu() {
+    setMobileMenuOpen(false);
+    // Return focus to the toggle button so keyboard/SR users are not stranded.
+    toggleRef.current?.focus();
+  }
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -74,6 +99,7 @@ export function SiteHeader() {
 
           {/* Mobile menu toggle — visible below md only */}
           <button
+            ref={toggleRef}
             type="button"
             className="inline-flex items-center justify-center rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:hidden"
             aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
@@ -103,7 +129,7 @@ export function SiteHeader() {
                 <Link
                   href={href}
                   className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   {label}
                 </Link>
@@ -114,14 +140,14 @@ export function SiteHeader() {
             <Link
               href="/login"
               className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-              onClick={() => setMobileMenuOpen(false)}
+              onClick={closeMobileMenu}
             >
               Sign in
             </Link>
             <Link
               href="/signup"
               className="mt-2 block rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-              onClick={() => setMobileMenuOpen(false)}
+              onClick={closeMobileMenu}
             >
               Start free trial
             </Link>
