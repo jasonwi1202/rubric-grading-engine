@@ -15,6 +15,15 @@ const NAV_LINKS = [
 ] as const;
 
 /**
+ * Auth / CTA links.  Defined once and shared between the desktop header and
+ * the mobile drawer so labels, hrefs, and future tracking params stay in sync.
+ */
+const AUTH_LINKS = [
+  { label: "Sign in", href: "/login", variant: "text" as const },
+  { label: "Start free trial", href: "/signup", variant: "primary" as const },
+] as const;
+
+/**
  * Public site header — rendered on all marketing pages.
  *
  * Accessibility:
@@ -84,18 +93,19 @@ export function SiteHeader() {
 
         {/* Auth actions + mobile toggle */}
         <div className="flex items-center gap-3">
-          <Link
-            href="/login"
-            className="hidden text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:inline-flex"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/signup"
-            className="hidden rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:inline-flex"
-          >
-            Start free trial
-          </Link>
+          {AUTH_LINKS.map(({ label, href, variant }) => (
+            <Link
+              key={href}
+              href={href}
+              className={
+                variant === "primary"
+                  ? "hidden rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:inline-flex"
+                  : "hidden text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:inline-flex"
+              }
+            >
+              {label}
+            </Link>
+          ))}
 
           {/* Mobile menu toggle — visible below md only */}
           <button
@@ -137,23 +147,64 @@ export function SiteHeader() {
             ))}
           </ul>
           <div className="border-t border-gray-100 px-4 py-3">
-            <Link
-              href="/login"
-              className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-              onClick={closeMobileMenu}
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/signup"
-              className="mt-2 block rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-              onClick={closeMobileMenu}
-            >
-              Start free trial
-            </Link>
+            {AUTH_LINKS.map(({ label, href, variant }) => (
+              <Link
+                key={href}
+                href={href}
+                className={
+                  variant === "primary"
+                    ? "mt-2 block rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    : "block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                }
+                onClick={closeMobileMenu}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </nav>
       )}
+
+      {/*
+       * No-JS fallback: when hydration has not yet run (or is disabled) the
+       * toggle button above is inert.  This <noscript> block renders a static
+       * drawer that is always visible for mobile viewports, giving users
+       * without JavaScript a way to reach every public page and the auth CTAs.
+       */}
+      <noscript>
+        <nav
+          aria-label="Mobile navigation (no-JS fallback)"
+          className="border-t border-gray-200 bg-white md:hidden"
+        >
+          <ul className="space-y-1 px-4 py-3" role="list">
+            {NAV_LINKS.map(({ label, href }) => (
+              <li key={href}>
+                <a
+                  href={href}
+                  className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                >
+                  {label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <div className="border-t border-gray-100 px-4 py-3">
+            {AUTH_LINKS.map(({ label, href, variant }) => (
+              <a
+                key={href}
+                href={href}
+                className={
+                  variant === "primary"
+                    ? "mt-2 block rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    : "block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                }
+              >
+                {label}
+              </a>
+            ))}
+          </div>
+        </nav>
+      </noscript>
     </header>
   );
 }

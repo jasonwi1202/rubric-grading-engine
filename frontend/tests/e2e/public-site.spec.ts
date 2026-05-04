@@ -122,6 +122,87 @@ test.describe("Public site — /pricing", () => {
   });
 });
 
+test.describe("Public site — mobile navigation", () => {
+  // Use a typical mobile viewport so the hamburger toggle is visible and the
+  // desktop nav is hidden via Tailwind's md: breakpoint (≥768 px).
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("hamburger toggle opens and closes the mobile drawer", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: /open menu|close menu/i });
+    await expect(toggle).toBeVisible();
+
+    // Drawer should not be present yet.
+    await expect(page.locator("#mobile-nav")).not.toBeVisible();
+
+    // Open the drawer.
+    await toggle.click();
+    await expect(page.locator("#mobile-nav")).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    // Close the drawer by clicking the toggle again.
+    await toggle.click();
+    await expect(page.locator("#mobile-nav")).not.toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("mobile drawer contains all primary nav links", async ({ page }) => {
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: /open menu/i });
+    await toggle.click();
+
+    const drawer = page.locator("#mobile-nav");
+    await expect(drawer).toBeVisible();
+
+    for (const [label, href] of [
+      ["Product", "/product"],
+      ["How It Works", "/how-it-works"],
+      ["Pricing", "/pricing"],
+      ["AI", "/ai"],
+      ["About", "/about"],
+    ]) {
+      const link = drawer.getByRole("link", { name: label, exact: false });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute("href", href);
+    }
+  });
+
+  test("mobile drawer contains Sign in and Start free trial CTAs", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: /open menu/i });
+    await toggle.click();
+
+    const drawer = page.locator("#mobile-nav");
+    await expect(drawer).toBeVisible();
+
+    const signIn = drawer.getByRole("link", { name: /sign in/i });
+    await expect(signIn).toBeVisible();
+    await expect(signIn).toHaveAttribute("href", "/login");
+
+    const trial = drawer.getByRole("link", { name: /start free trial/i });
+    await expect(trial).toBeVisible();
+    await expect(trial).toHaveAttribute("href", "/signup");
+  });
+
+  test("Escape key closes the mobile drawer", async ({ page }) => {
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: /open menu/i });
+    await toggle.click();
+    await expect(page.locator("#mobile-nav")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#mobile-nav")).not.toBeVisible();
+  });
+});
+
 test.describe("Public site — legal pages", () => {
   test("/legal/dpa shows attorney draft banner in development", async ({
     page,
