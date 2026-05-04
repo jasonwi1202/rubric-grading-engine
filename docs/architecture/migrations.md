@@ -179,15 +179,23 @@ Migrations are run as part of the deployment pipeline — never manually in a pr
 
 ### M5 revision-id compatibility note
 
-Milestone M5 introduced two long revision identifiers that were later shortened
-to avoid `alembic_version.version_num` truncation on fresh databases:
+Milestone M5 originally introduced two revision identifiers that were ~35–37
+characters long.  Shortly after, they were shortened:
 
-- `024_essay_versions_writing_snapshots` -> `024_essay_versions_snapshots`
-- `025_essay_versions_process_signals` -> `025_essay_versions_signals`
+- `024_essay_versions_writing_snapshots` → `024_essay_versions_snapshots`
+- `025_essay_versions_process_signals` → `025_essay_versions_signals`
 
-Fresh databases are unaffected (they use the shortened IDs directly).
-For an environment that already recorded the long IDs, reconcile the
-`alembic_version` table once before running `alembic upgrade head`:
+**Fresh databases are unaffected.** `env.py` sets `version_num_col_length=64`
+in both the offline and online `context.configure()` calls, so the
+`alembic_version.version_num` column is 64 chars wide on any database created
+(or upgraded) with this codebase.  Even the original long IDs would fit without
+truncation.
+
+**Existing deployments that recorded the long IDs before `version_num_col_length`
+was raised** (i.e., environments running M5 migrations against an older env.py
+with the default 32-char column) may still have the long strings stored.  For
+those environments, reconcile the `alembic_version` table once before running
+`alembic upgrade head`:
 
 ```sql
 UPDATE alembic_version
