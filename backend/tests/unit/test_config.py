@@ -317,3 +317,54 @@ class TestProductionSecurityGuardrails:
     def test_development_allows_export_task_force_fail(self) -> None:
         s = _make(export_task_force_fail=True)
         assert s.export_task_force_fail is True
+
+    def test_production_rejects_short_lived_token_ttl_seconds(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="SHORT_LIVED_TOKEN_TTL_SECONDS must not be set",
+        ):
+            _make(
+                environment="production",
+                trust_proxy_headers=True,
+                frontend_url="https://app.example.com",
+                short_lived_token_ttl_seconds=3,
+            )
+
+    def test_staging_rejects_short_lived_token_ttl_seconds(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="SHORT_LIVED_TOKEN_TTL_SECONDS must not be set",
+        ):
+            _make(
+                environment="staging",
+                trust_proxy_headers=True,
+                frontend_url="https://staging.example.com",
+                short_lived_token_ttl_seconds=3,
+            )
+
+    def test_development_allows_short_lived_token_ttl_seconds(self) -> None:
+        s = _make(short_lived_token_ttl_seconds=3)
+        assert s.short_lived_token_ttl_seconds == 3
+
+
+# ---------------------------------------------------------------------------
+# short_lived_token_ttl_seconds validator
+# ---------------------------------------------------------------------------
+
+
+class TestShortLivedTokenTtlSeconds:
+    def test_default_is_none(self) -> None:
+        s = _make()
+        assert s.short_lived_token_ttl_seconds is None
+
+    def test_accepts_positive_integer(self) -> None:
+        s = _make(short_lived_token_ttl_seconds=5)
+        assert s.short_lived_token_ttl_seconds == 5
+
+    def test_rejects_zero(self) -> None:
+        with pytest.raises(ValidationError, match="must be at least 1"):
+            _make(short_lived_token_ttl_seconds=0)
+
+    def test_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError, match="must be at least 1"):
+            _make(short_lived_token_ttl_seconds=-1)

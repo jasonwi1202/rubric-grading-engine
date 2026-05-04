@@ -101,6 +101,46 @@ export async function loginApi(
   return body.data.access_token;
 }
 
+/**
+ * Log in to the backend API and return the JWT access token plus the raw
+ * value of the `refresh_token` httpOnly cookie (parsed from `Set-Cookie`).
+ *
+ * Used by E2E tests that need to exercise the silent-refresh path directly via
+ * the Node.js `fetch()` layer (i.e. outside the browser context).
+ */
+export async function loginApiWithCookie(
+  email: string,
+  password: string,
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`loginApiWithCookie failed: ${res.status} ${res.statusText} — ${text}`);
+  }
+  const body = (await res.json()) as { data: { access_token: string } };
+  const accessToken = body.data.access_token;
+
+  // Parse the refresh_token value from the Set-Cookie response header.
+  // The /auth/login endpoint sets exactly one cookie (`refresh_token`), so
+  // `res.headers.get("set-cookie")` contains only that header value, which
+  // looks like: refresh_token=<value>; HttpOnly; Path=/; ...
+  // The leading `(?:^|,)` handles the edge case where a runtime joins
+  // multiple Set-Cookie entries with ", " — the refresh_token entry may not
+  // start at the beginning of the joined string.
+  const setCookie = res.headers.get("set-cookie") ?? "";
+  const match = setCookie.match(/(?:^|,)\s*refresh_token=([^;,]+)/);
+  if (!match) {
+    throw new Error(
+      "loginApiWithCookie: refresh_token cookie not found in Set-Cookie header",
+    );
+  }
+  return { accessToken, refreshToken: match[1] };
+}
+
 /** Seed a class via the backend API and return its UUID. */
 export async function seedClass(
   token: string,
