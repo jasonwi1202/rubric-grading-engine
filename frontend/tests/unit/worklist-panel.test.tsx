@@ -11,7 +11,8 @@
  * - extractSkillKeys: returns sorted unique non-null skill keys
  * - WorklistPanel: shows loading skeleton while fetching
  * - WorklistPanel: shows error alert when fetch fails
- * - WorklistPanel: shows empty state when worklist is empty
+ * - WorklistPanel: shows onboarding checklist when worklist is empty and teacher has no classes
+ * - WorklistPanel: shows "all caught up" state when worklist is empty but teacher has classes
  * - WorklistPanel: renders urgency indicator, trigger reason, and suggested action
  * - WorklistPanel: renders urgency badge with correct label
  * - WorklistPanel: renders skill_key badge when present
@@ -48,6 +49,11 @@ const mockGetWorklist = vi.fn();
 const mockCompleteWorklistItem = vi.fn();
 const mockSnoozeWorklistItem = vi.fn();
 const mockDismissWorklistItem = vi.fn();
+const mockListClasses = vi.fn();
+
+vi.mock("@/lib/api/classes", () => ({
+  listClasses: (...args: unknown[]) => mockListClasses(...args),
+}));
 
 vi.mock("@/lib/api/worklist", () => ({
   getWorklist: (...args: unknown[]) => mockGetWorklist(...args),
@@ -113,6 +119,8 @@ beforeEach(() => {
   mockCompleteWorklistItem.mockResolvedValue(makeItem({ status: "completed" }));
   mockSnoozeWorklistItem.mockResolvedValue(makeItem({ status: "snoozed" }));
   mockDismissWorklistItem.mockResolvedValue(makeItem({ status: "dismissed" }));
+  // Default: teacher has no classes (triggers onboarding state when worklist is empty)
+  mockListClasses.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------
@@ -252,16 +260,30 @@ describe("WorklistPanel — error state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// WorklistPanel — empty state
+// WorklistPanel — empty state (onboarding and all-caught-up)
 // ---------------------------------------------------------------------------
 
-describe("WorklistPanel — empty state", () => {
-  it("shows empty state when worklist has no items", async () => {
+describe("WorklistPanel — empty state: onboarding", () => {
+  it("shows getting-started checklist when worklist is empty and teacher has no classes", async () => {
     mockGetWorklist.mockResolvedValue(makeResponse([]));
+    mockListClasses.mockResolvedValue([]);
     render(<WorklistPanel />, { wrapper });
     await waitFor(() => {
-      expect(screen.getByText(/no items on your worklist/i)).toBeInTheDocument();
+      expect(screen.getByText(/let's get you set up/i)).toBeInTheDocument();
     });
+    // First CTA step is present
+    expect(screen.getByRole("link", { name: /create class/i })).toBeInTheDocument();
+  });
+
+  it("shows all-caught-up message when worklist is empty but teacher has classes", async () => {
+    mockGetWorklist.mockResolvedValue(makeResponse([]));
+    mockListClasses.mockResolvedValue([{ id: "cls-001", name: "Period 1" }]);
+    render(<WorklistPanel />, { wrapper });
+    await waitFor(() => {
+      expect(screen.getByText(/you're all caught up/i)).toBeInTheDocument();
+    });
+    // Must NOT show the getting-started checklist
+    expect(screen.queryByText(/let's get you set up/i)).not.toBeInTheDocument();
   });
 });
 
