@@ -74,7 +74,7 @@ export default function HowItWorksPage() {
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             How it works
           </h1>
-          <p className="mt-6 text-xl text-gray-500">
+          <p className="mt-6 text-xl text-gray-600">
             The full grading cycle — from rubric to insights — in seven steps.
           </p>
         </div>
@@ -128,7 +128,7 @@ export default function HowItWorksPage() {
                       {title}
                     </h2>
                   </div>
-                  <p className="mt-1 text-gray-500">{body}</p>
+                  <p className="mt-1 text-gray-600">{body}</p>
                 </div>
               </li>
             ))}
