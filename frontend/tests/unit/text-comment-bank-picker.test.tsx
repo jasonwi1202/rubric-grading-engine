@@ -32,6 +32,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Mocks — declared before component imports so vi.mock hoisting works
@@ -82,12 +83,17 @@ function makeSuggestion(
 }
 
 function wrapper({ children }: { children: React.ReactNode }) {
-  const qc = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: 0 },
-      mutations: { retry: false },
-    },
-  });
+  // useState initializer ensures the same QueryClient instance is reused
+  // across rerender() calls so query state is not lost between prop changes.
+  const [qc] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, staleTime: 0 },
+          mutations: { retry: false },
+        },
+      }),
+  );
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
@@ -175,6 +181,20 @@ describe("TextCommentBankPicker — toggle button", () => {
     expect(
       screen.queryByRole("region", { name: /text comment bank/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("disables the toggle button when isLocked=true and the panel is closed", () => {
+    render(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
+      { wrapper },
+    );
+    expect(
+      screen.getByRole("button", { name: /text comment bank/i }),
+    ).toBeDisabled();
   });
 });
 
@@ -274,16 +294,23 @@ describe("TextCommentBankPicker — save to bank", () => {
 
   it("disables the save button when isLocked=true", async () => {
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TextCommentBankPicker
         currentText={CURRENT_TEXT}
         onApply={noop}
-        isLocked={true}
+        isLocked={false}
       />,
       { wrapper },
     );
 
     await user.click(screen.getByRole("button", { name: /text comment bank/i }));
+    rerender(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
+    );
 
     expect(
       screen.getByRole("button", { name: /save current feedback text to comment bank/i }),
@@ -292,16 +319,23 @@ describe("TextCommentBankPicker — save to bank", () => {
 
   it("shows locked read-only notice when isLocked=true", async () => {
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TextCommentBankPicker
         currentText={CURRENT_TEXT}
         onApply={noop}
-        isLocked={true}
+        isLocked={false}
       />,
       { wrapper },
     );
 
     await user.click(screen.getByRole("button", { name: /text comment bank/i }));
+    rerender(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
+    );
 
     await waitFor(() => {
       expect(
@@ -409,16 +443,23 @@ describe("TextCommentBankPicker — browse saved comments", () => {
 describe("TextCommentBankPicker — search and suggestions", () => {
   it("disables the search input when isLocked=true", async () => {
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TextCommentBankPicker
         currentText={CURRENT_TEXT}
         onApply={noop}
-        isLocked={true}
+        isLocked={false}
       />,
       { wrapper },
     );
 
     await user.click(screen.getByRole("button", { name: /text comment bank/i }));
+    rerender(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
+    );
 
     expect(
       screen.getByRole("searchbox", { name: /search saved comments/i }),
@@ -623,11 +664,11 @@ describe("TextCommentBankPicker — apply flow", () => {
     mockListCommentBank.mockResolvedValue([entry]);
 
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TextCommentBankPicker
         currentText={CURRENT_TEXT}
         onApply={noop}
-        isLocked={true}
+        isLocked={false}
       />,
       { wrapper },
     );
@@ -636,6 +677,14 @@ describe("TextCommentBankPicker — apply flow", () => {
 
     await waitFor(() =>
       screen.getByRole("button", { name: /apply saved comment/i }),
+    );
+
+    rerender(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
     );
 
     expect(
@@ -649,11 +698,11 @@ describe("TextCommentBankPicker — apply flow", () => {
     const onApply = vi.fn();
 
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TextCommentBankPicker
         currentText={CURRENT_TEXT}
         onApply={onApply}
-        isLocked={true}
+        isLocked={false}
       />,
       { wrapper },
     );
@@ -662,6 +711,14 @@ describe("TextCommentBankPicker — apply flow", () => {
 
     await waitFor(() =>
       screen.getByRole("button", { name: /apply saved comment/i }),
+    );
+
+    rerender(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={onApply}
+        isLocked={true}
+      />,
     );
 
     // Attempt click — button is disabled so userEvent won't trigger the handler.
@@ -711,11 +768,11 @@ describe("TextCommentBankPicker — delete flow", () => {
     mockListCommentBank.mockResolvedValue([entry]);
 
     const user = userEvent.setup();
-    render(
+    const { rerender } = render(
       <TextCommentBankPicker
         currentText={CURRENT_TEXT}
         onApply={noop}
-        isLocked={true}
+        isLocked={false}
       />,
       { wrapper },
     );
@@ -724,6 +781,14 @@ describe("TextCommentBankPicker — delete flow", () => {
 
     await waitFor(() =>
       screen.getByRole("button", { name: /delete saved comment/i }),
+    );
+
+    rerender(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
     );
 
     expect(

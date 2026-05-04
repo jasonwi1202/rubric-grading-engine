@@ -126,6 +126,14 @@ export function TextCommentBankPicker({
   // Derive trimmed query first so both queries can use it.
   const trimmedQuery = useMemo(() => searchQuery.trim(), [searchQuery]);
 
+  // Debounce the search query so the suggestions endpoint is not called on
+  // every keystroke (avoids excessive server load for fuzzy-match queries).
+  const [debouncedQuery, setDebouncedQuery] = useState(trimmedQuery);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(trimmedQuery), 300);
+    return () => clearTimeout(timer);
+  }, [trimmedQuery]);
+
   // Full list — fetched when picker opens and the search box is empty.
   const {
     data: allComments,
@@ -138,22 +146,22 @@ export function TextCommentBankPicker({
     staleTime: 30_000,
   });
 
-  // Suggestions — fetched when search query is non-empty.
+  // Suggestions — fetched after the debounce delay when a search query is active.
   const {
     data: suggestions,
     isLoading: isSuggestLoading,
     isError: isSuggestError,
   } = useQuery({
-    queryKey: ["comment-bank-suggestions", trimmedQuery],
-    queryFn: () => getCommentBankSuggestions(trimmedQuery),
-    enabled: isOpen && trimmedQuery.length > 0,
+    queryKey: ["comment-bank-suggestions", debouncedQuery],
+    queryFn: () => getCommentBankSuggestions(debouncedQuery),
+    enabled: isOpen && debouncedQuery.length > 0,
     staleTime: 10_000,
   });
 
   // Derive the displayed list:
-  // - Non-empty search → show suggestions (or loading/error)
+  // - Non-empty debounced search → show suggestions (or loading/error)
   // - Empty search → show full list
-  const isSearching = trimmedQuery.length > 0;
+  const isSearching = debouncedQuery.length > 0;
   const isLoading = isSearching ? isSuggestLoading : isListLoading;
   const isError = isSearching ? isSuggestError : isListError;
   const displayedItems: (CommentBankEntry | CommentBankSuggestion)[] =
@@ -218,9 +226,10 @@ export function TextCommentBankPicker({
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
+        disabled={isLocked && !isOpen}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <svg
           aria-hidden="true"
