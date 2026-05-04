@@ -19,7 +19,7 @@
  * - Entity IDs only in error payloads.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createCommentBankEntry,
@@ -100,12 +100,17 @@ export function TextCommentBankPicker({
   const [searchQuery, setSearchQuery] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [applyError, setApplyError] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [appliedId, setAppliedId] = useState<string | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appliedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
+
+  // Per-instance unique IDs for accessibility (avoids duplicate IDs when
+  // multiple pickers are rendered on the same page).
+  const instanceId = useId();
+  const panelId = `text-bank-picker-panel-${instanceId}`;
+  const searchId = `text-bank-search-${instanceId}`;
 
   // Clean up pending timers on unmount.
   useEffect(() => {
@@ -118,7 +123,10 @@ export function TextCommentBankPicker({
 
   // ---- Queries ----
 
-  // Full list — fetched when picker opens and search is empty.
+  // Derive trimmed query first so both queries can use it.
+  const trimmedQuery = searchQuery.trim();
+
+  // Full list — fetched when picker opens and the search box is empty.
   const {
     data: allComments,
     isLoading: isListLoading,
@@ -126,12 +134,11 @@ export function TextCommentBankPicker({
   } = useQuery({
     queryKey: ["comment-bank"],
     queryFn: listCommentBank,
-    enabled: isOpen,
+    enabled: isOpen && trimmedQuery.length === 0,
     staleTime: 30_000,
   });
 
   // Suggestions — fetched when search query is non-empty.
-  const trimmedQuery = searchQuery.trim();
   const {
     data: suggestions,
     isLoading: isSuggestLoading,
@@ -176,7 +183,6 @@ export function TextCommentBankPicker({
     (text: string, id: string) => {
       if (isLocked) return;
       onApply(text);
-      setApplyError(null);
       setAppliedId(id);
       if (appliedTimerRef.current !== null)
         clearTimeout(appliedTimerRef.current);
@@ -213,7 +219,7 @@ export function TextCommentBankPicker({
         type="button"
         onClick={() => setIsOpen((v) => !v)}
         aria-expanded={isOpen}
-        aria-controls="text-bank-picker-panel"
+        aria-controls={panelId}
         className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         <svg
@@ -235,7 +241,7 @@ export function TextCommentBankPicker({
 
       {isOpen && (
         <div
-          id="text-bank-picker-panel"
+          id={panelId}
           className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3"
           role="region"
           aria-label="Text comment bank"
@@ -283,28 +289,23 @@ export function TextCommentBankPicker({
             </p>
           )}
 
-          {applyError && (
-            <p role="alert" className="mb-3 text-xs text-red-700">
-              {applyError}
-            </p>
-          )}
-
           {/* Search */}
           <div className="mb-3">
             <label
-              htmlFor="text-bank-search"
+              htmlFor={searchId}
               className="mb-1 block text-xs font-medium text-gray-700"
             >
               Search saved comments
             </label>
             <input
-              id="text-bank-search"
+              id={searchId}
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Type to search…"
+              disabled={isLocked}
               aria-label="Search saved comments"
-              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
@@ -394,7 +395,7 @@ function BankEntryRow({
         </button>
         <button
           type="button"
-          disabled={isDeleting}
+          disabled={isDeleting || isLocked}
           onClick={onDelete}
           aria-label="Delete saved comment"
           className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"

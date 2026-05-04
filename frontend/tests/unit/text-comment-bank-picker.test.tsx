@@ -407,6 +407,24 @@ describe("TextCommentBankPicker — browse saved comments", () => {
 // ---------------------------------------------------------------------------
 
 describe("TextCommentBankPicker — search and suggestions", () => {
+  it("disables the search input when isLocked=true", async () => {
+    const user = userEvent.setup();
+    render(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
+      { wrapper },
+    );
+
+    await user.click(screen.getByRole("button", { name: /text comment bank/i }));
+
+    expect(
+      screen.getByRole("searchbox", { name: /search saved comments/i }),
+    ).toBeDisabled();
+  });
+
   it("calls getCommentBankSuggestions when the user types in the search box", async () => {
     mockGetCommentBankSuggestions.mockResolvedValue([]);
 
@@ -686,6 +704,31 @@ describe("TextCommentBankPicker — delete flow", () => {
     await waitFor(() => {
       expect(mockDeleteCommentBankEntry).toHaveBeenCalledWith("cb-del-001");
     });
+  });
+
+  it("disables the delete button when isLocked=true", async () => {
+    const entry = makeEntry({ id: "cb-del-lock-001" });
+    mockListCommentBank.mockResolvedValue([entry]);
+
+    const user = userEvent.setup();
+    render(
+      <TextCommentBankPicker
+        currentText={CURRENT_TEXT}
+        onApply={noop}
+        isLocked={true}
+      />,
+      { wrapper },
+    );
+
+    await user.click(screen.getByRole("button", { name: /text comment bank/i }));
+
+    await waitFor(() =>
+      screen.getByRole("button", { name: /delete saved comment/i }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: /delete saved comment/i }),
+    ).toBeDisabled();
   });
 
   it("shows delete error alert when deleteCommentBankEntry fails", async () => {
