@@ -14,17 +14,42 @@ from app.config import Settings
 # Helpers
 # ---------------------------------------------------------------------------
 
-_BASE: dict[str, str] = {
+_BASE: dict[str, object] = {
     "database_url": "postgresql+asyncpg://user:pass@localhost:5432/testdb",
+    "database_pool_size": 10,
+    "database_max_overflow": 20,
     "redis_url": "redis://localhost:6379/0",
     "jwt_secret_key": "a" * 32,
+    "email_verification_hmac_secret": "b" * 32,
+    "unsubscribe_hmac_secret": "c" * 32,
     "openai_api_key": "dummy_openai_api_key",
     "s3_bucket_name": "test-bucket",
     "s3_region": "us-east-1",
     "aws_access_key_id": "dummy_aws_access_key_id",
     "aws_secret_access_key": "dummy_aws_secret_access_key",
+    "s3_endpoint_url": None,
     "cors_origins": "http://localhost:3000",
+    "allow_unverified_login_in_test": False,
+    "rate_limit_enabled": True,
 }
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear env vars that commonly leak from local shells into Settings tests."""
+    for key in [
+        "DATABASE_POOL_SIZE",
+        "DATABASE_MAX_OVERFLOW",
+        "S3_ENDPOINT_URL",
+        "ALLOW_UNVERIFIED_LOGIN_IN_TEST",
+        "RATE_LIMIT_ENABLED",
+        "TRUST_PROXY_HEADERS",
+        "FRONTEND_URL",
+        "LLM_FAKE_MODE",
+        "EXPORT_TASK_FORCE_FAIL",
+        "SHORT_LIVED_TOKEN_TTL_SECONDS",
+    ]:
+        monkeypatch.delenv(key, raising=False)
 
 
 def _make(**overrides: object) -> Settings:

@@ -14,12 +14,12 @@ import { WorklistPanel } from "@/components/worklist/WorklistPanel";
 
 export default function DashboardPage() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-3xl">
       <h1 className="mb-1 text-2xl font-bold text-gray-900">Your Worklist</h1>
       <p className="mb-6 text-sm text-gray-500">
         Prioritized actions for students who need your attention most.
       </p>
       <WorklistPanel />
-    </main>
+    </div>
   );
 }

@@ -556,7 +556,9 @@ class TestRunExport:
             (c for c in hset_calls if c.kwargs.get("mapping", {}).get("status") == "failed"),
             None,
         )
-        assert failed_call is not None, "Redis should be set to failed when one-shot key is consumed"
+        assert failed_call is not None, (
+            "Redis should be set to failed when one-shot key is consumed"
+        )
         error_val = failed_call.kwargs.get("mapping", {}).get("error")
         assert error_val == "FORCED_FAILURE", (
             f"Expected FORCED_FAILURE error code, got {error_val!r}"
@@ -598,11 +600,7 @@ class TestRunExport:
         hset_calls = redis_mock.hset.call_args_list
         # There should be a 'failed' call (assignment not found), but NOT FORCED_FAILURE.
         forced_failure_call = next(
-            (
-                c
-                for c in hset_calls
-                if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"
-            ),
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"),
             None,
         )
         assert forced_failure_call is None, (
@@ -646,11 +644,7 @@ class TestRunExport:
         hset_calls = redis_mock.hset.call_args_list
         # No FORCED_FAILURE — the injection path was never entered.
         forced_failure_call = next(
-            (
-                c
-                for c in hset_calls
-                if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"
-            ),
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"),
             None,
         )
         assert forced_failure_call is None, (

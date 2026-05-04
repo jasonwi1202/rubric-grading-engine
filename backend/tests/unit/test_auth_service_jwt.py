@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.config import settings
 from app.exceptions import RefreshTokenInvalidError, UnauthorizedError, ValidationError
 from app.services.auth import (
     consume_refresh_token,
@@ -33,6 +34,12 @@ from app.services.auth import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _force_auth_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep JWT auth tests deterministic regardless of local .env settings."""
+    monkeypatch.setattr(settings, "allow_unverified_login_in_test", False)
 
 
 def _make_db(fake_user: MagicMock | None = None) -> AsyncMock:

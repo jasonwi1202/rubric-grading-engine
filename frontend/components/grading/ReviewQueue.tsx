@@ -381,7 +381,7 @@ export function ReviewQueue({ essays, assignmentId, onBulkApproveSuccess }: Revi
             return (
               <Link
                 key={essay.essay_id}
-                href={`/dashboard/assignments/${assignmentId}/review/${essay.essay_id}`}
+                href={`/dashboard/assignments/${assignmentId}/review/${essay.essay_id}?queue=${encodeURIComponent(displayed.map((e) => e.essay_id).join(","))}&pos=${idx}`}
                 role="listitem"
                 ref={(el) => {
                   rowRefs.current[idx] = el;

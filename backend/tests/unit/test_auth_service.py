@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.config import settings
 from app.exceptions import ConflictError, RateLimitError, ValidationError
 from app.services.auth import (
     _compute_hmac_tag,
@@ -29,6 +30,13 @@ from app.services.auth import (
 # ---------------------------------------------------------------------------
 
 _HMAC_SECRET = "b" * 32
+
+
+@pytest.fixture(autouse=True)
+def _force_auth_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep auth tests deterministic regardless of local .env settings."""
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "allow_unverified_login_in_test", False)
 
 
 def _make_mock_db() -> AsyncMock:

@@ -1,9 +1,11 @@
 /**
  * Dashboard layout — wraps all authenticated teacher views.
  *
- * Includes a trial status banner in the header when trial status is available.
- * While the trial is active, it shows remaining days.  Once the trial expires,
- * it renders an explicit "Your trial has ended" banner with an upgrade link.
+ * Structure:
+ *   - Persistent DashboardSidebar (desktop: fixed left 220px; mobile: top bar + drawer)
+ *   - Trial status banner above main content when trial is active or expired
+ *   - Breadcrumbs beneath the banner, above page content
+ *   - ErrorBoundary wrapping all page content
  */
 
 "use client";
@@ -11,6 +13,8 @@
 import { useEffect, useState } from "react";
 import { getTrialStatus } from "@/lib/api/account";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
+import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 
 // ---------------------------------------------------------------------------
 // Trial banner helpers
@@ -92,13 +96,23 @@ export default function DashboardLayout({
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {loaded && daysRemaining !== null && (
-        <TrialBanner daysRemaining={daysRemaining} />
-      )}
-      <main className="flex-1">
-        <ErrorBoundary>{children}</ErrorBoundary>
-      </main>
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar — desktop fixed; mobile top bar + drawer */}
+      <DashboardSidebar />
+
+      {/* Main content column */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Trial banner */}
+        {loaded && daysRemaining !== null && (
+          <TrialBanner daysRemaining={daysRemaining} />
+        )}
+
+        {/* Page content */}
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <Breadcrumbs />
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </main>
+      </div>
     </div>
   );
 }

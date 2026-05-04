@@ -133,8 +133,10 @@ test.describe("Journey 1 — Setup: login → class → students → rubric → 
     expect(state.classId).toBeTruthy();
 
     // Navigate to the class list and confirm the new class is visible.
+    // Scope the assertion to <main> so sidebar class links don't create
+    // a strict-mode ambiguity with the class card in the page content.
     await page.goto("/dashboard/classes");
-    await expect(page.getByText(state.className)).toBeVisible();
+    await expect(page.getByRole("main").getByText(state.className)).toBeVisible();
   });
 
   // ── Test 3: Add two students ──────────────────────────────────────────────

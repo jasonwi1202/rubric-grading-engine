@@ -340,9 +340,7 @@ def downgrade() -> None:
     #    system templates removed above).  Failing loudly here prevents a
     #    silent data-integrity hole; recovery requires removing the rogue
     #    rows manually and re-running the downgrade.
-    result = op.get_bind().execute(
-        sa.text("SELECT COUNT(*) FROM rubrics WHERE teacher_id IS NULL")
-    )
+    result = op.get_bind().execute(sa.text("SELECT COUNT(*) FROM rubrics WHERE teacher_id IS NULL"))
     null_count = result.scalar()
     if null_count is not None and null_count > 0:
         raise RuntimeError(

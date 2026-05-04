@@ -20,6 +20,7 @@
  * - ReviewQueue: empty state when no essays match filter
  * - ReviewQueue: keyboard navigation with ArrowDown / ArrowUp
  * - ReviewQueue: essay links use UUIDs, not student names (no PII in URL)
+ * - ReviewQueue: essay links encode queue order as ?queue= and ?pos= params
  *
  * Security:
  * - No real student PII in fixtures — uses synthetic IDs and placeholder student names only.
@@ -452,6 +453,45 @@ describe("ReviewQueue — rendering", () => {
         ).toBe(false);
       }
     }
+  });
+
+  it("essay links include ?queue= with all displayed essay IDs", () => {
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    const links = screen
+      .getAllByRole("listitem")
+      .map((el) => el.getAttribute("href") ?? "");
+
+    // Every link must contain a ?queue= parameter
+    for (const href of links) {
+      expect(href).toContain("?queue=");
+    }
+
+    // All three essay IDs must appear in each queue param
+    for (const href of links) {
+      const url = new URL(href, "http://localhost");
+      const queue = url.searchParams.get("queue") ?? "";
+      for (const essay of BASE_ESSAYS) {
+        expect(queue).toContain(essay.essay_id);
+      }
+    }
+  });
+
+  it("essay links include ?pos= with 0-based index in the displayed list", () => {
+    render(
+      <ReviewQueue essays={BASE_ESSAYS} assignmentId={ASSIGNMENT_ID} />,
+      { wrapper },
+    );
+    const links = screen
+      .getAllByRole("listitem")
+      .map((el) => el.getAttribute("href") ?? "");
+
+    links.forEach((href, idx) => {
+      const url = new URL(href, "http://localhost");
+      expect(url.searchParams.get("pos")).toBe(String(idx));
+    });
   });
 });
 
