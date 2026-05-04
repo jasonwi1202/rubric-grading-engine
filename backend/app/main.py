@@ -301,6 +301,7 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
 
 def _register_routers(application: FastAPI) -> None:
+    from app.config import settings  # noqa: PLC0415
     from app.routers.account import router as account_router
     from app.routers.assignments import router as assignments_router
     from app.routers.auth import router as auth_router
@@ -360,6 +361,15 @@ def _register_routers(application: FastAPI) -> None:
     application.include_router(recommendations_router, prefix="/api/v1")
     application.include_router(intervention_router, prefix="/api/v1")
     application.include_router(copilot_router, prefix="/api/v1")
+
+    # Register the test-only internal router only when export failure injection
+    # is enabled.  The config validator already prevents this flag from being
+    # set in staging/production, so this router is never reachable in those
+    # environments.
+    if settings.export_task_force_fail:
+        from app.routers.internal import router as internal_router  # noqa: PLC0415
+
+        application.include_router(internal_router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------

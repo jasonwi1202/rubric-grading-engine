@@ -45,6 +45,12 @@ _EXPORT_KEY_PREFIX = "export:"
 # Redis TTL for export records: 1 hour.
 _EXPORT_TTL_SECONDS = 3600
 
+# One-shot force-fail flag key in Redis.  Set by the test-only arm endpoint
+# (POST /api/v1/internal/export-test-controls/arm-failure) and atomically
+# consumed by the export task.  Only meaningful when EXPORT_TASK_FORCE_FAIL is
+# enabled (i.e., in non-production environments).
+_EXPORT_FORCE_FAIL_ONCE_KEY = "export:force_fail_once"
+
 
 # ---------------------------------------------------------------------------
 # PDF generation helper
@@ -178,6 +184,39 @@ async def _run_export(
                 "total": "0",
             },
         )
+
+        # ---------------------------------------------------------------------------
+        # Deterministic failure injection (test-only).
+        # ---------------------------------------------------------------------------
+        # Two mechanisms are checked in order:
+        #
+        # 1. settings.export_task_force_fail — global flag that fails EVERY export
+        #    task.  Only settable in non-production environments.
+        # 2. _EXPORT_FORCE_FAIL_ONCE_KEY in Redis — a one-shot flag armed by
+        #    POST /api/v1/internal/export-test-controls/arm-failure.  After a single
+        #    task consumes it (atomic DELETE returning 1), the flag is gone and
+        #    subsequent exports proceed normally.  This enables the full
+        #    failure → retry → success E2E flow within a single test run.
+        #
+        # Both paths write FORCED_FAILURE to Redis and return early so the export
+        # task is marked as failed and the polling client observes the failure state.
+        # ---------------------------------------------------------------------------
+        _force_fail = settings.export_task_force_fail
+        if not _force_fail:
+            # Atomically consume the one-shot key (returns number of keys deleted).
+            _consumed = await redis.delete(_EXPORT_FORCE_FAIL_ONCE_KEY)
+            _force_fail = bool(_consumed)
+
+        if _force_fail:
+            logger.warning(
+                "Export task: deterministic failure injection active",
+                extra={"assignment_id": assignment_id, "task_id": task_id},
+            )
+            await redis.hset(
+                redis_key,
+                mapping={"status": "failed", "error": "FORCED_FAILURE"},
+            )
+            return
 
         async with AsyncSessionLocal() as db:
             # 1. Load assignment — tenant-scoped, verifies teacher owns it.

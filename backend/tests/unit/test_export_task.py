@@ -44,6 +44,8 @@ def _make_redis_mock(record: dict[str, str] | None = None) -> AsyncMock:
     redis.hset = AsyncMock()
     redis.expire = AsyncMock()
     redis.aclose = AsyncMock()
+    # Default: no one-shot force-fail key present (delete returns 0 = not found).
+    redis.delete = AsyncMock(return_value=0)
     return redis
 
 
@@ -519,6 +521,118 @@ class TestRunExport:
         error_val = failed_call.kwargs.get("mapping", {}).get("error")
         assert error_val == "NO_EXPORTABLE_GRADES", (
             f"Expected NO_EXPORTABLE_GRADES, got {error_val!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_fail_via_settings(self) -> None:
+        """When settings.export_task_force_fail is True, _run_export sets FORCED_FAILURE."""
+        from app.tasks.export import _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        redis_mock = _make_redis_mock()
+        # Simulate no one-shot key present; the global flag should be enough.
+        redis_mock.delete = AsyncMock(return_value=0)
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal"),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+            patch("app.config.settings") as mock_settings,
+        ):
+            mock_settings.export_task_force_fail = True
+            mock_settings.redis_url = "redis://localhost:6379/0"
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        hset_calls = redis_mock.hset.call_args_list
+        failed_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("status") == "failed"),
+            None,
+        )
+        assert failed_call is not None, "Redis should be set to failed when force-fail is active"
+        error_val = failed_call.kwargs.get("mapping", {}).get("error")
+        assert error_val == "FORCED_FAILURE", (
+            f"Expected FORCED_FAILURE error code, got {error_val!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_fail_via_one_shot_redis_key(self) -> None:
+        """When the one-shot Redis key is present, _run_export sets FORCED_FAILURE."""
+        from app.tasks.export import _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        redis_mock = _make_redis_mock()
+        # Simulate the one-shot key being present: delete() returns 1 (key consumed).
+        redis_mock.delete = AsyncMock(return_value=1)
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal"),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+            patch("app.config.settings") as mock_settings,
+        ):
+            mock_settings.export_task_force_fail = False
+            mock_settings.redis_url = "redis://localhost:6379/0"
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        hset_calls = redis_mock.hset.call_args_list
+        failed_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("status") == "failed"),
+            None,
+        )
+        assert failed_call is not None, "Redis should be set to failed when one-shot key is consumed"
+        error_val = failed_call.kwargs.get("mapping", {}).get("error")
+        assert error_val == "FORCED_FAILURE", (
+            f"Expected FORCED_FAILURE error code, got {error_val!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_force_fail_when_neither_mechanism_active(self) -> None:
+        """When neither mechanism is active, _run_export does NOT fail deterministically."""
+        from app.tasks.export import _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        # Simulate no assignment found — this triggers a different failure path.
+        not_found_result = MagicMock()
+        not_found_result.scalar_one_or_none.return_value = None
+
+        db_mock = AsyncMock()
+        db_mock.execute = AsyncMock(return_value=not_found_result)
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        redis_mock = _make_redis_mock()
+        # No one-shot key present.
+        redis_mock.delete = AsyncMock(return_value=0)
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal", return_value=cm),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+            patch("app.config.settings") as mock_settings,
+        ):
+            mock_settings.export_task_force_fail = False
+            mock_settings.redis_url = "redis://localhost:6379/0"
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        hset_calls = redis_mock.hset.call_args_list
+        # There should be a 'failed' call, but NOT with FORCED_FAILURE.
+        forced_failure_call = next(
+            (
+                c
+                for c in hset_calls
+                if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"
+            ),
+            None,
+        )
+        assert forced_failure_call is None, (
+            "FORCED_FAILURE should NOT be used when neither injection mechanism is active"
         )
 
 

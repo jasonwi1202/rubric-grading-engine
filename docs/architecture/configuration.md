@@ -98,6 +98,51 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `REGRADE_WINDOW_DAYS` | No | `7` | Number of days after a grade is created during which regrade requests are accepted. Requests submitted after this window return 409. |
 | `REGRADE_MAX_PER_GRADE` | No | `1` | Maximum number of regrade requests allowed per grade. Additional submissions after this limit return 409. |
 
+### Test-Only Controls
+
+These variables are blocked in `staging` and `production` by a startup validator and must never be set in those environments.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LLM_FAKE_MODE` | No | `false` | Bypass real OpenAI calls; return deterministic synthetic outputs. Use in CI E2E and unit tests. |
+| `EXPORT_TASK_FORCE_FAIL` | No | `false` | **Test-only.** When `true`, every export Celery task fails immediately with error code `FORCED_FAILURE` instead of generating real PDFs. Also enables the test-only `POST /api/v1/internal/export-test-controls/arm-failure` endpoint for one-shot failure injection (failure → retry → success flow). Cannot be `true` in `staging` or `production`. |
+| `ALLOW_UNVERIFIED_LOGIN_IN_TEST` | No | `false` | Skip email-verification check on login. CI E2E bypass when email delivery is intentionally bypassed. |
+
+#### Using `EXPORT_TASK_FORCE_FAIL` for E2E failure injection
+
+Two failure modes are supported:
+
+1. **Global always-fail** (`EXPORT_TASK_FORCE_FAIL=true`): every export task fails immediately.
+   Use this to test the failure UI path in isolation.
+
+2. **One-shot failure** (arm-failure endpoint): arms a single-use Redis flag that is atomically consumed
+   by the next export task, which then fails. Subsequent exports proceed normally.
+   Use this to exercise the full **failure → retry → success** flow in a single test run.
+
+**Local dev:**
+```bash
+# Add to .env and restart backend + worker containers:
+EXPORT_TASK_FORCE_FAIL=true
+
+# Then run the failure injection E2E spec:
+cd frontend
+npx playwright test mx8-04-export-failure-injection
+```
+
+**CI (GitHub Actions / Docker Compose E2E):**
+
+Add `EXPORT_TASK_FORCE_FAIL=true` to your `.env.ci` or Docker Compose environment override for the
+shard that runs the failure injection spec. The arm-failure endpoint is a no-op when the flag is
+not set, so other specs are unaffected.
+
+```bash
+# .env.ci override (or docker-compose.ci.yml environment section):
+EXPORT_TASK_FORCE_FAIL=true
+```
+
+The Playwright spec (`mx8-04-export-failure-injection.spec.ts`) probes the arm-failure endpoint
+before running and skips gracefully when `EXPORT_TASK_FORCE_FAIL` is not enabled.
+
 ### Skill Normalization
 
 | Variable | Required | Default | Description |
