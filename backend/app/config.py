@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     regrade_max_per_grade: int = 1
 
     # -------------------------------------------------------------------------
+    # Test-only controls
+    # -------------------------------------------------------------------------
+    # When True, enables the test-only internal router
+    # (POST /api/v1/internal/export-test-controls/arm-failure) which sets a
+    # one-shot Redis key.  The export task only fails when that key is present —
+    # the flag alone does NOT make every export fail.  Must be False in staging
+    # and production (enforced by production_security_guardrails).  Used in E2E
+    # tests to exercise the failure → retry → success flow deterministically.
+    export_task_force_fail: bool = False
+
+    # -------------------------------------------------------------------------
     # Application
     # -------------------------------------------------------------------------
     environment: str = "development"
@@ -300,8 +311,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ALLOW_UNVERIFIED_LOGIN_IN_TEST must be false in staging/production."
                 )
+            if self.llm_fake_mode:
+                raise ValueError(
+                    "LLM_FAKE_MODE must be false in staging/production."
+                )
             if self.frontend_url.lower().startswith("http://"):
                 raise ValueError("FRONTEND_URL must use https:// in staging/production.")
+            if self.export_task_force_fail:
+                raise ValueError(
+                    "EXPORT_TASK_FORCE_FAIL must be false in staging/production."
+                )
         return self
 
     # -------------------------------------------------------------------------

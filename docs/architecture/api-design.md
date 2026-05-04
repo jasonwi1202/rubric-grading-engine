@@ -1404,6 +1404,50 @@ Error `code` values are `SCREAMING_SNAKE_CASE` strings. The frontend should bran
 
 ---
 
+## Internal Test-Only Endpoints
+
+These endpoints are **only registered** when `EXPORT_TASK_FORCE_FAIL=true` in the backend environment. They are blocked in `staging` and `production` by the startup validator in `app.config`. All endpoints require a valid JWT Bearer token.
+
+### `POST /api/v1/internal/export-test-controls/arm-failure`
+
+Arms a per-assignment one-shot export failure flag in Redis (TTL: 5 minutes). The next export Celery task for that specific assignment will atomically consume the flag and fail with `FORCED_FAILURE`. Subsequent exports (including the retry) proceed normally because the key has been consumed. The flag is scoped to the `assignment_id` so parallel Playwright workers arming different assignments cannot consume each other's flags.
+
+The `assignment_id` is validated as a UUID and normalised to lowercase hyphenated form before the Redis key is written — this guarantees the key matches what `_run_export` looks for regardless of how the caller formats the UUID. Ownership of the assignment is verified against the authenticated teacher (returns `403` if the assignment belongs to another teacher, `404` if it does not exist).
+
+**Authentication:** Required — `Authorization: Bearer <token>`
+
+**Request body:**
+```json
+{"assignment_id": "<UUID>"}
+```
+
+**Response (200):**
+```json
+{"data": {"armed": true, "assignment_id": "<UUID>"}}
+```
+
+**Error responses:** `401` missing/expired token · `403` assignment owned by another teacher · `404` assignment not found · `422` malformed UUID
+
+### `DELETE /api/v1/internal/export-test-controls/arm-failure`
+
+Clears the per-assignment one-shot export failure flag without consuming it via a task. Used in E2E test teardown to prevent flag bleed between tests. Ownership of the assignment is verified before the key is cleared.
+
+**Authentication:** Required — `Authorization: Bearer <token>`
+
+**Request body:**
+```json
+{"assignment_id": "<UUID>"}
+```
+
+**Response (200):**
+```json
+{"data": {"armed": false, "assignment_id": "<UUID>"}}
+```
+
+> **Note:** These endpoints return `404` when `EXPORT_TASK_FORCE_FAIL=false` because the router is not registered. The Playwright spec (`mx8-04-export-failure-injection.spec.ts`) probes for `404` and skips the test suite gracefully when the flag is not enabled.
+
+---
+
 ## Versioning
 
 The API is versioned at the URL level (`/api/v1`). Breaking changes require a new version prefix. Non-breaking additions (new fields, new optional params) do not require a version bump. The frontend and backend are deployed together — tight versioning is not required at this stage, but the prefix is established now to avoid painful retrofitting later.

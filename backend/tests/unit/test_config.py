@@ -261,3 +261,59 @@ class TestProductionSecurityGuardrails:
             frontend_url="https://staging.example.com",
         )
         assert s.environment == "staging"
+
+    def test_production_rejects_llm_fake_mode(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="LLM_FAKE_MODE must be false",
+        ):
+            _make(
+                environment="production",
+                trust_proxy_headers=True,
+                llm_fake_mode=True,
+                frontend_url="https://app.example.com",
+            )
+
+    def test_staging_rejects_llm_fake_mode(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="LLM_FAKE_MODE must be false",
+        ):
+            _make(
+                environment="staging",
+                trust_proxy_headers=True,
+                llm_fake_mode=True,
+                frontend_url="https://staging.example.com",
+            )
+
+    def test_production_rejects_export_task_force_fail(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="EXPORT_TASK_FORCE_FAIL must be false",
+        ):
+            _make(
+                environment="production",
+                trust_proxy_headers=True,
+                export_task_force_fail=True,
+                frontend_url="https://app.example.com",
+            )
+
+    def test_staging_rejects_export_task_force_fail(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="EXPORT_TASK_FORCE_FAIL must be false",
+        ):
+            _make(
+                environment="staging",
+                trust_proxy_headers=True,
+                export_task_force_fail=True,
+                frontend_url="https://staging.example.com",
+            )
+
+    def test_development_allows_llm_fake_mode(self) -> None:
+        s = _make(llm_fake_mode=True)
+        assert s.llm_fake_mode is True
+
+    def test_development_allows_export_task_force_fail(self) -> None:
+        s = _make(export_task_force_fail=True)
+        assert s.export_task_force_fail is True

@@ -98,6 +98,55 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `REGRADE_WINDOW_DAYS` | No | `7` | Number of days after a grade is created during which regrade requests are accepted. Requests submitted after this window return 409. |
 | `REGRADE_MAX_PER_GRADE` | No | `1` | Maximum number of regrade requests allowed per grade. Additional submissions after this limit return 409. |
 
+### Test-Only Controls
+
+These variables are blocked in `staging` and `production` by a startup validator and must never be set in those environments.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LLM_FAKE_MODE` | No | `false` | Bypass real OpenAI calls; return deterministic synthetic outputs. Use in CI E2E and unit tests. Blocked in staging/production by the startup validator. |
+| `EXPORT_TASK_FORCE_FAIL` | No | `false` | **Test-only.** When `true`, enables the internal test-control router (`POST /api/v1/internal/export-test-controls/arm-failure`) for one-shot export failure injection (failure → retry → success flow). Tasks do **not** fail unconditionally — arm the endpoint to trigger a single failure; subsequent exports proceed normally. Cannot be `true` in `staging` or `production`. |
+| `ALLOW_UNVERIFIED_LOGIN_IN_TEST` | No | `false` | Skip email-verification check on login. CI E2E bypass when email delivery is intentionally bypassed. |
+
+#### Using `EXPORT_TASK_FORCE_FAIL` for E2E failure injection
+
+Setting `EXPORT_TASK_FORCE_FAIL=true` registers the test-only internal router
+and activates the per-assignment one-shot failure check in the export Celery
+task.  Tasks do **not** fail automatically — a failure must be explicitly armed
+via the endpoint:
+
+**One-shot failure (per-assignment):** The arm endpoint accepts an `assignment_id`
+and sets a Redis key scoped to that assignment (TTL: 5 minutes). The next export
+task for that assignment atomically consumes the key and fails with
+`FORCED_FAILURE`. Subsequent exports (including the retry) proceed normally.
+Use this to exercise the full **failure → retry → success** flow in a single
+test run. Because the key is scoped to the assignment, parallel Playwright
+workers arming different assignments cannot consume each other's flags.
+
+**Local dev:**
+```bash
+# Add to .env and restart backend + worker containers:
+EXPORT_TASK_FORCE_FAIL=true
+
+# Then run the failure injection E2E spec:
+cd frontend
+npx playwright test mx8-04-export-failure-injection
+```
+
+**CI (GitHub Actions / Docker Compose E2E):**
+
+Add `EXPORT_TASK_FORCE_FAIL=true` to your `.env.ci` or Docker Compose environment override for the
+shard that runs the failure injection spec. The arm-failure endpoint is not registered when the flag is
+not set, so other specs are unaffected.
+
+```bash
+# .env.ci override (or docker-compose.ci.yml environment section):
+EXPORT_TASK_FORCE_FAIL=true
+```
+
+The Playwright spec (`mx8-04-export-failure-injection.spec.ts`) probes the arm-failure endpoint
+before running and skips gracefully when `EXPORT_TASK_FORCE_FAIL` is not enabled.
+
 ### Skill Normalization
 
 | Variable | Required | Default | Description |
