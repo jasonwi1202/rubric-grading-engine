@@ -21,7 +21,7 @@
  * - InterventionsPanel: renders actioned_at timestamp for approved items
  * - InterventionsPanel: renders actioned_at timestamp for dismissed items
  * - InterventionsPanel: renders student profile link using student_id UUID
- * - InterventionsPanel: renders interventions page link on list items
+ * - InterventionsPanel: renders student profile link with correct href on each card
  *
  * Security:
  * - No student PII in fixtures — synthetic IDs and placeholder text only.
@@ -230,14 +230,14 @@ describe("InterventionsPanel — card rendering", () => {
     });
   });
 
-  it("renders interventions page link on list items", async () => {
+  it("renders student profile link with correct href on each card", async () => {
     mockListInterventions.mockResolvedValue(makeListResponse());
     render(<InterventionsPanel />, { wrapper });
     await waitFor(() => {
-      const studentLink = screen.getByRole("link", {
+      const profileLink = screen.getByRole("link", {
         name: /view student profile/i,
       });
-      expect(studentLink).toBeInTheDocument();
+      expect(profileLink).toHaveAttribute("href", "/dashboard/students/stu-001");
     });
   });
 });
@@ -311,6 +311,9 @@ describe("InterventionsPanel — approve action", () => {
 
     await waitFor(() => {
       expect(mockApproveIntervention).toHaveBeenCalledWith("int-001");
+      // onSuccess calls invalidateQueries(["interventions"]), which triggers a
+      // refetch — verify listInterventions is called a second time.
+      expect(mockListInterventions.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -360,6 +363,9 @@ describe("InterventionsPanel — dismiss action", () => {
 
     await waitFor(() => {
       expect(mockDismissIntervention).toHaveBeenCalledWith("int-001");
+      // onSuccess calls invalidateQueries(["interventions"]), which triggers a
+      // refetch — verify listInterventions is called a second time.
+      expect(mockListInterventions.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -480,10 +486,9 @@ describe("InterventionsPanel — status history", () => {
     );
     render(<InterventionsPanel initialStatus="approved" />, { wrapper });
     await waitFor(() => {
-      // "Approved" badge appears on the card — use getAllByText since it also
-      // appears in the filter <option>
-      const approvedEls = screen.getAllByText("Approved");
-      expect(approvedEls.length).toBeGreaterThanOrEqual(1);
+      // The status-history row renders "Approved: <formatted date>" — the colon
+      // distinguishes it from the status badge which shows "Approved" alone.
+      expect(screen.getByText(/Approved:.*2026/)).toBeInTheDocument();
     });
   });
 
@@ -498,10 +503,9 @@ describe("InterventionsPanel — status history", () => {
     );
     render(<InterventionsPanel initialStatus="dismissed" />, { wrapper });
     await waitFor(() => {
-      // "Dismissed" badge appears on the card — use getAllByText since it also
-      // appears in the filter <option>
-      const dismissedEls = screen.getAllByText("Dismissed");
-      expect(dismissedEls.length).toBeGreaterThanOrEqual(1);
+      // The status-history row renders "Dismissed: <formatted date>" — the colon
+      // distinguishes it from the status badge which shows "Dismissed" alone.
+      expect(screen.getByText(/Dismissed:.*2026/)).toBeInTheDocument();
     });
   });
 });
