@@ -99,7 +99,7 @@ export default function AiPage() {
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             AI that assists. Teachers who decide.
           </h1>
-          <p className="mt-6 text-xl text-gray-500">
+          <p className="mt-6 text-xl text-gray-600">
             Every grade the AI suggests is reviewed, overrideable, and only
             final when you lock it.
           </p>
@@ -118,7 +118,7 @@ export default function AiPage() {
           >
             How the AI grades
           </h2>
-          <p className="mt-4 text-gray-500">
+          <p className="mt-4 text-gray-600">
             Plain-language explanation of the grading pipeline — no jargon.
           </p>
 
@@ -152,7 +152,7 @@ export default function AiPage() {
                       {title}
                     </h3>
                   </div>
-                  <p className="mt-1 text-gray-500">{body}</p>
+                  <p className="mt-1 text-gray-600">{body}</p>
                 </div>
               </li>
             ))}
@@ -258,7 +258,7 @@ export default function AiPage() {
           >
             What happens to student essays
           </h2>
-          <p className="mt-4 text-gray-500">
+          <p className="mt-4 text-gray-600">
             We know this is the question that matters most to teachers and
             administrators. Here is a plain-language answer.
           </p>
@@ -281,7 +281,7 @@ export default function AiPage() {
             ))}
           </ul>
 
-          <p className="mt-8 text-sm text-gray-500">
+          <p className="mt-8 text-sm text-gray-600">
             See our current{" "}
             <Link
               href="/legal/ferpa"
@@ -331,7 +331,7 @@ export default function AiPage() {
             ))}
           </ul>
 
-          <p className="mt-6 text-sm text-gray-500">
+          <p className="mt-6 text-sm text-gray-600">
             We do not make specific claims about model accuracy that we cannot
             verify. Rubric-based AI grading is assistive; it is not infallible.
           </p>
@@ -410,7 +410,7 @@ export default function AiPage() {
           <h2 className="text-3xl font-bold text-gray-900">
             See how it works in practice
           </h2>
-          <p className="mt-4 text-lg text-gray-500">
+          <p className="mt-4 text-lg text-gray-600">
             Start a free trial and run your first grading session today.
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">

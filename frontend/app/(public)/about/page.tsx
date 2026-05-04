@@ -61,11 +61,11 @@ export default function AboutPage() {
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             Our mission
           </h1>
-          <p className="mt-6 text-xl text-gray-500">
+          <p className="mt-6 text-xl text-gray-600">
             {PRODUCT_NAME} exists because teachers spend too much time grading
             and too little time teaching.
           </p>
-          <p className="mt-4 text-lg text-gray-500">
+          <p className="mt-4 text-lg text-gray-600">
             We built a grading assistant that works the way teachers think —
             rubric-first, criterion-by-criterion, with every AI decision
             explainable and overridable. The teacher is always in the loop,
@@ -80,7 +80,7 @@ export default function AboutPage() {
           <h2 className="text-center text-3xl font-bold text-gray-900">
             What we stand for
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-lg text-gray-500">
+          <p className="mx-auto mt-4 max-w-2xl text-center text-lg text-gray-600">
             These principles are not aspirational. They are design constraints
             that govern every product decision we make.
           </p>
@@ -94,7 +94,7 @@ export default function AboutPage() {
                 <h3 className="mt-4 text-lg font-semibold text-gray-900">
                   {heading}
                 </h3>
-                <p className="mt-2 text-sm text-gray-500">{body}</p>
+                <p className="mt-2 text-sm text-gray-600">{body}</p>
               </div>
             ))}
           </div>
@@ -107,7 +107,7 @@ export default function AboutPage() {
           <h2 className="text-center text-3xl font-bold text-gray-900">
             Who built it
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-lg text-gray-500">
+          <p className="mx-auto mt-4 max-w-2xl text-center text-lg text-gray-600">
             {/* {TODO: insert team overview copy} */}
             We are educators and engineers who have lived the grading problem
             firsthand. Our team combines deep K-12 classroom experience with
@@ -128,7 +128,7 @@ export default function AboutPage() {
                   {name}
                 </p>
                 <p className="text-sm font-medium text-blue-600">{role}</p>
-                <p className="mt-2 text-sm text-gray-500">{bio}</p>
+                <p className="mt-2 text-sm text-gray-600">{bio}</p>
               </div>
             ))}
           </div>
@@ -139,7 +139,7 @@ export default function AboutPage() {
       <section className="bg-blue-50 px-4 py-16 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold text-gray-900">Get in touch</h2>
-          <p className="mt-4 text-lg text-gray-500">
+          <p className="mt-4 text-lg text-gray-600">
             Questions, partnership inquiries, press requests, or FERPA
             compliance questions — we read every email.
           </p>

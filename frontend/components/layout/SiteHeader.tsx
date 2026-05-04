@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
+import { Menu, X } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants";
 
 /** Primary navigation links shown in the site header. */
@@ -19,10 +23,12 @@ const NAV_LINKS = [
  *   from other nav landmarks on the same page.
  * - The "Sign in" and "Start free trial" links are standard <a> elements and are
  *   fully keyboard-reachable in document order.
- * - The mobile menu toggle is not included here — it will be added in a future
- *   milestone once the design is finalised.
+ * - The mobile menu toggle uses aria-expanded and aria-controls so screen-reader
+ *   users know the state of the disclosure.
  */
 export function SiteHeader() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -35,7 +41,7 @@ export function SiteHeader() {
           {PRODUCT_NAME}
         </Link>
 
-        {/* Primary navigation — hidden below md to avoid an empty landmark on small screens */}
+        {/* Primary navigation — hidden below md */}
         <nav aria-label="Main navigation" className="hidden md:block">
           <ul className="flex items-center gap-6" role="list">
             {NAV_LINKS.map(({ label, href }) => (
@@ -51,22 +57,77 @@ export function SiteHeader() {
           </ul>
         </nav>
 
-        {/* Auth actions */}
+        {/* Auth actions + mobile toggle */}
         <div className="flex items-center gap-3">
           <Link
             href="/login"
-            className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="hidden text-sm font-medium text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:inline-flex"
           >
             Sign in
           </Link>
           <Link
             href="/signup"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="hidden rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:inline-flex"
           >
             Start free trial
           </Link>
+
+          {/* Mobile menu toggle — visible below md only */}
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:hidden"
+            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-nav"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            {mobileMenuOpen ? (
+              <X className="h-6 w-6" aria-hidden="true" />
+            ) : (
+              <Menu className="h-6 w-6" aria-hidden="true" />
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Mobile navigation drawer */}
+      {mobileMenuOpen && (
+        <nav
+          id="mobile-nav"
+          aria-label="Mobile navigation"
+          className="border-t border-gray-200 bg-white md:hidden"
+        >
+          <ul className="space-y-1 px-4 py-3" role="list">
+            {NAV_LINKS.map(({ label, href }) => (
+              <li key={href}>
+                <Link
+                  href={href}
+                  className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="border-t border-gray-100 px-4 py-3">
+            <Link
+              href="/login"
+              className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/signup"
+              className="mt-2 block rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Start free trial
+            </Link>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

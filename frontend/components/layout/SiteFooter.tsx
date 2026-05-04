@@ -43,7 +43,7 @@ export function SiteFooter() {
 
           {/* Site nav */}
           <nav aria-label="Footer navigation">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-600">
               Navigate
             </h2>
             <ul className="mt-4 space-y-2" role="list">
@@ -62,7 +62,7 @@ export function SiteFooter() {
 
           {/* Legal nav */}
           <nav aria-label="Legal and compliance">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-600">
               Legal
             </h2>
             <ul className="mt-4 space-y-2" role="list">
@@ -82,7 +82,7 @@ export function SiteFooter() {
 
         {/* Bottom bar */}
         <div className="mt-8 border-t border-gray-200 pt-8">
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-gray-600">
             &copy; {year} {PRODUCT_NAME}. All rights reserved.
           </p>
         </div>
