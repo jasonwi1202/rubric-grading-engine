@@ -1410,24 +1410,34 @@ These endpoints are **only registered** when `EXPORT_TASK_FORCE_FAIL=true` in th
 
 ### `POST /api/v1/internal/export-test-controls/arm-failure`
 
-Arms a one-shot export failure flag in Redis (TTL: 5 minutes). The next export Celery task to run will atomically consume the flag and fail with `FORCED_FAILURE`. Subsequent exports proceed normally. Used by E2E tests to exercise the failure → retry → success flow.
+Arms a per-assignment one-shot export failure flag in Redis (TTL: 5 minutes). The next export Celery task for that specific assignment will atomically consume the flag and fail with `FORCED_FAILURE`. Subsequent exports (including the retry) proceed normally because the key has been consumed. The flag is scoped to the `assignment_id` so parallel Playwright workers arming different assignments cannot consume each other's flags.
 
 **Authentication:** Required — `Authorization: Bearer <token>`
 
+**Request body:**
+```json
+{"assignment_id": "<UUID>"}
+```
+
 **Response (200):**
 ```json
-{"data": {"armed": true}}
+{"data": {"armed": true, "assignment_id": "<UUID>"}}
 ```
 
 ### `DELETE /api/v1/internal/export-test-controls/arm-failure`
 
-Clears the one-shot export failure flag without consuming it via a task. Used in E2E test teardown to prevent flag bleed between tests.
+Clears the per-assignment one-shot export failure flag without consuming it via a task. Used in E2E test teardown to prevent flag bleed between tests.
 
 **Authentication:** Required — `Authorization: Bearer <token>`
 
+**Request body:**
+```json
+{"assignment_id": "<UUID>"}
+```
+
 **Response (200):**
 ```json
-{"data": {"armed": false}}
+{"data": {"armed": false, "assignment_id": "<UUID>"}}
 ```
 
 > **Note:** These endpoints return `404` when `EXPORT_TASK_FORCE_FAIL=false` because the router is not registered. The Playwright spec (`mx8-04-export-failure-injection.spec.ts`) probes for `404` and skips the test suite gracefully when the flag is not enabled.

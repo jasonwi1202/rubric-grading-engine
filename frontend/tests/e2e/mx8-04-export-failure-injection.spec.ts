@@ -37,7 +37,7 @@ import { seedLockedGrades } from "./helpers";
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:8000";
 
 /** Call the test-only arm-failure endpoint.  Returns true on success. */
-async function armExportFailure(token: string): Promise<boolean> {
+async function armExportFailure(token: string, assignmentId: string): Promise<boolean> {
   const res = await fetch(
     `${API_BASE}/api/v1/internal/export-test-controls/arm-failure`,
     {
@@ -46,18 +46,23 @@ async function armExportFailure(token: string): Promise<boolean> {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({ assignment_id: assignmentId }),
     },
   );
   return res.ok;
 }
 
 /** Call the test-only disarm endpoint (teardown safety). */
-async function disarmExportFailure(token: string): Promise<void> {
+async function disarmExportFailure(token: string, assignmentId: string): Promise<void> {
   await fetch(
     `${API_BASE}/api/v1/internal/export-test-controls/arm-failure`,
     {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ assignment_id: assignmentId }),
     },
   ).catch(() => {
     // Ignore errors during teardown — the endpoint may already be unavailable.
@@ -148,7 +153,7 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     // Safety: clear any lingering armed failure flag so it does not bleed into
     // other test specs.
     if (state.injectionAvailable) {
-      await disarmExportFailure(state.token);
+      await disarmExportFailure(state.token, state.assignmentId);
     }
     await state.context?.close();
   });
@@ -162,9 +167,9 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     );
 
     // Arm and immediately disarm to verify the endpoint round-trips correctly.
-    const armed = await armExportFailure(state.token);
+    const armed = await armExportFailure(state.token, state.assignmentId);
     expect(armed).toBe(true);
-    await disarmExportFailure(state.token);
+    await disarmExportFailure(state.token, state.assignmentId);
   });
 
   // ── Test 2: Forced failure produces failure UI ────────────────────────────
@@ -184,7 +189,7 @@ test.describe("Journey 4 — Export failure injection (M8-04)", () => {
     await expect(exportButton).toBeVisible({ timeout: 15_000 });
 
     // Arm the one-shot failure flag.
-    const armed = await armExportFailure(state.token);
+    const armed = await armExportFailure(state.token, state.assignmentId);
     expect(armed).toBe(true);
 
     // Open the export menu.

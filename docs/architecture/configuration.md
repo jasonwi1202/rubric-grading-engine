@@ -111,16 +111,17 @@ These variables are blocked in `staging` and `production` by a startup validator
 #### Using `EXPORT_TASK_FORCE_FAIL` for E2E failure injection
 
 Setting `EXPORT_TASK_FORCE_FAIL=true` registers the test-only internal router
-and activates the one-shot failure check in the export Celery task.  Tasks do
-**not** fail automatically — a failure must be explicitly armed via the endpoint:
+and activates the per-assignment one-shot failure check in the export Celery
+task.  Tasks do **not** fail automatically — a failure must be explicitly armed
+via the endpoint:
 
-**One-shot failure** (arm-failure endpoint): arms a single-use Redis flag that is atomically consumed
-by the next export task, which then fails. Subsequent exports proceed normally.
-Use this to exercise the full **failure → retry → success** flow in a single test run.
-
-> **Note:** The one-shot key is a single global Redis key. Ensure no other export
-> tasks are running in parallel while the key is armed, as the first task to run
-> will consume the key regardless of which test armed it.
+**One-shot failure (per-assignment):** The arm endpoint accepts an `assignment_id`
+and sets a Redis key scoped to that assignment (TTL: 5 minutes). The next export
+task for that assignment atomically consumes the key and fails with
+`FORCED_FAILURE`. Subsequent exports (including the retry) proceed normally.
+Use this to exercise the full **failure → retry → success** flow in a single
+test run. Because the key is scoped to the assignment, parallel Playwright
+workers arming different assignments cannot consume each other's flags.
 
 **Local dev:**
 ```bash

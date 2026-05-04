@@ -132,12 +132,12 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Test-only controls
     # -------------------------------------------------------------------------
-    # When True, every export task fails immediately with error code
-    # FORCED_FAILURE.  Must be False in staging and production (enforced by
-    # production_security_guardrails).  Used together with the
-    # POST /api/v1/internal/export-test-controls/arm-failure endpoint (only
-    # registered when this flag is True) to enable deterministic failure
-    # injection for E2E tests.
+    # When True, enables the test-only internal router
+    # (POST /api/v1/internal/export-test-controls/arm-failure) which sets a
+    # one-shot Redis key.  The export task only fails when that key is present —
+    # the flag alone does NOT make every export fail.  Must be False in staging
+    # and production (enforced by production_security_guardrails).  Used in E2E
+    # tests to exercise the failure → retry → success flow deterministically.
     export_task_force_fail: bool = False
 
     # -------------------------------------------------------------------------

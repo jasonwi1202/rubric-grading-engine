@@ -45,11 +45,17 @@ _EXPORT_KEY_PREFIX = "export:"
 # Redis TTL for export records: 1 hour.
 _EXPORT_TTL_SECONDS = 3600
 
-# One-shot force-fail flag key in Redis.  Set by the test-only arm endpoint
+# One-shot force-fail key prefix in Redis.  Set by the test-only arm endpoint
 # (POST /api/v1/internal/export-test-controls/arm-failure) and atomically
-# consumed by the export task.  Only meaningful when EXPORT_TASK_FORCE_FAIL is
-# enabled (i.e., in non-production environments).
-_EXPORT_FORCE_FAIL_ONCE_KEY = "export:force_fail_once"
+# consumed by the export task for the specified assignment.  Keyed per
+# assignment_id so parallel E2E test workers cannot consume each other's flags.
+# Only meaningful when EXPORT_TASK_FORCE_FAIL is enabled (non-production only).
+_EXPORT_FORCE_FAIL_ONCE_KEY_PREFIX = "export:force_fail_once:"
+
+
+def _export_force_fail_once_key(assignment_id: str) -> str:
+    """Return the per-assignment one-shot force-fail Redis key."""
+    return f"{_EXPORT_FORCE_FAIL_ONCE_KEY_PREFIX}{assignment_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -192,19 +198,18 @@ async def _run_export(
         # staging/production by the startup validator in app.config).
         #
         # The one-shot Redis key (set by
-        # POST /api/v1/internal/export-test-controls/arm-failure) is atomically
-        # consumed by exactly one export task.  After that task fails, the key is
-        # gone and all subsequent exports proceed normally.  This enables the full
-        # failure → retry → success E2E flow in a single test run.
-        #
-        # Note: the one-shot key is a single global Redis key.  Running parallel
-        # export tasks while the key is armed can cause the wrong task to consume
-        # it.  E2E specs must ensure no other exports are in flight while the key
-        # is armed.
+        # POST /api/v1/internal/export-test-controls/arm-failure) is scoped to
+        # the target assignment_id so parallel Playwright workers arming different
+        # assignments cannot consume each other's flags.  The key is atomically
+        # consumed by exactly one export task for that assignment.  After the task
+        # fails, the key is gone and all subsequent exports proceed normally.
+        # This enables the full failure → retry → success E2E flow in a single
+        # test run.
         # ---------------------------------------------------------------------------
         if settings.export_task_force_fail:
-            # Atomically consume the one-shot key (returns number of keys deleted).
-            _consumed = await redis.delete(_EXPORT_FORCE_FAIL_ONCE_KEY)
+            # Atomically consume the per-assignment one-shot key.
+            _once_key = _export_force_fail_once_key(assignment_id)
+            _consumed = await redis.delete(_once_key)
             if bool(_consumed):
                 logger.warning(
                     "Export task: deterministic failure injection active (one-shot key consumed)",

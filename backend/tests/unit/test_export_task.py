@@ -525,8 +525,9 @@ class TestRunExport:
     @pytest.mark.asyncio
     async def test_force_fail_via_one_shot_redis_key(self) -> None:
         """When EXPORT_TASK_FORCE_FAIL=true and the one-shot Redis key is present,
-        _run_export sets FORCED_FAILURE and returns early."""
-        from app.tasks.export import _run_export
+        _run_export sets FORCED_FAILURE and returns early.
+        The delete call should use the per-assignment key."""
+        from app.tasks.export import _export_force_fail_once_key, _run_export
 
         assignment_id = str(uuid.uuid4())
         teacher_id = str(uuid.uuid4())
@@ -545,6 +546,10 @@ class TestRunExport:
             mock_settings.export_task_force_fail = True
             mock_settings.redis_url = "redis://localhost:6379/0"
             await _run_export(assignment_id, teacher_id, task_id)
+
+        # Verify delete was called with the per-assignment scoped key.
+        expected_key = _export_force_fail_once_key(assignment_id)
+        redis_mock.delete.assert_awaited_once_with(expected_key)
 
         hset_calls = redis_mock.hset.call_args_list
         failed_call = next(
