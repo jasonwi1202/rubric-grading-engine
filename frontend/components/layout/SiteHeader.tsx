@@ -18,10 +18,13 @@ const NAV_LINKS = [
  * Auth / CTA links.  Defined once and shared between the desktop header and
  * the mobile drawer so labels, hrefs, and future tracking params stay in sync.
  */
-const AUTH_LINKS = [
-  { label: "Sign in", href: "/login", variant: "text" as const },
-  { label: "Start free trial", href: "/signup", variant: "primary" as const },
-] as const;
+type LinkVariant = "text" | "primary";
+
+const AUTH_LINKS: Array<{ label: string; href: string; variant: LinkVariant }> =
+  [
+    { label: "Sign in", href: "/login", variant: "text" },
+    { label: "Start free trial", href: "/signup", variant: "primary" },
+  ];
 
 /**
  * Public site header — rendered on all marketing pages.

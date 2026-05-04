@@ -132,20 +132,22 @@ test.describe("Public site — mobile navigation", () => {
   }) => {
     await page.goto("/");
 
-    const toggle = page.getByRole("button", { name: /open menu|close menu/i });
+    // Button should start with "Open menu" label, confirming the drawer is closed.
+    const toggle = page.getByRole("button", { name: /open menu/i });
     await expect(toggle).toBeVisible();
 
     // Drawer should not be present yet.
-    await expect(page.locator("#mobile-nav")).not.toBeVisible();
+    const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
+    await expect(drawer).not.toBeVisible();
 
     // Open the drawer.
     await toggle.click();
-    await expect(page.locator("#mobile-nav")).toBeVisible();
+    await expect(drawer).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     // Close the drawer by clicking the toggle again.
     await toggle.click();
-    await expect(page.locator("#mobile-nav")).not.toBeVisible();
+    await expect(drawer).not.toBeVisible();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
@@ -155,7 +157,7 @@ test.describe("Public site — mobile navigation", () => {
     const toggle = page.getByRole("button", { name: /open menu/i });
     await toggle.click();
 
-    const drawer = page.locator("#mobile-nav");
+    const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
     await expect(drawer).toBeVisible();
 
     for (const [label, href] of [
@@ -179,7 +181,7 @@ test.describe("Public site — mobile navigation", () => {
     const toggle = page.getByRole("button", { name: /open menu/i });
     await toggle.click();
 
-    const drawer = page.locator("#mobile-nav");
+    const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
     await expect(drawer).toBeVisible();
 
     const signIn = drawer.getByRole("link", { name: /sign in/i });
@@ -196,10 +198,14 @@ test.describe("Public site — mobile navigation", () => {
 
     const toggle = page.getByRole("button", { name: /open menu/i });
     await toggle.click();
-    await expect(page.locator("#mobile-nav")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).toBeVisible();
 
     await page.keyboard.press("Escape");
-    await expect(page.locator("#mobile-nav")).not.toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).not.toBeVisible();
   });
 });
 
