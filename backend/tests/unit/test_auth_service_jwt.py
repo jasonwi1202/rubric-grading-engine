@@ -84,13 +84,15 @@ class TestCreateDecodeAccessToken:
         assert payload["email"] == email
         assert payload["type"] == "access"
 
-    def test_default_ttl_is_fifteen_minutes(self) -> None:
+    def test_default_ttl_is_fifteen_minutes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """create_access_token uses the 15-min default when short_lived_token_ttl_seconds is None."""
         import jwt as pyjwt
 
         from app.config import settings
 
-        assert settings.short_lived_token_ttl_seconds is None
+        # Pin the setting to None so the test is hermetic regardless of what
+        # the developer has set in their local .env file.
+        monkeypatch.setattr(settings, "short_lived_token_ttl_seconds", None)
         token = create_access_token(uuid.uuid4(), "teacher@school.edu")
         payload = pyjwt.decode(
             token,

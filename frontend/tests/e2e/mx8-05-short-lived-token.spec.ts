@@ -72,24 +72,32 @@ function decodeJwtPayload(token: string): { exp: number; iat: number } {
   return JSON.parse(json) as { exp: number; iat: number };
 }
 
+type ProbeResult =
+  | { status: "active"; ttlSeconds: number }
+  | { status: "inactive"; ttlSeconds: number }
+  | { status: "failed"; error: string };
+
 /**
  * Probe whether the backend is running in short-lived token mode.
  *
- * Returns `{ active: true, ttlSeconds }` when `exp − iat` of a freshly
- * issued JWT is ≤ SHORT_TTL_THRESHOLD_SECONDS, or `{ active: false, ttlSeconds: 0 }`
- * when the standard 15-min TTL is detected or the login call fails.
+ * Returns `{ status: "active", ttlSeconds }` when `exp − iat` ≤ SHORT_TTL_THRESHOLD_SECONDS.
+ * Returns `{ status: "inactive", ttlSeconds }` when the standard 15-min TTL is detected.
+ * Returns `{ status: "failed", error }` when the login call or JWT decode fails (e.g. backend
+ * unreachable, auth regression) — callers must surface this as a test failure, not a skip.
  */
 async function probeShortLivedMode(
   email: string,
   password: string,
-): Promise<{ active: boolean; ttlSeconds: number }> {
+): Promise<ProbeResult> {
   try {
     const { accessToken } = await loginApiWithCookie(email, password);
     const { exp, iat } = decodeJwtPayload(accessToken);
     const ttlSeconds = exp - iat;
-    return { active: ttlSeconds <= SHORT_TTL_THRESHOLD_SECONDS, ttlSeconds };
-  } catch {
-    return { active: false, ttlSeconds: 0 };
+    return ttlSeconds <= SHORT_TTL_THRESHOLD_SECONDS
+      ? { status: "active", ttlSeconds }
+      : { status: "inactive", ttlSeconds };
+  } catch (err) {
+    return { status: "failed", error: String(err) };
   }
 }
 
@@ -106,6 +114,8 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
     password: string;
     modeActive: boolean;
     ttlSeconds: number;
+    probeFailed: boolean;
+    probeError: string;
     context: BrowserContext | null;
     page: Page | null;
   } = {
@@ -113,6 +123,8 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
     password: "",
     modeActive: false,
     ttlSeconds: 0,
+    probeFailed: false,
+    probeError: "",
     context: null,
     page: null,
   };
@@ -127,8 +139,13 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
 
     // Probe whether the backend is running in short-lived mode.
     const probe = await probeShortLivedMode(state.email, state.password);
-    state.modeActive = probe.active;
-    state.ttlSeconds = probe.ttlSeconds;
+    if (probe.status === "failed") {
+      state.probeFailed = true;
+      state.probeError = probe.error;
+    } else {
+      state.modeActive = probe.status === "active";
+      state.ttlSeconds = probe.ttlSeconds;
+    }
 
     if (!state.modeActive) {
       // Short-lived mode is not active; no browser setup needed.
@@ -149,9 +166,18 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
   // ── Helper: per-test skip guard ──────────────────────────────────────────
 
   function skipUnlessActive() {
+    if (state.probeFailed) {
+      test.skip(
+        true,
+        `Probe failed — login or JWT decode error: ${state.probeError}. ` +
+          "Check that the backend is reachable and auth endpoints are functional.",
+      );
+      return;
+    }
     test.skip(
       !state.modeActive,
-      `SHORT_LIVED_TOKEN_TTL_SECONDS is not active (detected TTL: ${state.ttlSeconds}s > ${SHORT_TTL_THRESHOLD_SECONDS}s). ` +
+      `SHORT_LIVED_TOKEN_TTL_SECONDS is not active ` +
+        `(detected TTL: ${state.ttlSeconds}s > ${SHORT_TTL_THRESHOLD_SECONDS}s). ` +
         "Set SHORT_LIVED_TOKEN_TTL_SECONDS=3 in the backend environment to enable this spec.",
     );
   }
@@ -159,6 +185,14 @@ test.describe("M8-05 — Short-lived token mode: token expiry & silent refresh",
   // ── Test 1: probe is detectable ──────────────────────────────────────────
 
   test("short-lived mode: backend issues tokens with a sub-30-second TTL", async () => {
+    // If the probe itself failed (backend unreachable, auth broken), fail the
+    // test explicitly so the failure is not silently swallowed as a skip.
+    if (state.probeFailed) {
+      throw new Error(
+        `Probe failed — cannot determine if short-lived mode is active. ` +
+          `This usually indicates a backend or auth regression: ${state.probeError}`,
+      );
+    }
     skipUnlessActive();
     // If we reach here without skipping, the probe already confirmed the TTL
     // is short.  Assert it for clarity.
