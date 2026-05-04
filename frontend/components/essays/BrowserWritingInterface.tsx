@@ -120,7 +120,7 @@ export function applyInlineFormat(
       const fragment = range.extractContents();
       wrapper.appendChild(fragment);
       range.insertNode(wrapper);
-      range.selectNode(wrapper);
+      range.selectNodeContents(wrapper);
     }
   }
 
