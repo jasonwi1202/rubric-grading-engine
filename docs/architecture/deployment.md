@@ -35,6 +35,7 @@ One Railway **project** contains all services for a given environment. Create tw
 |---|---|---|
 | `backend` | GitHub repo, root dir `backend/` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
 | `worker` | GitHub repo, root dir `backend/` | `celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4` |
+| `beat` | GitHub repo, root dir `backend/` | `celery -A app.tasks.celery_app beat --loglevel=info` |
 | `frontend` | GitHub repo, root dir `frontend/` | `npm start` (runs `next start`) |
 | `postgres` | Railway PostgreSQL **pgvector** template | Managed |
 | `redis` | Railway Redis template | Managed |
@@ -255,12 +256,27 @@ Emitted when the queue monitor cannot reach Redis.
 | `GET /api/v1/health` | **Liveness** — is the process alive? | Railway restarts the container when this returns 503 |
 | `GET /api/v1/readiness` | **Readiness** — is the service ready for traffic? | Railway holds traffic on the old instance until this returns 200 during rolling deploys |
 
-Both probes return the same JSON envelope shape regardless of HTTP status code.  Healthy response:
+Both probes return the same JSON envelope shape regardless of HTTP status code.
+
+Liveness probe (`/api/v1/health`) healthy response:
 
 ```json
 {
   "data": {
     "status": "ok",
+    "service": "rubric-grading-engine-api",
+    "version": "0.1.0",
+    "dependencies": { "database": "ok", "redis": "ok" }
+  }
+}
+```
+
+Readiness probe (`/api/v1/readiness`) healthy response:
+
+```json
+{
+  "data": {
+    "status": "ready",
     "service": "rubric-grading-engine-api",
     "version": "0.1.0",
     "dependencies": { "database": "ok", "redis": "ok" }
@@ -274,9 +290,10 @@ Configure Railway's health-check settings per service:
 
 | Service | Health check path | Expected status |
 |---|---|---|
-| `backend` | `/api/v1/health` | 200 |
+| `backend` | `/api/v1/readiness` | 200 — gates both liveness restarts and rolling-deploy traffic cutover |
 | `frontend` | `/` | 200 (Next.js default) |
 | `worker` | n/a — Railway monitors CPU and memory for Celery workers |
+| `beat` | n/a — no HTTP port; Railway monitors CPU and memory |
 
 ---
 
@@ -288,7 +305,7 @@ Ship logs to a log aggregator and create the following alert rules.  Adjust thre
 |---|---|---|---|---|
 | **API error rate high** | `event:"http.request" status_code:>=500` | > 5% of requests over 5 min | 🔴 Critical | Page on-call; check worker and DB logs |
 | **API p95 latency high** | `event:"http.request" latency_ms:>2000` | > 10% of requests over 5 min | 🟡 Warning | Investigate DB and LLM call duration |
-| **API availability down** | `event:"http.request"` | Zero events for > 2 min | 🔴 Critical | Check Railway health-check; may be an outage |
+| **API availability down** | HTTP 503 on `/api/v1/readiness` (external uptime monitor) | Any occurrence | 🔴 Critical | Check Railway health-check; may be an outage |
 | **Celery queue depth high** | `event:"celery.queue_depth" queue:"celery" depth:>50` | Any single sample | 🟡 Warning | Check worker process; may need scaling |
 | **Celery queue depth critical** | `event:"celery.queue_depth" queue:"celery" depth:>200` | Any single sample | 🔴 Critical | Workers likely down; escalate immediately |
 | **Queue monitor failure** | `event:"celery.queue_monitor_error"` | Any occurrence | 🟡 Warning | Redis may be unavailable; check health probe |

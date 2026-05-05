@@ -35,7 +35,7 @@ from app.middleware import RequestMetricsMiddleware, _METRICS_EXCLUDED_PATHS
 
 @pytest.fixture()
 def client() -> TestClient:
-    """Application client with both deps mocked so health probes return 200."""
+    """Application client wrapping the real app (no dependency mocks at fixture level)."""
     return TestClient(create_app(), raise_server_exceptions=False)
 
 

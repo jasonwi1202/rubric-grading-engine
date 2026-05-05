@@ -21,13 +21,25 @@ name = "backend"
 
 [services.deploy]
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-healthcheckPath = "/api/v1/health"
+healthcheckPath = "/api/v1/readiness"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
 # Run Alembic migrations before each deploy — zero-downtime schema changes
 preDeployCommand = "alembic upgrade head"
+
+# ---------------------------------------------------------------------------
+# Beat (Celery Beat scheduler — same image as worker)
+# ---------------------------------------------------------------------------
+[[services]]
+name = "beat"
+
+[services.deploy]
+startCommand = "celery -A app.tasks.celery_app beat --loglevel=info"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+# Beat has no HTTP port — no healthcheck path
 
 # ---------------------------------------------------------------------------
 # Worker (Celery async task processor — same image as backend)

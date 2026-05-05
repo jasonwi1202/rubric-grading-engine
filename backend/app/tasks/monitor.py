@@ -45,10 +45,11 @@ _MONITORED_QUEUES: tuple[str, ...] = (_DEFAULT_QUEUE,)
 def report_queue_metrics() -> dict[str, int]:
     """Emit ``celery.queue_depth`` structured log events for every monitored queue.
 
-    Reads the queue length directly from Redis using the Celery broker
-    connection so no separate Redis client is needed.  Each queue depth is
-    emitted as an individual log event rather than a single aggregated event
-    so that log-aggregator alert rules can filter on a single field.
+    Reads the queue length directly from the Celery broker (Redis) by
+    opening a short-lived Redis connection to ``settings.celery_broker_url``.
+    Each queue depth is emitted as an individual log event rather than a
+    single aggregated event so that log-aggregator alert rules can filter on
+    a single field.
 
     Returns a mapping of ``{queue_name: depth}`` for testing convenience.
 
@@ -74,7 +75,10 @@ def _sample_queues() -> dict[str, int]:
 
     Implementation note: Celery stores tasks in Redis as list keys with the
     same name as the queue.  ``LLEN <queue>`` is an O(1) operation and does
-    not affect broker throughput.
+    not affect broker throughput.  The connection uses ``settings.celery_broker_url``
+    so it always reads from the same Redis instance as the Celery broker,
+    even when ``CELERY_BROKER_URL`` is set to a Redis endpoint that differs
+    from ``REDIS_URL``.
     """
     from redis import Redis  # noqa: PLC0415 — imported here to keep module-level import graph lean
 
@@ -82,7 +86,7 @@ def _sample_queues() -> dict[str, int]:
 
     depths: dict[str, int] = {}
 
-    with Redis.from_url(settings.redis_url, decode_responses=False, socket_timeout=2) as r:
+    with Redis.from_url(settings.celery_broker_url, decode_responses=False, socket_timeout=2) as r:
         for queue in _MONITORED_QUEUES:
             depth = int(r.llen(queue))
             depths[queue] = depth
