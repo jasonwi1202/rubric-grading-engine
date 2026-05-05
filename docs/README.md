@@ -122,6 +122,14 @@ One document per feature. Each covers purpose, user story, key capabilities, acc
 
 ---
 
+## Operations
+
+| Document | Description |
+|---|---|
+| [runbook.md](runbook.md) | On-call runbook: severity classification, escalation path, scenario runbooks for all common production failures, FERPA breach response, comms templates, post-mortem format, and a tabletop exercise walkthrough. |
+
+---
+
 ## Release Notes
 
 | Document | Description |
