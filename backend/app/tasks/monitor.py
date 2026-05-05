@@ -11,9 +11,13 @@ or the grading load has exceeded current worker capacity.
 
 Queues monitored
 ----------------
-- ``celery``   — Default queue; used for grading tasks, skill-profile updates,
-                 auto-grouping, worklist generation, and all other tasks unless
-                 they specify a dedicated queue.
+- ``celery``     — Default queue; used for grading tasks, skill-profile updates,
+                   auto-grouping, worklist generation, and all other tasks unless
+                   they specify a dedicated queue.
+- ``monitoring`` — Dedicated queue for the monitor task itself.  Routing the
+                   monitor here keeps it out of the ``celery`` queue so that
+                   queue-depth samples are still delivered even when ``celery``
+                   is deeply backed up.
 
 The event is always emitted, even when depth is zero, so that log-based alert
 rules can distinguish "no data" from "zero depth".
@@ -38,7 +42,7 @@ _DEFAULT_QUEUE = "celery"
 
 # All queues to sample.  Extend this list when dedicated queues are introduced
 # (e.g. a separate high-priority grading queue or an export queue).
-_MONITORED_QUEUES: tuple[str, ...] = (_DEFAULT_QUEUE,)
+_MONITORED_QUEUES: tuple[str, ...] = (_DEFAULT_QUEUE, "monitoring")
 
 
 @celery.task(name="tasks.monitor.report_queue_metrics")  # type: ignore[untyped-decorator]  # celery stubs are incomplete

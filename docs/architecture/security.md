@@ -211,7 +211,7 @@ Already covered in sections 1–4 and 7 above. Additional requirements:
 
 ### Availability (A1)
 
-- **Health checks** — `GET /api/v1/health` on backend; Railway monitors and restarts failed containers
+- **Health checks** — `GET /api/v1/readiness` on backend (Railway `healthcheckPath`); Railway restarts the container and gates rolling-deploy cutover on this probe. `GET /api/v1/health` (liveness) is also available for manual diagnostics.
 - **Uptime target** — 99.5% monthly (appropriate for an educational tool; not 24/7 critical infrastructure)
 - **Celery queue monitoring** — alert if grading queue depth > 50 for > 5 minutes (indicates worker failure)
 - **Database backups** — Railway volume backups enabled; daily automated backup retained for 30 days

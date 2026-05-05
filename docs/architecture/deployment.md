@@ -57,6 +57,8 @@ Services within the same Railway project communicate over the private network us
 | Beat → Redis | `REDIS_URL` | Same as backend (broker URL defaults to `REDIS_URL`) |
 | Frontend → Backend | `NEXT_PUBLIC_API_URL` | Use the backend's **public** Railway domain (frontend is browser-side) |
 
+> **Separate broker Redis:** If you point Celery at a dedicated Redis instance (higher memory, separate RDB), set `CELERY_BROKER_URL` explicitly on the `worker` and `beat` services. The backend also reads this when checking broker health on `GET /api/v1/readiness` and when the queue monitor task samples queue depths. Leave `REDIS_URL` pointing at the cache/session Redis on all services.
+
 ---
 
 ## Monorepo Configuration
@@ -388,13 +390,13 @@ message:"Health check: Redis unavailable"
 | API returning 503 | `event:"http.request" status_code:503` | Health probe logs for DB/Redis failure |
 | Grading queued but never completes | `event:"celery.queue_depth" depth:>0` | Worker process logs for task errors |
 | LLM errors only | `error_code:"LLM_UNAVAILABLE"` | OpenAI status page; check `OPENAI_API_KEY` expiry |
-| All services degraded | Health probe HTTP 503 on `/api/v1/health` | Railway dashboard CPU/memory; consider rollback |
+| All services degraded | Health probe HTTP 503 on `/api/v1/readiness` | Railway dashboard CPU/memory; consider rollback |
 
 ---
 
 ### Logging
 
-- All services emit structured JSON logs
+- All services emit structured JSON logs. The `backend` and `worker` services configure structured logging via `create_app()` and the `worker_init` Celery signal respectively. The `beat` service configures structured logging via the `beat_init` Celery signal in `celery_app.py`.
 - Railway streams logs in real time in the dashboard; retained for 7 days on the Pro plan
 - For longer retention, forward logs to Logtail or similar via Railway's log drain feature
 - **No student PII in any log line** — reference entity IDs only (`student_id`, `essay_id`, `grade_id`)

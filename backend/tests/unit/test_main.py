@@ -104,6 +104,7 @@ class TestReadinessEndpoint:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/readiness")
         assert resp.status_code == 200, f"Got {resp.status_code}"
@@ -112,6 +113,7 @@ class TestReadinessEndpoint:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=False)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/readiness")
         assert resp.status_code == 503, f"Got {resp.status_code}"
@@ -120,23 +122,39 @@ class TestReadinessEndpoint:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/readiness")
         assert resp.status_code == 503, f"Got {resp.status_code}"
+
+    def test_readiness_returns_503_when_broker_down(self, client: TestClient) -> None:
+        """Broker Redis outage makes service not_ready even if cache Redis is fine."""
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=False)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        assert resp.status_code == 503, f"Got {resp.status_code}"
+        assert resp.json()["data"]["status"] == "not_ready"
+        assert resp.json()["data"]["dependencies"]["broker"] == "unavailable"
 
     def test_readiness_body_status_ready_when_healthy(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/readiness")
         body = resp.json()["data"]
         assert body["status"] == "ready", f"Got {body}"
+        assert body["dependencies"]["broker"] == "ok", f"Got {body}"
 
     def test_readiness_body_status_not_ready_when_degraded(self, client: TestClient) -> None:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=False)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=False)),
         ):
             resp = client.get("/api/v1/readiness")
         body = resp.json()["data"]
@@ -146,6 +164,7 @@ class TestReadinessEndpoint:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/readiness")
         body = resp.json()["data"]
@@ -158,6 +177,7 @@ class TestReadinessEndpoint:
         with (
             patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
             patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
         ):
             resp = client.get("/api/v1/readiness")
         assert resp.status_code != 401, "Readiness probe must not require auth"

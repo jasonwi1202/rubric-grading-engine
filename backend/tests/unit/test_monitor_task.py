@@ -21,7 +21,6 @@ import pytest
 
 from app.tasks.monitor import _MONITORED_QUEUES, _sample_queues, report_queue_metrics
 
-
 # ---------------------------------------------------------------------------
 # _MONITORED_QUEUES configuration
 # ---------------------------------------------------------------------------
@@ -34,6 +33,12 @@ class TestMonitoredQueuesConfig:
     def test_default_celery_queue_is_monitored(self) -> None:
         assert "celery" in _MONITORED_QUEUES, (
             "'celery' (the Celery default queue) must always be monitored"
+        )
+
+    def test_monitoring_queue_is_monitored(self) -> None:
+        """The dedicated monitor queue must itself be monitored."""
+        assert "monitoring" in _MONITORED_QUEUES, (
+            "'monitoring' queue must be included so its own depth is visible"
         )
 
 
@@ -209,4 +214,26 @@ class TestReportQueueMetricsTask:
         entry = celery.conf.beat_schedule.get("report-queue-metrics-every-minute", {})
         assert entry.get("schedule") == 60.0, (
             f"Queue metrics should run every 60s, got {entry.get('schedule')!r}"
+        )
+
+    def test_beat_schedule_entry_has_expires(self) -> None:
+        """Beat entry must discard stale tasks that pile up during queue saturation."""
+        from app.tasks.celery_app import celery
+
+        entry = celery.conf.beat_schedule.get("report-queue-metrics-every-minute", {})
+        options = entry.get("options", {})
+        assert "expires" in options, "Beat entry must set 'expires' to discard stale samples"
+        assert options["expires"] < 60, (
+            f"Expires ({options['expires']}) must be less than the 60 s schedule interval"
+        )
+
+    def test_monitor_task_routes_to_monitoring_queue(self) -> None:
+        """Monitor task must be routed to a dedicated queue, not the default 'celery' queue."""
+        from app.tasks.celery_app import celery
+
+        routes = celery.conf.task_routes or {}
+        route = routes.get("tasks.monitor.report_queue_metrics", {})
+        assert route.get("queue") == "monitoring", (
+            "report_queue_metrics must route to 'monitoring' queue to avoid "
+            "blocking behind the queue it is measuring"
         )

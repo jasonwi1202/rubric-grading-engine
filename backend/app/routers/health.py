@@ -5,19 +5,19 @@ Exposes two unauthenticated probe endpoints:
 ``GET /api/v1/health`` — **Liveness probe**
     Returns ``"ok"`` when the process is running and can reach all critical
     dependencies (database and Redis).  Returns ``"degraded"`` with HTTP 503
-    when any dependency is unreachable.  Railway restarts the container when
-    this probe returns 503.
+    when any dependency is unreachable.  Available for manual diagnostics;
+    not the Railway-configured health-check path (see readiness probe below).
 
 ``GET /api/v1/readiness`` — **Readiness probe**
     Returns ``"ready"`` when the service is fully initialised and able to
     handle production traffic.  Returns ``"not_ready"`` with HTTP 503 when
-    a dependency is unavailable.  Railway uses this signal during rolling
-    deploys to decide when to shift traffic to the new instance — the old
-    instance continues serving traffic until the new one is ready.
+    a dependency is unavailable.  **This is the Railway ``healthcheckPath``**:
+    Railway restarts the container when this returns 503, and holds traffic
+    on the old instance during rolling deploys until the new one returns 200.
 
 Both endpoints share the same dependency checks (database ``SELECT 1`` and
-Redis ``PING``) and return the same JSON envelope shape so that callers can
-always parse the body regardless of HTTP status code.
+Redis ``PING`` + broker Redis ``PING``) and return the same JSON envelope
+shape so that callers can always parse the body regardless of HTTP status code.
 
 These endpoints intentionally require **no authentication** so that load
 balancers and Railway health-check probes can reach them without credentials.
@@ -94,6 +94,39 @@ async def _check_redis() -> bool:
         return False
 
 
+async def _check_broker() -> bool:
+    """Return ``True`` if the Celery broker Redis responds to PING.
+
+    Uses ``settings.celery_broker_url`` rather than ``settings.redis_url``
+    because the broker can point at a separate Redis instance.  When they are
+    the same URL this is effectively a second PING to the same host, which is
+    cheap and makes the readiness semantics unambiguous: the instance is only
+    ``ready`` when it can both read/write session state *and* enqueue tasks.
+    """
+    try:
+        from redis.asyncio import Redis  # noqa: PLC0415
+
+        from app.config import settings  # noqa: PLC0415
+
+        r = Redis.from_url(
+            settings.celery_broker_url,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            decode_responses=True,
+        )
+        try:
+            await r.ping()
+        finally:
+            await r.aclose()  # type: ignore[attr-defined]
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Health check: broker Redis unavailable",
+            extra={"error_type": type(exc).__name__},
+        )
+        return False
+
+
 @router.get("/health")
 async def health_check() -> JSONResponse:
     """Return service liveness and dependency health status.
@@ -145,13 +178,16 @@ async def health_check() -> JSONResponse:
 async def readiness_check() -> JSONResponse:
     """Return service readiness for traffic during Railway rolling deploys.
 
-    Railway uses this endpoint to decide when to shift production traffic from
-    the old container to the newly deployed one.  The new container must return
-    HTTP 200 before Railway routes any traffic to it.
+    Railway uses this endpoint (configured as ``healthcheckPath``) to decide
+    when to shift production traffic from the old container to the newly deployed
+    one, and to restart the container when a dependency becomes unavailable.
+    The new container must return HTTP 200 before Railway routes any traffic to it.
 
-    The check is identical to the liveness probe — database ``SELECT 1`` and
-    Redis ``PING`` — because both dependencies must be reachable before the
-    service can process any request.
+    Checks: database ``SELECT 1``, cache Redis ``PING`` (``REDIS_URL``), and
+    broker Redis ``PING`` (``CELERY_BROKER_URL``).  The broker check is separate
+    from the cache Redis check because they can point at different Redis instances.
+    A broker outage means grading/export tasks cannot be queued, so the instance
+    should not receive traffic even if the cache Redis is healthy.
 
     Response shape::
 
@@ -162,7 +198,8 @@ async def readiness_check() -> JSONResponse:
             "version": "0.1.0",
             "dependencies": {
               "database": "ok",
-              "redis": "ok"
+              "redis": "ok",
+              "broker": "ok"
             }
           }
         }
@@ -172,9 +209,12 @@ async def readiness_check() -> JSONResponse:
 
     No authentication is required.
     """
-    db_ok = await _check_database()
-    redis_ok = await _check_redis()
-    all_ok = db_ok and redis_ok
+    db_ok, redis_ok, broker_ok = await asyncio.gather(
+        _check_database(),
+        _check_redis(),
+        _check_broker(),
+    )
+    all_ok = db_ok and redis_ok and broker_ok
 
     return JSONResponse(
         status_code=200 if all_ok else 503,
@@ -186,6 +226,7 @@ async def readiness_check() -> JSONResponse:
                 "dependencies": {
                     "database": "ok" if db_ok else "unavailable",
                     "redis": "ok" if redis_ok else "unavailable",
+                    "broker": "ok" if broker_ok else "unavailable",
                 },
             }
         },

@@ -33,6 +33,7 @@ import logging
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import (
+    beat_init,
     before_task_publish,
     task_postrun,
     task_prerun,
@@ -78,6 +79,14 @@ celery.conf.update(
     task_time_limit=settings.grading_task_hard_time_limit,
     # Do not store successful task results indefinitely
     result_expires=settings.celery_result_expires_seconds,
+    # Route the queue monitor to a dedicated low-traffic queue so it is not
+    # blocked behind the same `celery` queue it is trying to measure.  In a
+    # single-worker deployment both queues are consumed by the same worker, but
+    # Beat delivers the task to `monitoring` so it can still run even when the
+    # `celery` queue is deeply backed up.
+    task_routes={
+        "tasks.monitor.report_queue_metrics": {"queue": "monitoring"},
+    },
     # ---------------------------------------------------------------------------
     # Celery Beat schedule
     # ---------------------------------------------------------------------------
@@ -109,6 +118,18 @@ celery.conf.update(
 # ---------------------------------------------------------------------------
 # Correlation ID propagation via Celery signals
 # ---------------------------------------------------------------------------
+
+
+@beat_init.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
+def _configure_beat_logging(**_kwargs: object) -> None:
+    """Configure structured JSON logging when the Celery Beat process starts.
+
+    Without this handler, Beat emits logs in Celery's default plain-text
+    format.  Connecting here ensures the ``beat`` Railway service also
+    produces structured JSON log lines that can be parsed by log drains
+    (Logtail, etc.) alongside the backend and worker services.
+    """
+    configure_logging(settings.log_level)
 
 
 @worker_init.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
