@@ -204,23 +204,181 @@ Database migrations are not automatically rolled back. If a migration introduced
 
 ## Monitoring & Alerting
 
-Railway provides built-in metrics (CPU, memory, network) and log streaming per service in the dashboard.
+Railway provides built-in metrics (CPU, memory, network) and log streaming per service in the dashboard.  The application emits **structured JSON log events** for every HTTP request and every Celery queue sample — these are the primary signals for alert rules and dashboards.
 
-### What to monitor
-- Container health — Railway dashboard shows CPU, memory, and restart counts per service
-- HTTP error rates — structured logs from FastAPI; filter for `status_code >= 400`
-- Celery queue depth — published as a custom metric by a lightweight monitor task; alert if grading queue > 50 for > 5 minutes
-- LLM API error rate and latency — logged by FastAPI workers; alert on sustained `LLM_UNAVAILABLE` errors
-- PostgreSQL storage — Railway dashboard; alert at 80% capacity
+---
 
-### Alerting
-Railway supports **webhooks** for deployment events. For metric-based alerting, ship logs to an external aggregator (Logtail, Datadog, or Betterstack are good Railway-compatible options).
+### Telemetry: structured log events
+
+All telemetry is log-based — no metrics server or agent is required.  Configure your log aggregator (Logtail, Betterstack, Datadog, or equivalent) to receive Railway's log drain and filter on the fields below.
+
+#### `http.request` — one per API request
+
+Emitted by `RequestMetricsMiddleware` for every request **except** the probe paths (`/api/v1/health`, `/api/v1/readiness`).
+
+| Field | Type | Example |
+|---|---|---|
+| `event` | string | `"http.request"` |
+| `method` | string | `"POST"` |
+| `path` | string | `"/api/v1/grades/abc/lock"` |
+| `status_code` | integer | `200` |
+| `latency_ms` | integer | `142` |
+| `correlation_id` | string (UUID4) | `"550e8400-…"` |
+
+> **Security:** query strings are never included — they can carry authentication tokens.  Only the URL path is recorded.
+
+#### `celery.queue_depth` — once per minute per queue
+
+Emitted by `tasks.monitor.report_queue_metrics` (Celery Beat, 60-second interval).
+
+| Field | Type | Example |
+|---|---|---|
+| `event` | string | `"celery.queue_depth"` |
+| `queue` | string | `"celery"` |
+| `depth` | integer | `3` |
+
+#### `celery.queue_monitor_error` — on Redis failure
+
+Emitted when the queue monitor cannot reach Redis.
+
+| Field | Type | Example |
+|---|---|---|
+| `event` | string | `"celery.queue_monitor_error"` |
+| `error_type` | string | `"ConnectionError"` |
+
+---
+
+### Health and readiness probes
+
+| Endpoint | Purpose | Railway use |
+|---|---|---|
+| `GET /api/v1/health` | **Liveness** — is the process alive? | Railway restarts the container when this returns 503 |
+| `GET /api/v1/readiness` | **Readiness** — is the service ready for traffic? | Railway holds traffic on the old instance until this returns 200 during rolling deploys |
+
+Both probes return the same JSON envelope shape regardless of HTTP status code.  Healthy response:
+
+```json
+{
+  "data": {
+    "status": "ok",
+    "service": "rubric-grading-engine-api",
+    "version": "0.1.0",
+    "dependencies": { "database": "ok", "redis": "ok" }
+  }
+}
+```
+
+When either dependency is unavailable: HTTP 503, `status` is `"degraded"` (health) or `"not_ready"` (readiness).
+
+Configure Railway's health-check settings per service:
+
+| Service | Health check path | Expected status |
+|---|---|---|
+| `backend` | `/api/v1/health` | 200 |
+| `frontend` | `/` | 200 (Next.js default) |
+| `worker` | n/a — Railway monitors CPU and memory for Celery workers |
+
+---
+
+### Alert rules
+
+Ship logs to a log aggregator and create the following alert rules.  Adjust thresholds after observing baseline values in your deployment.
+
+| Signal | Query filter | Threshold | Severity | Action |
+|---|---|---|---|---|
+| **API error rate high** | `event:"http.request" status_code:>=500` | > 5% of requests over 5 min | 🔴 Critical | Page on-call; check worker and DB logs |
+| **API p95 latency high** | `event:"http.request" latency_ms:>2000` | > 10% of requests over 5 min | 🟡 Warning | Investigate DB and LLM call duration |
+| **API availability down** | `event:"http.request"` | Zero events for > 2 min | 🔴 Critical | Check Railway health-check; may be an outage |
+| **Celery queue depth high** | `event:"celery.queue_depth" queue:"celery" depth:>50` | Any single sample | 🟡 Warning | Check worker process; may need scaling |
+| **Celery queue depth critical** | `event:"celery.queue_depth" queue:"celery" depth:>200` | Any single sample | 🔴 Critical | Workers likely down; escalate immediately |
+| **Queue monitor failure** | `event:"celery.queue_monitor_error"` | Any occurrence | 🟡 Warning | Redis may be unavailable; check health probe |
+| **LLM unavailable** | `error_code:"LLM_UNAVAILABLE"` | > 3 occurrences over 5 min | 🔴 Critical | OpenAI outage or key revoked |
+| **LLM parse errors** | `error_code:"LLM_PARSE_ERROR"` | > 5 occurrences over 15 min | 🟡 Warning | Prompt regression; check grading task logs |
+| **Health probe degraded** | HTTP 503 on `/api/v1/health` | Any occurrence | 🟡 Warning | DB or Redis connectivity loss |
+| **Auth rate-limit flood** | `event:"http.request" path:"/api/v1/auth/login" status_code:429` | > 20 events over 1 min | 🟡 Warning | Possible credential stuffing |
+
+**Acknowledgment expectation:** Critical alerts require acknowledgment within 15 minutes and resolution or rollback decision within 60 minutes.  Warning alerts require acknowledgment within 2 hours during business hours.
+
+**Escalation path:** on-call engineer → lead engineer → incident commander.
+
+---
+
+### Dashboard queries
+
+Use these filters in your log aggregator to build the key on-call dashboards.
+
+#### API availability and error rate
+
+```
+# Total request count (last 5 min)
+event:"http.request"
+
+# 5xx error count
+event:"http.request" status_code:>=500
+
+# 4xx client error count (high volume may indicate a bug)
+event:"http.request" status_code:>=400 status_code:<500
+
+# p95 latency proxy: requests slower than 2 s
+event:"http.request" latency_ms:>2000
+```
+
+#### Celery queue health
+
+```
+# Queue depth over time
+event:"celery.queue_depth"
+
+# Queue depth for the default queue only
+event:"celery.queue_depth" queue:"celery"
+
+# Queue monitor failures (Redis connectivity)
+event:"celery.queue_monitor_error"
+```
+
+#### Worker and LLM failures
+
+```
+# All LLM errors
+error_code:"LLM_UNAVAILABLE" OR error_code:"LLM_PARSE_ERROR"
+
+# Grading task failures (look for error_type in Celery worker logs)
+logger:"app.tasks.grading" level:"ERROR"
+
+# Worker crash signal (no queue_depth events for > 2 min)
+event:"celery.queue_depth"   # alert on absence
+```
+
+#### Database and Redis
+
+```
+# Health probe degraded (dep failure)
+logger:"app.routers.health" level:"WARNING"
+
+# Database connectivity errors
+message:"Health check: database unavailable"
+
+# Redis connectivity errors
+message:"Health check: Redis unavailable"
+```
+
+#### Differentiating failure types
+
+| Symptom | First query | Then check |
+|---|---|---|
+| API returning 503 | `event:"http.request" status_code:503` | Health probe logs for DB/Redis failure |
+| Grading queued but never completes | `event:"celery.queue_depth" depth:>0` | Worker process logs for task errors |
+| LLM errors only | `error_code:"LLM_UNAVAILABLE"` | OpenAI status page; check `OPENAI_API_KEY` expiry |
+| All services degraded | Health probe HTTP 503 on `/api/v1/health` | Railway dashboard CPU/memory; consider rollback |
+
+---
 
 ### Logging
+
 - All services emit structured JSON logs
 - Railway streams logs in real time in the dashboard; retained for 7 days on the Pro plan
 - For longer retention, forward logs to Logtail or similar via Railway's log drain feature
-- **No student PII in any log line** — reference entity IDs only
+- **No student PII in any log line** — reference entity IDs only (`student_id`, `essay_id`, `grade_id`)
 - Log retention target: 90 days in production (requires external log drain)
 
 ---

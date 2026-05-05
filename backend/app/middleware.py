@@ -20,12 +20,25 @@ RateLimitMiddleware
     would create duplicate keys and, more importantly, inconsistent IP keying
     when running behind a trusted proxy (the middleware may use CF/XFF while
     the service layer always uses the direct TCP address).
+
+RequestMetricsMiddleware
+    Emits a structured ``http.request`` log event for every completed HTTP
+    request, recording the HTTP method, normalised path (no query string),
+    response status code, and round-trip latency in milliseconds.
+
+    The ``/api/v1/health`` and ``/api/v1/readiness`` probe paths are
+    intentionally excluded so that Railway and load-balancer health-check
+    polls do not artificially inflate the request-rate signal.
+
+    Security: query strings are never included — they can carry authentication
+    tokens or other sensitive values.  Only the path is recorded.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -35,6 +48,61 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Request metrics
+# ---------------------------------------------------------------------------
+
+# Probe paths emitted by Railway and load balancers are excluded so that
+# frequent health-check polls do not artificially inflate request-rate metrics.
+_METRICS_EXCLUDED_PATHS: frozenset[str] = frozenset(
+    {"/api/v1/health", "/api/v1/readiness"}
+)
+
+
+class RequestMetricsMiddleware(BaseHTTPMiddleware):
+    """Emit a structured ``http.request`` log event for every HTTP request.
+
+    Each event records:
+
+    - ``event``        — Always ``"http.request"``.
+    - ``method``       — HTTP method (GET, POST, …).
+    - ``path``         — Request path only — **no query string** (query strings
+                         can carry auth tokens or other sensitive values).
+    - ``status_code``  — Integer HTTP status code of the response.
+    - ``latency_ms``   — Round-trip time in milliseconds (int).
+
+    Health and readiness probe paths are excluded to keep signal-to-noise high.
+
+    Security:
+    - Query strings are never logged (may contain tokens or other sensitive data).
+    - No student PII is emitted — only the URL path and HTTP metadata.
+    """
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        path = request.url.path
+        if path in _METRICS_EXCLUDED_PATHS:
+            return await call_next(request)
+
+        start = time.monotonic()
+        response = await call_next(request)
+        latency_ms = int((time.monotonic() - start) * 1000)
+
+        logger.info(
+            "http.request",
+            extra={
+                "event": "http.request",
+                "method": request.method,
+                "path": path,
+                "status_code": response.status_code,
+                "latency_ms": latency_ms,
+            },
+        )
+        return response
 
 # ---------------------------------------------------------------------------
 # Correlation ID

@@ -1,18 +1,26 @@
-"""Health check router.
+"""Health and readiness routers.
 
-Exposes ``GET /api/v1/health`` which returns:
+Exposes two unauthenticated probe endpoints:
 
-- The service name and current version string.
-- An overall liveness status (``"ok"`` when all dependencies are healthy,
-  ``"degraded"`` when one or more are unavailable).
-- Per-dependency reachability status for the database and Redis.
+``GET /api/v1/health`` — **Liveness probe**
+    Returns ``"ok"`` when the process is running and can reach all critical
+    dependencies (database and Redis).  Returns ``"degraded"`` with HTTP 503
+    when any dependency is unreachable.  Railway restarts the container when
+    this probe returns 503.
 
-Returns HTTP 200 when all dependencies respond successfully, HTTP 503 when
-any dependency is unreachable.  The response JSON shape is always present
-so that callers can parse the body regardless of status code.
+``GET /api/v1/readiness`` — **Readiness probe**
+    Returns ``"ready"`` when the service is fully initialised and able to
+    handle production traffic.  Returns ``"not_ready"`` with HTTP 503 when
+    a dependency is unavailable.  Railway uses this signal during rolling
+    deploys to decide when to shift traffic to the new instance — the old
+    instance continues serving traffic until the new one is ready.
 
-This endpoint intentionally requires **no authentication** so that load
-balancers and Railway health-check probes can reach it without credentials.
+Both endpoints share the same dependency checks (database ``SELECT 1`` and
+Redis ``PING``) and return the same JSON envelope shape so that callers can
+always parse the body regardless of HTTP status code.
+
+These endpoints intentionally require **no authentication** so that load
+balancers and Railway health-check probes can reach them without credentials.
 """
 
 from __future__ import annotations
@@ -122,6 +130,57 @@ async def health_check() -> JSONResponse:
         content={
             "data": {
                 "status": "ok" if all_ok else "degraded",
+                "service": _SERVICE_NAME,
+                "version": _VERSION,
+                "dependencies": {
+                    "database": "ok" if db_ok else "unavailable",
+                    "redis": "ok" if redis_ok else "unavailable",
+                },
+            }
+        },
+    )
+
+
+@router.get("/readiness")
+async def readiness_check() -> JSONResponse:
+    """Return service readiness for traffic during Railway rolling deploys.
+
+    Railway uses this endpoint to decide when to shift production traffic from
+    the old container to the newly deployed one.  The new container must return
+    HTTP 200 before Railway routes any traffic to it.
+
+    The check is identical to the liveness probe — database ``SELECT 1`` and
+    Redis ``PING`` — because both dependencies must be reachable before the
+    service can process any request.
+
+    Response shape::
+
+        {
+          "data": {
+            "status": "ready",
+            "service": "rubric-grading-engine-api",
+            "version": "0.1.0",
+            "dependencies": {
+              "database": "ok",
+              "redis": "ok"
+            }
+          }
+        }
+
+    HTTP 200 — service is ready to accept traffic.
+    HTTP 503 — service is not yet ready (``status`` is ``"not_ready"``).
+
+    No authentication is required.
+    """
+    db_ok = await _check_database()
+    redis_ok = await _check_redis()
+    all_ok = db_ok and redis_ok
+
+    return JSONResponse(
+        status_code=200 if all_ok else 503,
+        content={
+            "data": {
+                "status": "ready" if all_ok else "not_ready",
                 "service": _SERVICE_NAME,
                 "version": _VERSION,
                 "dependencies": {

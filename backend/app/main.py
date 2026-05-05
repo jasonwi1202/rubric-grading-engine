@@ -114,6 +114,7 @@ def _register_middleware(application: FastAPI) -> None:
     from app.middleware import (
         CorrelationIdMiddleware,
         RateLimitMiddleware,
+        RequestMetricsMiddleware,
         SecurityHeadersMiddleware,
     )
 
@@ -128,8 +129,8 @@ def _register_middleware(application: FastAPI) -> None:
     # last call here is the *outermost* middleware (runs first on a request,
     # last on a response).
     #
-    # Desired request flow:  CorrelationId → SecurityHeaders → CORS → RateLimit → App
-    # Desired response flow: App → RateLimit → CORS → SecurityHeaders → CorrelationId
+    # Desired request flow:  CorrelationId → SecurityHeaders → CORS → RateLimit → Metrics → App
+    # Desired response flow: App → Metrics → RateLimit → CORS → SecurityHeaders → CorrelationId
     #
     # This ensures:
     #   - Correlation IDs are available to ALL downstream middleware and route
@@ -141,8 +142,14 @@ def _register_middleware(application: FastAPI) -> None:
     #   - CORS preflight and credentialed-request handling runs before the
     #     rate-limit layer so that OPTIONS never counts against the limit.
     #   - Rate-limit 429s are returned before the route handler is invoked.
+    #   - RequestMetrics wraps the innermost app so that latency measurements
+    #     reflect only application processing time, not middleware overhead.
 
-    # 1. Rate limiting — innermost (added first).
+    # 1. Request metrics — innermost (added first); captures application latency only.
+    application.add_middleware(RequestMetricsMiddleware)
+
+    # 2. Rate limiting — sits just outside metrics so that rate-limited 429s
+    #    are still measured and their latency is recorded.
     application.add_middleware(RateLimitMiddleware, redis_client=redis_client)
 
     # 2. CORS — sits between RateLimit and SecurityHeaders so it handles

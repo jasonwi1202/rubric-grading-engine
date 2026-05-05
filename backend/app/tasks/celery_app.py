@@ -59,6 +59,7 @@ celery = Celery(
         "app.tasks.auto_grouping",
         "app.tasks.worklist",
         "app.tasks.intervention",
+        "app.tasks.monitor",
     ],
 )
 
@@ -91,6 +92,10 @@ celery.conf.update(
         "scan-intervention-signals-daily": {
             "task": "tasks.intervention.scan_intervention_signals",
             "schedule": crontab(hour=7, minute=0),
+        },
+        "report-queue-metrics-every-minute": {
+            "task": "tasks.monitor.report_queue_metrics",
+            "schedule": 60.0,  # seconds — emit one depth sample per minute
         },
     },
 )
