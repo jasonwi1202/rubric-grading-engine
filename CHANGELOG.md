@@ -8,7 +8,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
-No unreleased changes on `release/m7` beyond the release-finalization checklist PR.
+No unreleased changes on `release/m8` beyond the release-finalization checklist PR.
+
+---
+
+## [v0.9.0] — M8 Polish & Hardening — Unreleased (pending merge to main)
+
+### Added
+- **Interventions page UI** — `/dashboard/interventions` lists all pending, approved, and dismissed intervention recommendations with approve/dismiss controls and notes; integrates with the class worklist; approval history visible per recommendation
+- **Text comment-bank UI** — reusable text feedback snippets are now manageable from the review panel: search/suggest existing bank entries, save a criterion score's feedback to the bank in one click, apply a bank entry to any grade; fully integrated with the `TextCommentBankPicker` component
+- **Browser writing interface modernization** — deprecated `document.execCommand` formatting replaced with the Selection/Range API for Bold, Italic, and Underline; eliminates browser console warnings and aligns with current web standards
+- **Deterministic export failure injection** — `EXPORT_TASK_FORCE_FAIL=true` env var arms a one-shot failure on the next export task, enabling Playwright E2E to test the export error state and retry UX without network manipulation; arm/disarm endpoint `POST /api/v1/debug/export-task/arm-failure` gated by `TESTING_MODE=true`
+- **Deterministic short-lived token mode** — `POST /api/v1/debug/short-lived-token` issues access tokens with a configurable sub-30-second TTL when `TESTING_MODE=true`, enabling Playwright E2E to exercise the silent-refresh real-expiry path end-to-end without mocking
+- **Dashboard navigation overhaul** — persistent sidebar with collapsible class accordion, breadcrumb trail auto-generated from pathname and React Query cache (zero extra fetches), mobile hamburger drawer with focus trap and Escape key support, `aria-controls` / `aria-expanded` on all toggle controls
+- **Lesson planning panel** — class detail page gains a "Lesson Planning" tab powered by the existing instruction recommendations API; surfaces group-level and student-level recommendations in a structured card layout with generate/accept/dismiss controls
+- **Worklist urgency panel** — worklist items now display computed urgency tiers (critical / high / medium) with color-coded indicators; snooze, dismiss, and mark-done actions confirmed correct for all trigger types including `trajectory_risk`
+- **E2E hardening for M8 surfaces** — Playwright coverage added for: text comment-bank full lifecycle, interventions full lifecycle (list/filter/approve/dismiss), export failure + retry using deterministic backend failure, and auth silent-refresh via deterministic token expiration
+
+### Changed
+- **Dashboard layout refactored** — `(dashboard)/layout.tsx` now renders `DashboardSidebar` as the sole navigation component; legacy inline nav removed; sidebar is server-component-safe (no direct state in layout)
+- **Essay review page** — sidebar-aware layout adjustments; no functional grading changes
+- **Class detail page** — Groups tab and Lesson Planning tab added to existing Students / Insights tab group
+- **Worklist panel** — urgency indicator rendering updated; show-top-10 collapse logic corrected
+- **Review queue** — minor layout alignment fixes for sidebar-integrated view
+
+### Fixed
+- **Test isolation** — five backend unit test modules now pin `rate_limit_enabled` and `allow_unverified_login_in_test` via `autouse` fixtures, preventing local `.env` values from leaking into CI checks
+- **E2E strict-mode selector** — Journey 1 class-name assertion scoped to `<main>` to avoid ambiguity with the new sidebar navigation link
+- **ESLint warnings** — removed dead `MobileTopBar` component; replaced private `useQueryClient_()` wrapper with `QueryClient` type import
+
+### Security
+- Debug endpoints (`/debug/*`) are guarded by `TESTING_MODE=true`; unavailable in production
+- No student PII in any log line, error message, or API response added in M8
+- All new UI surfaces respect locked-grade read-only enforcement
+- Sidebar class links use UUIDs only — no student names or PII in navigation URLs
+
+### Tests added
+- Backend unit: `test_export_task` failure-injection coverage, `test_auth_service` short-lived-token coverage
+- Frontend unit: `worklist-panel` urgency/snooze/dismiss tests, `review-queue` sidebar-layout tests, `text-comment-bank-picker` full suite
+- Frontend E2E: interventions lifecycle, text comment-bank lifecycle, export failure + retry, auth silent-refresh real-expiry (specs added; skipped until `TESTING_MODE=true` infra wired in CI)
 
 ---
 

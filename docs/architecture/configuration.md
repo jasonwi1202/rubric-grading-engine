@@ -98,6 +98,93 @@ Managed via `pydantic-settings` in `backend/app/config.py`. All variables are va
 | `REGRADE_WINDOW_DAYS` | No | `7` | Number of days after a grade is created during which regrade requests are accepted. Requests submitted after this window return 409. |
 | `REGRADE_MAX_PER_GRADE` | No | `1` | Maximum number of regrade requests allowed per grade. Additional submissions after this limit return 409. |
 
+### Test-Only Controls
+
+These variables are blocked in `staging` and `production` by a startup validator and must never be set in those environments.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LLM_FAKE_MODE` | No | `false` | Bypass real OpenAI calls; return deterministic synthetic outputs. Use in CI E2E and unit tests. Blocked in staging/production by the startup validator. |
+| `EXPORT_TASK_FORCE_FAIL` | No | `false` | **Test-only.** When `true`, enables the internal test-control router (`POST /api/v1/internal/export-test-controls/arm-failure`) for one-shot export failure injection (failure → retry → success flow). Tasks do **not** fail unconditionally — arm the endpoint to trigger a single failure; subsequent exports proceed normally. Cannot be `true` in `staging` or `production`. |
+| `ALLOW_UNVERIFIED_LOGIN_IN_TEST` | No | `false` | Skip email-verification check on login. CI E2E bypass when email delivery is intentionally bypassed. |
+| `SHORT_LIVED_TOKEN_TTL_SECONDS` | No | *(unset)* | **Test-only.** When set to a positive integer, overrides the access-token TTL for all tokens issued by `/auth/login` and `/auth/refresh` (in seconds instead of the default 15-minute TTL). Use in CI E2E to exercise the token-expiry → silent-refresh recovery path deterministically. Must not be set in `staging` or `production` (enforced by the startup validator). |
+
+#### Using `EXPORT_TASK_FORCE_FAIL` for E2E failure injection
+
+Setting `EXPORT_TASK_FORCE_FAIL=true` registers the test-only internal router
+and activates the per-assignment one-shot failure check in the export Celery
+task.  Tasks do **not** fail automatically — a failure must be explicitly armed
+via the endpoint:
+
+**One-shot failure (per-assignment):** The arm endpoint accepts an `assignment_id`
+and sets a Redis key scoped to that assignment (TTL: 5 minutes). The next export
+task for that assignment atomically consumes the key and fails with
+`FORCED_FAILURE`. Subsequent exports (including the retry) proceed normally.
+Use this to exercise the full **failure → retry → success** flow in a single
+test run. Because the key is scoped to the assignment, parallel Playwright
+workers arming different assignments cannot consume each other's flags.
+
+**Local dev:**
+```bash
+# Add to .env and restart backend + worker containers:
+EXPORT_TASK_FORCE_FAIL=true
+
+# Then run the failure injection E2E spec:
+cd frontend
+npx playwright test mx8-04-export-failure-injection
+```
+
+**CI (GitHub Actions / Docker Compose E2E):**
+
+Add `EXPORT_TASK_FORCE_FAIL=true` to your `.env.ci` or Docker Compose environment override for the
+shard that runs the failure injection spec. The arm-failure endpoint is not registered when the flag is
+not set, so other specs are unaffected.
+
+```bash
+# .env.ci override (or docker-compose.ci.yml environment section):
+EXPORT_TASK_FORCE_FAIL=true
+```
+
+The Playwright spec (`mx8-04-export-failure-injection.spec.ts`) probes the arm-failure endpoint
+before running and skips gracefully when `EXPORT_TASK_FORCE_FAIL` is not enabled.
+
+#### Using `SHORT_LIVED_TOKEN_TTL_SECONDS` for E2E token-expiry testing
+
+Setting `SHORT_LIVED_TOKEN_TTL_SECONDS=<seconds>` causes every `/auth/login` and `/auth/refresh`
+call to issue a JWT that expires after `<seconds>` instead of the standard 15 minutes.  This lets
+the `mx8-05-short-lived-token` Playwright spec exercise real token-expiry events deterministically
+in CI without waiting 15 minutes.
+
+**Behaviour:** All tokens issued by the backend while this setting is active are short-lived.
+The spec probes this by decoding the freshly issued JWT's `exp − iat` claims; if the result exceeds
+30 seconds the spec considers the feature inactive and skips gracefully.  Run this spec in an
+isolated CI shard so the short TTL does not cause spurious 401s in other concurrent specs.
+
+**Local dev:**
+```bash
+# Add to .env and restart the backend container:
+SHORT_LIVED_TOKEN_TTL_SECONDS=3
+
+# Then run the short-lived token E2E spec:
+cd frontend
+npx playwright test mx8-05-short-lived-token
+```
+
+**CI (GitHub Actions / Docker Compose E2E):**
+
+Add `SHORT_LIVED_TOKEN_TTL_SECONDS=3` to your `.env.ci` or Docker Compose environment override for
+the shard that runs `mx8-05-short-lived-token.spec.ts`.  Other shards that do not set this variable
+continue to receive 15-minute tokens and are unaffected.
+
+```bash
+# .env.ci override (or docker-compose.ci.yml environment section for the token-expiry shard):
+SHORT_LIVED_TOKEN_TTL_SECONDS=3
+ALLOW_UNVERIFIED_LOGIN_IN_TEST=true   # bypass email delivery in CI
+```
+
+The spec skips gracefully when `SHORT_LIVED_TOKEN_TTL_SECONDS` is not enabled, so it is safe to
+include in a full E2E run — it will no-op unless the backend is configured for short-lived mode.
+
 ### Skill Normalization
 
 | Variable | Required | Default | Description |

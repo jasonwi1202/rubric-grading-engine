@@ -4,18 +4,19 @@
  * /dashboard/classes/[classId] — class detail with tabbed view.
  *
  * Tabs:
- *   Overview   — assignment list and student roster management
+ *   Overview      — assignment list and student roster management
  *   Skill Heatmap — per-student skill score grid (M5.7)
- *   Insights   — class-level skill averages and distributions (M5.6)
- *   Groups     — auto-generated skill-gap groups (M6.3)
+ *   Insights      — class-level skill averages and distributions (M5.6)
+ *   Groups        — auto-generated skill-gap groups (M6.3)
+ *   Plan          — lesson planning surface driven by skill gap data (M8-UX)
  *
  * All server state via React Query. No useEffect+fetch.
  * Security: no student PII in logs or query keys beyond entity IDs.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getClass } from "@/lib/api/classes";
 import { listAssignments, STATUS_LABELS } from "@/lib/api/assignments";
@@ -24,6 +25,7 @@ import { RosterList } from "@/components/classes/RosterList";
 import { SkillHeatmap } from "@/components/classes/SkillHeatmap";
 import { ClassInsightsPanel } from "@/components/classes/ClassInsightsPanel";
 import { SkillGroupsPanel } from "@/components/classes/SkillGroupsPanel";
+import { LessonPlanningPanel } from "@/components/classes/LessonPlanningPanel";
 
 const STATUS_COLORS: Record<AssignmentStatus, string> = {
   draft: "bg-gray-100 text-gray-600",
@@ -34,18 +36,36 @@ const STATUS_COLORS: Record<AssignmentStatus, string> = {
   returned: "bg-purple-100 text-purple-700",
 };
 
-type Tab = "overview" | "heatmap" | "insights" | "groups";
+type Tab = "overview" | "heatmap" | "insights" | "groups" | "plan";
 
 export default function ClassDetailPage() {
   const { classId } = useParams<{ classId: string }>();
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const searchParams = useSearchParams();
+
+  // Support ?tab= deep-link (e.g. from LessonPlanningPanel "View skill group" links)
+  const rawTab = searchParams.get("tab");
+  const validTabs: Tab[] = ["overview", "heatmap", "insights", "groups", "plan"];
+  const initialTab: Tab =
+    rawTab && (validTabs as string[]).includes(rawTab)
+      ? (rawTab as Tab)
+      : "overview";
+
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  // Keep tab in sync when ?tab= param changes (e.g. sidebar deep-links)
+  useEffect(() => {
+    if (rawTab && (validTabs as string[]).includes(rawTab)) {
+      setActiveTab(rawTab as Tab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawTab]);
 
   // Arrow-key navigation between tabs (ARIA tab pattern with roving tabIndex).
   const handleTabKeyDown = (
     e: React.KeyboardEvent<HTMLButtonElement>,
     currentTab: Tab,
   ) => {
-    const tabs: Tab[] = ["overview", "heatmap", "insights", "groups"];
+    const tabs: Tab[] = ["overview", "heatmap", "insights", "groups", "plan"];
     const currentIndex = tabs.indexOf(currentTab);
     let nextIndex = currentIndex;
 
@@ -85,23 +105,7 @@ export default function ClassDetailPage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
-      {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="mb-6 text-sm text-gray-500">
-        <Link
-          href="/dashboard/classes"
-          className="hover:text-gray-700 underline"
-        >
-          Classes
-        </Link>
-        <span aria-hidden="true" className="mx-2">
-          /
-        </span>
-        <span className="text-gray-900">
-          {cls?.name ?? (isLoading ? "Loading…" : "Class")}
-        </span>
-      </nav>
-
+    <div className="mx-auto max-w-4xl">
       {/* Class header */}
       {isLoading && (
         <div
@@ -200,6 +204,23 @@ export default function ClassDetailPage() {
           }`}
         >
           Groups
+        </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={activeTab === "plan"}
+          aria-controls="tab-panel-plan"
+          id="tab-plan"
+          tabIndex={activeTab === "plan" ? 0 : -1}
+          onClick={() => setActiveTab("plan")}
+          onKeyDown={(e) => handleTabKeyDown(e, "plan")}
+          className={`px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-t ${
+            activeTab === "plan"
+              ? "border-b-2 border-blue-600 text-blue-700"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Plan
         </button>
       </div>
 
@@ -360,6 +381,30 @@ export default function ClassDetailPage() {
               classId={classId}
               onNavigateToHeatmap={() => setActiveTab("heatmap")}
             />
+          )}
+        </section>
+      </div>
+
+      {/* Plan tab */}
+      <div
+        role="tabpanel"
+        id="tab-panel-plan"
+        aria-labelledby="tab-plan"
+        hidden={activeTab !== "plan"}
+      >
+        <section aria-labelledby="plan-heading" className="mb-8">
+          <h2
+            id="plan-heading"
+            className="mb-1 text-base font-semibold text-gray-900"
+          >
+            Lesson Planning
+          </h2>
+          <p className="mb-4 text-xs text-gray-500">
+            Skill gaps affecting the most students in this class. Use these to
+            prioritise what to teach next.
+          </p>
+          {classId && activeTab === "plan" && (
+            <LessonPlanningPanel classId={classId} />
           )}
         </section>
       </div>

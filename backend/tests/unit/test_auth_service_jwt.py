@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.config import settings
 from app.exceptions import RefreshTokenInvalidError, UnauthorizedError, ValidationError
 from app.services.auth import (
     consume_refresh_token,
@@ -33,6 +34,12 @@ from app.services.auth import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _force_auth_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep JWT auth tests deterministic regardless of local .env settings."""
+    monkeypatch.setattr(settings, "allow_unverified_login_in_test", False)
 
 
 def _make_db(fake_user: MagicMock | None = None) -> AsyncMock:
@@ -83,6 +90,42 @@ class TestCreateDecodeAccessToken:
         assert payload["sub"] == str(user_id)
         assert payload["email"] == email
         assert payload["type"] == "access"
+
+    def test_default_ttl_is_fifteen_minutes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """create_access_token uses the 15-min default when short_lived_token_ttl_seconds is None."""
+        import jwt as pyjwt
+
+        from app.config import settings
+
+        # Pin the setting to None so the test is hermetic regardless of what
+        # the developer has set in their local .env file.
+        monkeypatch.setattr(settings, "short_lived_token_ttl_seconds", None)
+        token = create_access_token(uuid.uuid4(), "teacher@school.edu")
+        payload = pyjwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": False},
+        )
+        ttl = payload["exp"] - payload["iat"]
+        assert ttl == 15 * 60
+
+    def test_short_lived_ttl_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """create_access_token uses short_lived_token_ttl_seconds when set."""
+        import jwt as pyjwt
+
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "short_lived_token_ttl_seconds", 5)
+        token = create_access_token(uuid.uuid4(), "teacher@school.edu")
+        payload = pyjwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": False},
+        )
+        ttl = payload["exp"] - payload["iat"]
+        assert ttl == 5
 
     def test_expired_token_raises_validation_error(self) -> None:
         import jwt as pyjwt

@@ -27,6 +27,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | **M6** | Prioritization & Instruction | Auto-grouping by skill gap, teacher worklist, instruction engine recommendations, and resubmission loop. | 12 | ✅ Complete |
 | **M7** | Closed Loop | Automation agents, predictive insights, and teacher copilot (conversational data interface). Requires all prior milestones. | 9 | ✅ Complete |
 | **M8** | Polish & Hardening | Complete missing feature UIs (interventions, text comments), review UI/UX, refactor/upgrade components, database migration resilience, and final hardening. | 9 | 🔄 In Progress |
+++ | **M8** | Polish & Hardening | Complete missing feature UIs (interventions, text comments), review UI/UX, refactor/upgrade components, database migration resilience, and final hardening. | 9 | ✅ Complete |
 | **M9** | Production Readiness & Compliance | Monitoring, operational runbooks, security scanning, upload safety, and performance validation required for reliable Railway production deployment. | 7 | 🔄 Planned |
 | **MX** | Cross-Cutting | Security hardening, observability, E2E tests, accessibility, and prompt version tracking. Can be worked in parallel with any milestone. | 5 | ✅ Complete |
 | | **Total** | | **111** | |
@@ -274,6 +275,7 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 ---
 
 ## M8 — Polish & Hardening 🔄 In Progress
+++ ## M8 — Polish & Hardening ✅ Complete
 
 > Complete missing feature UIs, review all component implementations for correctness, improve visual design and UX, ensure clean database migrations, and final hardening. This milestone focuses on quality, completeness, and resilience rather than new features.
 
@@ -282,19 +284,28 @@ Issues are ordered within each milestone by dependency: earlier issues should be
 | # | Issue Title | Description |
 |---|---|---|
 | M8.1 | Build interventions page UI | Backend API exists (`/interventions` CRUD). Build a `/dashboard/interventions` page that lists pending recommendations, lets teachers approve/dismiss them with notes, shows approval history, and integrates with class worklist. |
+++ | ~~M8.1~~ | ~~Build interventions page UI~~ | ✅ Done — PR #237. `/dashboard/interventions` page with list, approve/dismiss controls, notes, and approval history. |
 | M8.2 | Build text comment-bank UI | Backend API exists (`/comment-bank` CRUD and suggestions). Build a UI for teachers to manage reusable text feedback snippets within the review panel: save comments to bank, search/suggest, apply to grades (like media comment bank already does). |
+++ | ~~M8.2~~ | ~~Build text comment-bank UI~~ | ✅ Done — PR #238. `TextCommentBankPicker` in review panel: save, search/suggest, apply. |
 | M8.3 | Migrate BrowserWritingInterface to Selection/Range API | Currently uses deprecated `document.execCommand`. Migrate to modern Selection/Range API or adopt maintained library (e.g., TipTap) for text formatting (bold, italic, underline, etc.) in the browser composition interface. |
+++ | ~~M8.3~~ | ~~Migrate BrowserWritingInterface to Selection/Range API~~ | ✅ Done — PR #239. Bold/Italic/Underline migrated from `document.execCommand` to Selection/Range API. |
 | M8.4 | Add deterministic export failure injection for E2E | Expose a test-mode toggle in the backend (via env or config) that allows Playwright tests to inject deterministic failures into the export Celery task. Enable E2E test: `export failure + retry UX using deterministic backend failure`. |
+++ | ~~M8.4~~ | ~~Add deterministic export failure injection for E2E~~ | ✅ Done — PR #240. `EXPORT_TASK_FORCE_FAIL` env var; `POST /debug/export-task/arm-failure` gated by `TESTING_MODE=true`. |
 | M8.5 | Add deterministic short-lived token mode for E2E | Expose a test-mode endpoint or config that lets Playwright tests generate access tokens with very short TTL (seconds). Enable E2E test: `auth silent-refresh real expiry path with deterministic token expiration`. |
+++ | ~~M8.5~~ | ~~Add deterministic short-lived token mode for E2E~~ | ✅ Done — PR #241. `POST /debug/short-lived-token` issues sub-30s TTL tokens when `TESTING_MODE=true`. |
 
 ### Quality & UX Review
 
 | # | Issue Title | Description |
 |---|---|---|
 | M8.6 | UI component implementation review | Audit all React components in `components/` for correct hook usage, proper accessibility (ARIA labels, roles, focus management), consistent prop interfaces, and correct error boundary placement. Document or refactor any components that violate React patterns or shadcn/ui conventions. |
+++ | ~~M8.6~~ | ~~UI component implementation review~~ | ✅ Done — PR #244. Error boundaries audited and corrected; `ProgressBar` a11y attributes fixed; hook usage reviewed across all components. |
 | M8.7 | Visual design & brand review | Review the entire UI (public site, dashboard, modals, forms) against educational product standards. Check: color contrast, typography hierarchy, spacing consistency, responsive design, icon usage, and alignment with a professional K-12 ed-tech aesthetic. Refine CSS/Tailwind where needed. |
+++ | ~~M8.7~~ | ~~Visual design & brand review~~ | ✅ Done — PR #249. Mobile nav contrast, iconography polish, sidebar spacing, and responsive design reviewed and corrected. |
 | M8.8 | Database migration resilience | Audit all Alembic migrations for: zero-downtime patterns, reversibility on rollback, data safety (no data loss or corruption), idempotency, and documentation of breaking changes. Ensure migrations can be applied/rolled back cleanly in production. Document any edge cases or manual steps required. |
+++ | ~~M8.8~~ | ~~Database migration resilience~~ | ✅ Done — PR #250. All 33 Alembic revisions audited; roundtrip upgrade/downgrade validated; zero-downtime patterns confirmed. |
 | M8.9 | Final security & error handling pass | Review all error messages (never log PII), all API responses (match `{"data": ...}` envelope), all auth checks (401 vs 403 vs 404 semantics), all tenant isolation (teacher_id in WHERE clause), and all LLM prompts (essay in user role, injection defense present). Verify no hardcoded secrets, credentials, or student data in source. |
+++ | ~~M8.9~~ | ~~Final security & error handling pass~~ | ✅ Done — PR #251. All error messages, response envelopes, auth semantics, tenant isolation, and LLM prompt roles verified. No hardcoded secrets or student data found. |
 
 ---
 

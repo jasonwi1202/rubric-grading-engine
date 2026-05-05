@@ -122,6 +122,122 @@ test.describe("Public site — /pricing", () => {
   });
 });
 
+test.describe("Public site — mobile navigation", () => {
+  // Use a typical mobile viewport so the hamburger toggle is visible and the
+  // desktop nav is hidden via Tailwind's md: breakpoint (≥768 px).
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("hamburger toggle opens and closes the mobile drawer", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    // Locate the toggle by its stable aria-controls attribute so the locator
+    // remains valid even after the aria-label changes from "Open menu" to
+    // "Close menu" when the drawer is open.
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    // Drawer should not be present yet.
+    const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
+    await expect(drawer).not.toBeVisible();
+
+    // Open the drawer.
+    await toggle.click();
+    await expect(drawer).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    // Close the drawer by clicking the toggle again.
+    await toggle.click();
+    await expect(drawer).not.toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("mobile drawer contains all primary nav links", async ({ page }) => {
+    await page.goto("/");
+
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
+    await toggle.click();
+
+    const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
+    await expect(drawer).toBeVisible();
+
+    for (const [label, href] of [
+      ["Product", "/product"],
+      ["How It Works", "/how-it-works"],
+      ["Pricing", "/pricing"],
+      ["AI", "/ai"],
+      ["About", "/about"],
+    ]) {
+      const link = drawer.getByRole("link", { name: label, exact: false });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute("href", href);
+    }
+  });
+
+  test("mobile drawer contains Sign in and Start free trial CTAs", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
+    await toggle.click();
+
+    const drawer = page.getByRole("navigation", { name: "Mobile navigation" });
+    await expect(drawer).toBeVisible();
+
+    const signIn = drawer.getByRole("link", { name: /sign in/i });
+    await expect(signIn).toBeVisible();
+    await expect(signIn).toHaveAttribute("href", "/login");
+
+    const trial = drawer.getByRole("link", { name: /start free trial/i });
+    await expect(trial).toBeVisible();
+    await expect(trial).toHaveAttribute("href", "/signup");
+  });
+
+  test("Escape key closes the mobile drawer and returns focus to toggle", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
+    await toggle.click();
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).not.toBeVisible();
+
+    // Focus must return to the toggle button so keyboard / SR users are not
+    // stranded at an invisible element.
+    await expect(toggle).toBeFocused();
+  });
+
+  test("drawer closes when navigating to a different page (logo click)", async ({
+    page,
+  }) => {
+    // Start on a page other than / so that clicking the logo (href="/") causes
+    // a real pathname change and exercises the usePathname reset.
+    await page.goto("/product");
+
+    const toggle = page.locator('[aria-controls="mobile-nav"]');
+    await toggle.click();
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).toBeVisible();
+
+    // Navigate via the logo link — pathname changes from /product to /.
+    await page.getByRole("link", { name: /GradeWise home/i }).click();
+    await expect(
+      page.getByRole("navigation", { name: "Mobile navigation" }),
+    ).not.toBeVisible();
+  });
+});
+
 test.describe("Public site — legal pages", () => {
   test("/legal/dpa shows attorney draft banner in development", async ({
     page,

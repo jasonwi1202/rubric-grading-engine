@@ -66,6 +66,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Dropping the constraint also drops the backing index (PostgreSQL
+    # automatically drops an index that was attached to a constraint via
+    # USING INDEX).  The subsequent DROP INDEX is therefore a no-op, but
+    # the IF EXISTS guard makes it safe to re-run and documents intent.
     op.drop_constraint(_CONSTRAINT_NAME, _TABLE, type_="unique")
     with op.get_context().autocommit_block():
         op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME}"))

@@ -130,6 +130,24 @@ class Settings(BaseSettings):
     regrade_max_per_grade: int = 1
 
     # -------------------------------------------------------------------------
+    # Test-only controls
+    # -------------------------------------------------------------------------
+    # When True, enables the test-only internal router
+    # (POST /api/v1/internal/export-test-controls/arm-failure) which sets a
+    # one-shot Redis key.  The export task only fails when that key is present —
+    # the flag alone does NOT make every export fail.  Must be False in staging
+    # and production (enforced by production_security_guardrails).  Used in E2E
+    # tests to exercise the failure → retry → success flow deterministically.
+    export_task_force_fail: bool = False
+    # When set to a positive integer, overrides the access token TTL (in
+    # seconds) for ALL tokens issued by the /auth/login and /auth/refresh
+    # endpoints.  Use in CI E2E runs to issue tokens that expire in a few
+    # seconds so that the silent-refresh path can be exercised deterministically
+    # without waiting 15 minutes.  Must be None (unset) in staging and
+    # production (enforced by production_security_guardrails).
+    short_lived_token_ttl_seconds: int | None = None
+
+    # -------------------------------------------------------------------------
     # Application
     # -------------------------------------------------------------------------
     environment: str = "development"
@@ -209,6 +227,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "auto_grouping_underperformance_threshold must be between 0.0 and 1.0 inclusive"
             )
+        return v
+
+    @field_validator("short_lived_token_ttl_seconds")
+    @classmethod
+    def short_lived_token_ttl_seconds_min_value(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("SHORT_LIVED_TOKEN_TTL_SECONDS must be at least 1 when set")
         return v
 
     @field_validator("jwt_secret_key")
@@ -300,8 +325,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ALLOW_UNVERIFIED_LOGIN_IN_TEST must be false in staging/production."
                 )
+            if self.llm_fake_mode:
+                raise ValueError("LLM_FAKE_MODE must be false in staging/production.")
             if self.frontend_url.lower().startswith("http://"):
                 raise ValueError("FRONTEND_URL must use https:// in staging/production.")
+            if self.export_task_force_fail:
+                raise ValueError("EXPORT_TASK_FORCE_FAIL must be false in staging/production.")
+            if self.short_lived_token_ttl_seconds is not None:
+                raise ValueError(
+                    "SHORT_LIVED_TOKEN_TTL_SECONDS must not be set in staging/production."
+                )
         return self
 
     # -------------------------------------------------------------------------

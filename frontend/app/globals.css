@@ -28,18 +28,16 @@ body {
 
 /*
   Accessibility hardening for MX.4:
-  Several public/auth pages used very light text utilities (gray-400, blue-100)
-  on light backgrounds, causing recurring axe "color-contrast" serious failures.
-  Override these utilities with darker tones that meet WCAG 2.1 AA.
+  gray-400 (#9ca3af) and gray-500 (#6b7280) on white/gray-50 backgrounds both
+  fail WCAG 2.1 AA (contrast ratios ~2.3 and ~3.5, respectively — below the
+  4.5:1 threshold for normal-size text).
+
+  Rather than overriding Tailwind utility classes — which collapses hover-state
+  pairs like `text-gray-500 hover:text-gray-700` and `text-gray-400
+  hover:text-gray-600` (e.g. the billing-period toggle in the Pricing page) —
+  all body and subtitle text on public marketing pages is set explicitly to
+  text-gray-600 (7:1) or text-gray-700 (10:1) at the point of use.
+
+  Note: text-blue-100 on bg-blue-600 achieves ~4.8:1 and already passes WCAG
+  AA; no override needed there.
 */
-.text-gray-400 {
-  color: #4b5563;
-}
-
-.text-gray-500 {
-  color: #374151;
-}
-
-.text-blue-100 {
-  color: #1d4ed8;
-}

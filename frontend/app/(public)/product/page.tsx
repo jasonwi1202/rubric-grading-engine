@@ -85,7 +85,7 @@ export default function ProductPage() {
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             Built for teachers doing due diligence
           </h1>
-          <p className="mt-6 text-xl text-gray-500">
+          <p className="mt-6 text-xl text-gray-600">
             Every feature in {PRODUCT_NAME} exists to reduce grading time and
             improve instructional decisions — not to add complexity.
           </p>
@@ -106,7 +106,7 @@ export default function ProductPage() {
                 {/* Text */}
                 <div className="flex-1">
                   <h2 className="text-3xl font-bold text-gray-900">{heading}</h2>
-                  <p className="mt-4 text-lg text-gray-500">{body}</p>
+                  <p className="mt-4 text-lg text-gray-600">{body}</p>
                 </div>
 
                 {/* Screenshot placeholder */}
@@ -132,7 +132,7 @@ export default function ProductPage() {
           <h2 className="text-center text-3xl font-bold text-gray-900">
             Designed with trust and compliance in mind
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-lg text-gray-500">
+          <p className="mx-auto mt-4 max-w-2xl text-center text-lg text-gray-600">
             Student data is handled with care. We are transparent about what we
             do — and do not do — with it.
           </p>
@@ -146,7 +146,7 @@ export default function ProductPage() {
                 <h3 className="mt-4 text-lg font-semibold text-gray-900">
                   {heading}
                 </h3>
-                <p className="mt-2 text-sm text-gray-500">{body}</p>
+                <p className="mt-2 text-sm text-gray-600">{body}</p>
                 <Link
                   href={linkHref}
                   className="mt-4 text-sm font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"

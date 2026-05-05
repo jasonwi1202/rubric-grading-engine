@@ -366,19 +366,23 @@ test.describe("Journey 10 — upload negatives + cross-account isolation", () =>
 
 test.describe("Journey 10 — fixme placeholders for uncovered surfaces", () => {
   test.fixme("interventions full UI lifecycle (list/filter/approve/dismiss)", async () => {
-    // Blocked: no interventions page exists in frontend yet.
+    // UI built in M8-01 (PR #237). Full lifecycle E2E coverage planned for M9 once
+    // the intervention agent seeding is wired into the CI fixture setup.
   });
 
   test.fixme("text comment-bank UI lifecycle (create/suggest/delete/apply)", async () => {
-    // Blocked: text comment-bank UI is not currently exposed in frontend routes/components.
+    // UI built in M8-02 (PR #238). Full lifecycle E2E coverage planned for M9 once
+    // TextCommentBankPicker is exposed via a stable test fixture route.
   });
 
   test.fixme("export failure + retry UX using deterministic backend failure", async () => {
-    // Blocked: no deterministic failure injection toggle for export task in E2E environment.
+    // Covered by tests/e2e/mx8-04-export-failure-injection.spec.ts.
+    // Runs only when TESTING_MODE=true and EXPORT_TASK_FORCE_FAIL=true are set.
   });
 
   test.fixme("auth silent-refresh real expiry path with deterministic token expiration", async () => {
-    // Blocked: no deterministic short-lived-token mode exposed to Playwright tests.
+    // Covered by tests/e2e/mx8-05-short-lived-token.spec.ts.
+    // Runs only when TESTING_MODE=true and SHORT_LIVED_TOKEN_TTL_SECONDS is set.
   });
 });
 

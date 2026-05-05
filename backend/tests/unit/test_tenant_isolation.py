@@ -8,10 +8,12 @@ HTTP 404 instead: a cross-tenant ID and a nonexistent ID are
 indistinguishable, so both surface as NOT_FOUND.
 
 Resources that return 403 (ForbiddenError):
-  classes, students, essays, assignments, rubrics, grades, student_groups
+  classes, students, essays, assignments, rubrics, grades, student_groups,
+  copilot (when a class_id scopes the query)
 
 Resources that return 404 (NotFoundError):
-  teacher_worklist_items, instruction_recommendations
+  teacher_worklist_items, instruction_recommendations,
+  intervention_recommendations
 
 The tests work by:
 1. Overriding ``get_current_teacher`` to inject teacher B's identity.
@@ -534,5 +536,117 @@ class TestRecommendationTenantIsolation:
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.post(f"/api/v1/recommendations/{other_rec_id}/dismiss")
+
+        _assert_404(resp)
+
+
+# ---------------------------------------------------------------------------
+# Intervention recommendations — POST /api/v1/interventions/{id}/approve
+#                                 DELETE /api/v1/interventions/{id}
+# ---------------------------------------------------------------------------
+
+
+class TestInterventionTenantIsolation:
+    """Cross-tenant isolation tests for the intervention recommendation endpoints.
+
+    The intervention service uses a single ``SELECT … WHERE id = ? AND
+    teacher_id = ?`` query pattern.  Cross-tenant and nonexistent IDs are
+    indistinguishable and both raise :exc:`~app.exceptions.NotFoundError`,
+    which surfaces as HTTP 404.
+    """
+
+    def test_approve_intervention_returns_404_for_another_teachers_recommendation(
+        self,
+    ) -> None:
+        teacher_b = _make_teacher()
+        other_rec_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.intervention.approve_intervention",
+                new_callable=AsyncMock,
+                side_effect=NotFoundError("Intervention recommendation not found."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(f"/api/v1/interventions/{other_rec_id}/approve")
+
+        _assert_404(resp)
+
+    def test_dismiss_intervention_returns_404_for_another_teachers_recommendation(
+        self,
+    ) -> None:
+        teacher_b = _make_teacher()
+        other_rec_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.intervention.dismiss_intervention",
+                new_callable=AsyncMock,
+                side_effect=NotFoundError("Intervention recommendation not found."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.delete(f"/api/v1/interventions/{other_rec_id}")
+
+        _assert_404(resp)
+
+
+# ---------------------------------------------------------------------------
+# Copilot — POST /api/v1/copilot/query (when class_id scopes the query)
+# ---------------------------------------------------------------------------
+
+
+class TestCopilotTenantIsolation:
+    """Cross-tenant isolation tests for the copilot query endpoint.
+
+    When ``class_id`` is provided, the service verifies the class belongs to
+    the authenticated teacher.  A class owned by another teacher raises
+    :exc:`~app.exceptions.ForbiddenError` → HTTP 403.
+    """
+
+    def test_query_with_other_teachers_class_returns_403(
+        self,
+    ) -> None:
+        teacher_b = _make_teacher()
+        other_class_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.copilot.execute_copilot_query",
+                new_callable=AsyncMock,
+                side_effect=ForbiddenError("You do not have access to this class."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(
+                "/api/v1/copilot/query",
+                json={"query": "Who is falling behind?", "class_id": str(other_class_id)},
+            )
+
+        _assert_403(resp)
+
+    def test_query_with_nonexistent_class_returns_404(
+        self,
+    ) -> None:
+        teacher_b = _make_teacher()
+        missing_class_id = uuid.uuid4()
+        app = _app_with_teacher(teacher_b)
+
+        with (
+            patch(
+                "app.routers.copilot.execute_copilot_query",
+                new_callable=AsyncMock,
+                side_effect=NotFoundError("Class not found."),
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(
+                "/api/v1/copilot/query",
+                json={"query": "Who is falling behind?", "class_id": str(missing_class_id)},
+            )
 
         _assert_404(resp)

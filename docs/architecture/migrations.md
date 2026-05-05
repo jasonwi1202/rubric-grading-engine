@@ -169,6 +169,8 @@ def downgrade() -> None:
 ```
 Keep concurrent-index operations in a dedicated migration file.
 
+**Important:** `autocommit_block()` is the **only** supported mechanism for running CONCURRENTLY operations within a migration. Setting a module-level `transaction_per_migration = False` variable in a migration file has **no effect** — Alembic reads this setting exclusively from `env.py`'s `context.configure()` call (which uses `transaction_per_migration=True` in this project). Do not add `transaction_per_migration = False` to individual migration files.
+
 ---
 
 ## Running Migrations in Production
@@ -177,15 +179,23 @@ Migrations are run as part of the deployment pipeline — never manually in a pr
 
 ### M5 revision-id compatibility note
 
-Milestone M5 introduced two long revision identifiers that were later shortened
-to avoid `alembic_version.version_num` truncation on fresh databases:
+Milestone M5 originally introduced two revision identifiers that were ~35–37
+characters long.  Shortly after, they were shortened:
 
-- `024_essay_versions_writing_snapshots` -> `024_essay_versions_snapshots`
-- `025_essay_versions_process_signals` -> `025_essay_versions_signals`
+- `024_essay_versions_writing_snapshots` → `024_essay_versions_snapshots`
+- `025_essay_versions_process_signals` → `025_essay_versions_signals`
 
-Fresh databases are unaffected (they use the shortened IDs directly).
-For an environment that already recorded the long IDs, reconcile the
-`alembic_version` table once before running `alembic upgrade head`:
+**Fresh databases are unaffected.** `env.py` sets `version_num_col_length=64`
+in both the offline and online `context.configure()` calls, so the
+`alembic_version.version_num` column is 64 chars wide on any database created
+(or upgraded) with this codebase.  Even the original long IDs would fit without
+truncation.
+
+**Existing deployments that recorded the long IDs before `version_num_col_length`
+was raised** (i.e., environments running M5 migrations against an older env.py
+with the default 32-char column) may still have the long strings stored.  For
+those environments, reconcile the `alembic_version` table once before running
+`alembic upgrade head`:
 
 ```sql
 UPDATE alembic_version
@@ -285,3 +295,41 @@ If a migration dropped a column or deleted data, downgrade is not possible. Reco
 3. Accept the loss if the data was genuinely disposable
 
 This is why multi-step deploys exist — they make irreversible states harder to reach accidentally.
+
+---
+
+## M8 Migration Resilience Audit — Review Findings
+
+This section records the findings from the M8-08 migration audit (May 2026).  All issues were resolved in the same milestone.
+
+### Finding 1: `transaction_per_migration = False` module variable is dead code
+
+**Affected migrations:** 015, 028
+
+Some migration files contained a module-level `transaction_per_migration = False` variable with comments suggesting it disables the per-migration transaction.  This variable is **not read by Alembic** — the setting is exclusively controlled by `env.py`'s `context.configure(transaction_per_migration=True)` call.  The migrations worked correctly because they used `autocommit_block()` for CONCURRENTLY operations (the correct mechanism), but the dead variable could have misled future authors into thinking the pattern worked without `autocommit_block()`.
+
+**Resolution:** Removed the dead module-level variable from migrations 015 and 028.  Updated comments to document that `autocommit_block()` is the correct and only mechanism.
+
+### Finding 2: Downgrade of UNIQUE USING INDEX constraints drops an already-gone index
+
+**Affected migrations:** 015, 030
+
+Both migrations create a unique constraint by attaching it to a pre-built concurrent index:
+```sql
+ALTER TABLE t ADD CONSTRAINT c UNIQUE USING INDEX ix;
+```
+Their downgrade paths call `op.drop_constraint()` followed by `DROP INDEX CONCURRENTLY IF EXISTS ix`.  PostgreSQL automatically drops an index that was "claimed" by a constraint via `USING INDEX` when the constraint is dropped.  The subsequent `DROP INDEX` is therefore a no-op.  The `IF EXISTS` guard makes this safe, but the intent was not documented.
+
+**Resolution:** Added explanatory comments to migrations 015 and 030 downgrade functions.
+
+### Finding 3: Migration 008 downgrade re-adds NOT NULL without a guard
+
+**Affected migration:** 008
+
+The downgrade of migration 008 (`rubric_templates`) deletes the seeded system template rows and then restores `teacher_id NOT NULL` on `rubrics`.  If any non-seeded rubric rows with a NULL `teacher_id` existed (application-layer bug or manual insertion), the `ALTER COLUMN` would fail with a cryptic constraint error, leaving the migration half-applied.
+
+**Resolution:** Added an explicit guard in the downgrade that counts remaining NULL rows before running `ALTER COLUMN` and raises `RuntimeError` with an actionable message if unexpected NULLs are found.
+
+### Validation
+
+The full upgrade → downgrade → upgrade roundtrip was validated by the integration test in `backend/tests/integration/test_migration_roundtrip.py`.  All 33 revisions (001–033) upgrade and downgrade cleanly against a fresh `pgvector/pgvector:pg16` container.

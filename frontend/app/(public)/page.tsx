@@ -5,6 +5,12 @@ import {
   ClipboardCheck,
   BarChart2,
   Lightbulb,
+  Zap,
+  TrendingUp,
+  Target,
+  ShieldCheck,
+  XCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants";
 
@@ -30,11 +36,15 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="bg-white px-4 py-24 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" aria-hidden="true" />
+            Built for K-12 writing teachers
+          </div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             {/* {TODO: insert hero headline} */}
             Grade smarter. Teach better.
           </h1>
-          <p className="mt-6 text-xl text-gray-500">
+          <p className="mt-6 text-xl text-gray-600">
             {/* {TODO: insert hero sub-headline} */}
             {PRODUCT_NAME} grades student essays against your rubric in seconds
             — with per-criterion scores and written justifications you can
@@ -54,7 +64,7 @@ export default function LandingPage() {
               See how it works
             </Link>
           </div>
-          <p className="mt-4 text-sm text-gray-400">
+          <p className="mt-4 text-sm text-gray-600">
             {/* {TODO: insert social proof signal} */}
             No credit card required.
           </p>
@@ -70,23 +80,23 @@ export default function LandingPage() {
               <h2 className="text-2xl font-bold text-gray-900">
                 The grading loop is broken
               </h2>
-              <ul className="mt-6 space-y-4 text-gray-600">
+              <ul className="mt-6 space-y-4 text-gray-700">
                 <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-400" aria-hidden="true" />
+                  <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" aria-hidden="true" />
                   <span>
                     Teachers spend <strong>4–6 hours per class set</strong>{" "}
                     grading essays — time that cannot be spent on instruction.
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-400" aria-hidden="true" />
+                  <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" aria-hidden="true" />
                   <span>
                     Feedback arrives days after submission, when students have
                     already moved on to the next assignment.
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-400" aria-hidden="true" />
+                  <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" aria-hidden="true" />
                   <span>
                     Grading is disconnected from instruction — patterns across a
                     class remain invisible without hours of manual analysis.
@@ -100,9 +110,9 @@ export default function LandingPage() {
               <h2 className="text-2xl font-bold text-gray-900">
                 {PRODUCT_NAME} breaks the loop
               </h2>
-              <ul className="mt-6 space-y-4 text-gray-600">
+              <ul className="mt-6 space-y-4 text-gray-700">
                 <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden="true" />
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" aria-hidden="true" />
                   <span>
                     AI grades every essay against your rubric in seconds —
                     per-criterion scores with written justifications you can
@@ -110,7 +120,7 @@ export default function LandingPage() {
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden="true" />
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" aria-hidden="true" />
                   <span>
                     Review, override, and approve grades on your schedule.
                     Feedback is ready when you are — not when manual grading
@@ -118,7 +128,7 @@ export default function LandingPage() {
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" aria-hidden="true" />
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" aria-hidden="true" />
                   <span>
                     Skill profiles update automatically across every assignment
                     — you see exactly which students need help and what to teach
@@ -141,25 +151,32 @@ export default function LandingPage() {
           <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {[
               {
+                icon: <Zap className="h-6 w-6 text-blue-600" aria-hidden="true" />,
                 title: "AI grading with transparent reasoning",
                 body: "Each criterion scored individually with a written justification you can read and verify.",
               },
               {
+                icon: <TrendingUp className="h-6 w-6 text-blue-600" aria-hidden="true" />,
                 title: "Student skill profiles",
                 body: "Persistent skill tracking across assignments surfaces gaps before they widen.",
               },
               {
+                icon: <Target className="h-6 w-6 text-blue-600" aria-hidden="true" />,
                 title: "Teacher-guided instruction",
                 body: "Instructional priorities surfaced from real student data — not gut feel.",
               },
               {
+                icon: <ShieldCheck className="h-6 w-6 text-blue-600" aria-hidden="true" />,
                 title: "Human-in-the-loop, always",
                 body: "AI prepares; you decide. No grade is recorded until you approve it.",
               },
-            ].map(({ title, body }) => (
-              <div key={title} className="rounded-lg bg-white p-6 shadow-sm">
-                <h3 className="font-semibold text-gray-900">{title}</h3>
-                <p className="mt-2 text-sm text-gray-500">{body}</p>
+            ].map(({ icon, title, body }) => (
+              <div key={title} className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
+                  {icon}
+                </div>
+                <h3 className="mt-4 font-semibold text-gray-900">{title}</h3>
+                <p className="mt-2 text-sm text-gray-600">{body}</p>
               </div>
             ))}
           </div>
@@ -172,7 +189,7 @@ export default function LandingPage() {
           <h2 className="text-center text-3xl font-bold text-gray-900">
             How it works
           </h2>
-          <p className="mt-4 text-center text-lg text-gray-500">
+          <p className="mt-4 text-center text-lg text-gray-600">
             From upload to insight in four simple steps.
           </p>
 
@@ -227,16 +244,16 @@ export default function LandingPage() {
               },
             ].map(({ icon, step, title, body }) => (
               <li key={step} className="flex flex-col items-center text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100">
                   {icon}
                 </div>
-                <span className="mt-4 text-xs font-semibold uppercase tracking-widest text-blue-600">
+                <span className="mt-4 text-xs font-semibold uppercase tracking-widest text-blue-700">
                   Step {step}
                 </span>
                 <h3 className="mt-2 text-base font-semibold text-gray-900">
                   {title}
                 </h3>
-                <p className="mt-2 text-sm text-gray-500">{body}</p>
+                <p className="mt-2 text-sm text-gray-600">{body}</p>
               </li>
             ))}
           </ol>
@@ -244,7 +261,7 @@ export default function LandingPage() {
           <div className="mt-10 text-center">
             <Link
               href="/how-it-works"
-              className="text-sm font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="text-sm font-medium text-blue-700 underline hover:text-blue-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               See the full workflow →
             </Link>

@@ -14,7 +14,7 @@ import { CopilotPanel } from "@/components/copilot/CopilotPanel";
 
 export default function CopilotPage() {
   return (
-    <main className="mx-auto flex h-[calc(100vh-4rem)] max-w-2xl flex-col px-4 py-6">
+    <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-2xl flex-col">
       <header className="mb-4 flex-shrink-0">
         <h1 className="text-2xl font-bold text-gray-900">Copilot</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -27,6 +27,6 @@ export default function CopilotPage() {
       <div className="min-h-0 flex-1">
         <CopilotPanel />
       </div>
-    </main>
+    </div>
   );
 }

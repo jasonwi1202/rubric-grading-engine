@@ -33,6 +33,7 @@ import {
   dismissWorklistItem,
 } from "@/lib/api/worklist";
 import type { WorklistItem, TriggerType } from "@/lib/api/worklist";
+import { listClasses } from "@/lib/api/classes";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -206,14 +207,25 @@ function WorklistItemCard({
           {/* Suggested action */}
           <p className="mt-1 text-sm text-gray-600">{item.suggested_action}</p>
 
-        {/* Student profile link — accessible name uses no PII, only UUID in href */}
-          <Link
-            href={`/dashboard/students/${item.student_id}`}
-            aria-label={`View student profile (ID: ${item.student_id})`}
-            className="mt-1 inline-block text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            View student profile →
-          </Link>
+          {/* Links — student profile and interventions page */}
+          <div className="mt-1 flex flex-wrap gap-3">
+            {/* Student profile link */}
+            <Link
+              href={`/dashboard/students/${item.student_id}`}
+              aria-label={`View student profile for ${triggerLabel} worklist item`}
+              className="text-xs font-medium text-blue-600 underline hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              View student profile →
+            </Link>
+            {/* Interventions page link with pending filter preserved */}
+            <Link
+              href="/dashboard/interventions?status=pending_review"
+              aria-label="View pending intervention recommendations"
+              className="text-xs font-medium text-indigo-600 underline hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              View interventions →
+            </Link>
+          </div>
         </div>
 
         {/* Action controls */}
@@ -248,6 +260,120 @@ function WorklistItemCard({
         </div>
       </div>
     </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding empty state — shown when no worklist items AND no classes yet
+// ---------------------------------------------------------------------------
+
+function WorklistOnboarding() {
+  const { data: classes, isLoading } = useQuery({
+    queryKey: ["classes"],
+    queryFn: () => listClasses(),
+    staleTime: 60_000,
+  });
+
+  const hasClasses = (classes?.length ?? 0) > 0;
+
+  // Steps: index 0 is always done (account created). Steps unlock progressively
+  // based on what data exists.
+  const steps: Array<{ label: string; done: boolean; href?: string; cta?: string }> = [
+    { label: "Create your account", done: true },
+    {
+      label: "Create your first class",
+      done: hasClasses,
+      href: "/dashboard/classes/new",
+      cta: "Create class →",
+    },
+    {
+      label: "Add a rubric",
+      done: false,
+      href: hasClasses ? "/dashboard/rubrics/new" : undefined,
+      cta: "Create rubric →",
+    },
+    {
+      label: "Create an assignment and upload essays",
+      done: false,
+      href: hasClasses ? "/dashboard/classes" : undefined,
+      cta: "Go to classes →",
+    },
+    {
+      label: "Grade essays — the AI does the heavy lifting",
+      done: false,
+    },
+  ];
+
+  if (isLoading) {
+    return (
+      <div aria-live="polite" aria-busy="true" className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-12 animate-pulse rounded-lg bg-gray-200" />
+        ))}
+      </div>
+    );
+  }
+
+  // If teacher has classes but worklist is still empty — standard "all caught up" state.
+  if (hasClasses) {
+    return (
+      <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
+        <p className="text-sm font-medium text-gray-700">You&apos;re all caught up!</p>
+        <p className="mt-1 text-xs text-gray-500">
+          The worklist updates automatically after assignments are graded. Check back
+          once grades are locked.
+        </p>
+      </div>
+    );
+  }
+
+  // No classes yet — show full onboarding checklist.
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 className="mb-1 text-base font-semibold text-gray-900">
+        Welcome! Let&apos;s get you set up.
+      </h2>
+      <p className="mb-5 text-sm text-gray-500">
+        Follow these steps to start grading with AI.
+      </p>
+
+      <ol className="space-y-3" aria-label="Getting started steps">
+        {steps.map((step, idx) => (
+          <li key={idx} className="flex items-start gap-3">
+            {/* Step indicator */}
+            <div
+              className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                step.done
+                  ? "bg-green-500 text-white"
+                  : "bg-gray-200 text-gray-600"
+              }`}
+              aria-hidden="true"
+            >
+              {step.done ? "✓" : idx + 1}
+            </div>
+
+            {/* Label + CTA */}
+            <div className="min-w-0 flex-1">
+              <span
+                className={`text-sm font-medium ${
+                  step.done ? "text-gray-400 line-through" : "text-gray-800"
+                }`}
+              >
+                {step.label}
+              </span>
+              {!step.done && step.href && step.cta && (
+                <Link
+                  href={step.href}
+                  className="ml-3 text-sm font-semibold text-blue-600 hover:text-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  {step.cta}
+                </Link>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -332,15 +458,7 @@ export function WorklistPanel() {
 
   // ----- Empty state -----
   if (allItems.length === 0) {
-    return (
-      <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
-        <p className="text-sm font-medium text-gray-700">No items on your worklist.</p>
-        <p className="mt-1 text-xs text-gray-500">
-          The worklist is generated automatically after assignments are graded. Check
-          back once grades are locked.
-        </p>
-      </div>
-    );
+    return <WorklistOnboarding />;
   }
 
   return (

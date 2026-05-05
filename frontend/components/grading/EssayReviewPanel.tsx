@@ -32,6 +32,7 @@ import type { RubricSnapshotCriterion } from "@/lib/rubric/parseRubricSnapshot";
 import { AudioRecorder } from "@/components/grading/AudioRecorder";
 import { VideoRecorder } from "@/components/grading/VideoRecorder";
 import { MediaBankPicker } from "@/components/grading/MediaBankPicker";
+import { TextCommentBankPicker } from "@/components/grading/TextCommentBankPicker";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -477,6 +478,11 @@ function CriterionCard({
           placeholder={isLocked ? "" : "Add feedback for this criterion…"}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:opacity-60"
         />
+        <TextCommentBankPicker
+          currentText={feedbackInput}
+          onApply={setFeedbackInput}
+          isLocked={isLocked}
+        />
       </div>
     </article>
   );
@@ -714,6 +720,11 @@ export function EssayReviewPanel({
             Saving…
           </p>
         )}
+        <TextCommentBankPicker
+          currentText={summaryFeedback}
+          onApply={setSummaryFeedback}
+          isLocked={isLocked}
+        />
       </div>
 
       {/* Audio comment recorder */}

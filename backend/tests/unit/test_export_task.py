@@ -44,6 +44,7 @@ def _make_redis_mock(record: dict[str, str] | None = None) -> AsyncMock:
     redis.hset = AsyncMock()
     redis.expire = AsyncMock()
     redis.aclose = AsyncMock()
+    redis.delete = AsyncMock(return_value=0)  # Default: no one-shot key present.
     return redis
 
 
@@ -519,6 +520,135 @@ class TestRunExport:
         error_val = failed_call.kwargs.get("mapping", {}).get("error")
         assert error_val == "NO_EXPORTABLE_GRADES", (
             f"Expected NO_EXPORTABLE_GRADES, got {error_val!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_fail_via_one_shot_redis_key(self) -> None:
+        """When EXPORT_TASK_FORCE_FAIL=true and the one-shot Redis key is present,
+        _run_export sets FORCED_FAILURE and returns early.
+        The delete call should use the per-assignment key."""
+        from app.tasks.export import _export_force_fail_once_key, _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        redis_mock = _make_redis_mock()
+        # Simulate the one-shot key being present: delete() returns 1 (key consumed).
+        redis_mock.delete = AsyncMock(return_value=1)
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal"),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+            patch("app.config.settings") as mock_settings,
+        ):
+            # Flag must be True for the one-shot check to run.
+            mock_settings.export_task_force_fail = True
+            mock_settings.redis_url = "redis://localhost:6379/0"
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        # Verify delete was called with the per-assignment scoped key.
+        expected_key = _export_force_fail_once_key(assignment_id)
+        redis_mock.delete.assert_awaited_once_with(expected_key)
+
+        hset_calls = redis_mock.hset.call_args_list
+        failed_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("status") == "failed"),
+            None,
+        )
+        assert failed_call is not None, (
+            "Redis should be set to failed when one-shot key is consumed"
+        )
+        error_val = failed_call.kwargs.get("mapping", {}).get("error")
+        assert error_val == "FORCED_FAILURE", (
+            f"Expected FORCED_FAILURE error code, got {error_val!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_force_fail_when_flag_set_but_no_one_shot_key(self) -> None:
+        """When EXPORT_TASK_FORCE_FAIL=true but no one-shot key is armed,
+        _run_export does NOT fail deterministically (retry path succeeds)."""
+        from app.tasks.export import _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        # Simulate no assignment found — this triggers a different failure path.
+        not_found_result = MagicMock()
+        not_found_result.scalar_one_or_none.return_value = None
+
+        db_mock = AsyncMock()
+        db_mock.execute = AsyncMock(return_value=not_found_result)
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        redis_mock = _make_redis_mock()
+        # No one-shot key present (delete returns 0).
+        redis_mock.delete = AsyncMock(return_value=0)
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal", return_value=cm),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+            patch("app.config.settings") as mock_settings,
+        ):
+            mock_settings.export_task_force_fail = True
+            mock_settings.redis_url = "redis://localhost:6379/0"
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        hset_calls = redis_mock.hset.call_args_list
+        # There should be a 'failed' call (assignment not found), but NOT FORCED_FAILURE.
+        forced_failure_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"),
+            None,
+        )
+        assert forced_failure_call is None, (
+            "FORCED_FAILURE must not appear when the one-shot key is not armed"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_force_fail_when_flag_disabled(self) -> None:
+        """When EXPORT_TASK_FORCE_FAIL=false, the one-shot Redis key check is
+        skipped entirely — even if the key is present in Redis."""
+        from app.tasks.export import _run_export
+
+        assignment_id = str(uuid.uuid4())
+        teacher_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+
+        # Simulate no assignment found — triggers a different failure path.
+        not_found_result = MagicMock()
+        not_found_result.scalar_one_or_none.return_value = None
+
+        db_mock = AsyncMock()
+        db_mock.execute = AsyncMock(return_value=not_found_result)
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=db_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        redis_mock = _make_redis_mock()
+        # The key would be present, but the flag is disabled so delete() should
+        # never be called for the one-shot check.
+        redis_mock.delete = AsyncMock(return_value=1)
+
+        with (
+            patch("app.tasks.export.AsyncSessionLocal", return_value=cm),
+            patch("redis.asyncio.Redis.from_url", return_value=redis_mock),
+            patch("app.config.settings") as mock_settings,
+        ):
+            mock_settings.export_task_force_fail = False
+            mock_settings.redis_url = "redis://localhost:6379/0"
+            await _run_export(assignment_id, teacher_id, task_id)
+
+        hset_calls = redis_mock.hset.call_args_list
+        # No FORCED_FAILURE — the injection path was never entered.
+        forced_failure_call = next(
+            (c for c in hset_calls if c.kwargs.get("mapping", {}).get("error") == "FORCED_FAILURE"),
+            None,
+        )
+        assert forced_failure_call is None, (
+            "FORCED_FAILURE must not appear when EXPORT_TASK_FORCE_FAIL=false"
         )
 
 

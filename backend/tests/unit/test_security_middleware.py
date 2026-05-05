@@ -17,12 +17,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import create_app
 from app.middleware import _SECURITY_HEADERS, RateLimitMiddleware, SecurityHeadersMiddleware
 
 # ---------------------------------------------------------------------------
 # Security headers on regular responses
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _force_middleware_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep middleware tests deterministic regardless of local .env settings."""
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "trust_proxy_headers", False)
 
 
 class TestSecurityHeadersMiddleware:

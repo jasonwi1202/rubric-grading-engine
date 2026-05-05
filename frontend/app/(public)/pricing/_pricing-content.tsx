@@ -504,7 +504,7 @@ export default function PricingContent() {
             Simple pricing for teachers.{" "}
             <span className="text-blue-600">No surprises.</span>
           </h1>
-          <p className="mt-6 text-xl text-gray-500">
+          <p className="mt-6 text-xl text-gray-600">
             Start free — no credit card required. Scale up when you&apos;re ready.
           </p>
 
@@ -577,7 +577,7 @@ export default function PricingContent() {
                     <h2 className="text-lg font-bold text-gray-900">
                       {tier.name}
                     </h2>
-                    <p className="mt-1 text-sm text-gray-500">
+                    <p className="mt-1 text-sm text-gray-600">
                       {tier.description}
                     </p>
 
@@ -757,7 +757,7 @@ export default function PricingContent() {
           >
             School or district inquiry
           </h2>
-          <p className="mt-3 text-gray-500">
+          <p className="mt-3 text-gray-600">
             Need a purchase order, IT review, custom onboarding, or a Data
             Processing Agreement? Fill in the form below and we&apos;ll get
             back to you within one business day.

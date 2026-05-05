@@ -45,6 +45,7 @@ import {
   BrowserWritingInterface,
   AUTOSAVE_DEBOUNCE_MS,
   countWordsFromHtml,
+  applyInlineFormat,
 } from "@/components/essays/BrowserWritingInterface";
 
 // ---------------------------------------------------------------------------
@@ -661,5 +662,387 @@ describe("BrowserWritingInterface — paste sanitization", () => {
     // The pasted content should not contain <script> or <img> in the editor
     expect(editor.innerHTML).not.toContain("<script>");
     expect(editor.innerHTML).not.toContain("<img");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyInlineFormat — Selection/Range API formatting
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: create a mock Selection that returns the given Range.
+ * `removeAllRanges` and `addRange` are no-ops in JSDOM but we spy on them
+ * to assert they are called, keeping the contract explicit.
+ */
+function mockSelectionWithRange(range: Range) {
+  const sel = {
+    rangeCount: 1,
+    getRangeAt: (_idx: number) => range,
+    removeAllRanges: vi.fn(),
+    addRange: vi.fn(),
+  };
+  vi.spyOn(window, "getSelection").mockReturnValue(sel as unknown as Selection);
+  return sel;
+}
+
+describe("applyInlineFormat — bold", () => {
+  let editor: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    editor = document.createElement("div");
+    editor.contentEditable = "true";
+    document.body.appendChild(editor);
+  });
+
+  afterEach(() => {
+    document.body.removeChild(editor);
+  });
+
+  it("wraps selected text in <b> when bold is applied to plain text", () => {
+    editor.innerHTML = "Hello world";
+    const textNode = editor.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5); // "Hello"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    const b = editor.querySelector("b");
+    expect(b).not.toBeNull();
+    expect(b!.textContent).toBe("Hello");
+    // Rest of text is unchanged
+    expect(editor.textContent).toBe("Hello world");
+  });
+
+  it("removes <b> wrapper when bold is toggled off (selection covers full element)", () => {
+    editor.innerHTML = "<b>Hello</b> world";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.querySelector("b")).toBeNull();
+    expect(editor.textContent).toBe("Hello world");
+  });
+
+  it("removes bold only from the selected prefix, keeping the suffix bold", () => {
+    // <b>Hello world</b>: select "Hello" (0–5) — " world" must stay bold
+    editor.innerHTML = "<b>Hello world</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5); // "Hello"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("Hello world");
+    // The unformatted "Hello" should sit outside any <b>
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls).toHaveLength(1);
+    expect(bEls[0].textContent).toBe(" world");
+  });
+
+  it("removes bold only from the selected suffix, keeping the prefix bold", () => {
+    // <b>Hello world</b>: select "world" (6–11) — "Hello " must stay bold
+    editor.innerHTML = "<b>Hello world</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 6); // "world"
+    range.setEnd(textNode, 11);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("Hello world");
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls).toHaveLength(1);
+    expect(bEls[0].textContent).toBe("Hello ");
+  });
+
+  it("removes bold from a middle selection only, keeping prefix and suffix bold", () => {
+    // <b>Hello world foo</b>: select "world" (6–11) — "Hello " and " foo" stay bold
+    editor.innerHTML = "<b>Hello world foo</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 6); // "world"
+    range.setEnd(textNode, 11);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("Hello world foo");
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls).toHaveLength(2);
+    expect(bEls[0].textContent).toBe("Hello ");
+    expect(bEls[1].textContent).toBe(" foo");
+  });
+
+  it("removes bold from a selection whose container is nested inside the ancestor", () => {
+    // <b>before <u>mid</u> after</b>: select "mid" inside <u> — bold is lifted
+    // from that portion only; "before " and " after" remain bold, <u> is preserved.
+    editor.innerHTML = "<b>before <u>mid</u> after</b>";
+    const uEl = editor.querySelector("u")!;
+    const textNode = uEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 3); // "mid"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.textContent).toBe("before mid after");
+    // The <u> element must still be present (only bold removed, not underline)
+    expect(editor.querySelector("u")).not.toBeNull();
+    // "before" and "after" portions must each still be inside a <b>
+    const bEls = editor.querySelectorAll("b");
+    expect(bEls.length).toBeGreaterThanOrEqual(1);
+    const boldText = Array.from(bEls)
+      .map((el) => el.textContent ?? "")
+      .join("");
+    expect(boldText).toContain("before");
+    expect(boldText).toContain("after");
+    // "mid" must not be directly inside any <b>
+    expect(
+      Array.from(bEls).some((el) => el.textContent?.trim() === "mid"),
+    ).toBe(false);
+  });
+
+  it("does nothing when the selection is collapsed (no text selected)", () => {
+    editor.innerHTML = "Hello world";
+    const textNode = editor.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 3);
+    range.setEnd(textNode, 3); // collapsed
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.querySelector("b")).toBeNull();
+  });
+
+  it("does nothing when the selection is outside the editor", () => {
+    editor.innerHTML = "Hello";
+    const outside = document.createElement("span");
+    const outsideText = document.createTextNode("Outside");
+    outside.appendChild(outsideText);
+    document.body.appendChild(outside);
+
+    const range = document.createRange();
+    range.setStart(outsideText, 0);
+    range.setEnd(outsideText, 7);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.querySelector("b")).toBeNull();
+    document.body.removeChild(outside);
+  });
+
+  it("does nothing when getSelection returns rangeCount 0", () => {
+    editor.innerHTML = "Hello";
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      rangeCount: 0,
+    } as unknown as Selection);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.querySelector("b")).toBeNull();
+  });
+
+  it("does nothing when getSelection returns null", () => {
+    editor.innerHTML = "Hello";
+    vi.spyOn(window, "getSelection").mockReturnValue(null);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(editor.querySelector("b")).toBeNull();
+  });
+});
+
+describe("applyInlineFormat — italic", () => {
+  let editor: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    editor = document.createElement("div");
+    editor.contentEditable = "true";
+    document.body.appendChild(editor);
+  });
+
+  afterEach(() => {
+    document.body.removeChild(editor);
+  });
+
+  it("wraps selected text in <i> when italic is applied", () => {
+    editor.innerHTML = "Hello world";
+    const textNode = editor.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 6);
+    range.setEnd(textNode, 11); // "world"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "italic");
+
+    const i = editor.querySelector("i");
+    expect(i).not.toBeNull();
+    expect(i!.textContent).toBe("world");
+  });
+
+  it("removes <i> wrapper when italic is toggled off", () => {
+    editor.innerHTML = "<i>world</i>";
+    const iEl = editor.querySelector("i")!;
+    const textNode = iEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "italic");
+
+    expect(editor.querySelector("i")).toBeNull();
+    expect(editor.textContent).toBe("world");
+  });
+});
+
+describe("applyInlineFormat — underline", () => {
+  let editor: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    editor = document.createElement("div");
+    editor.contentEditable = "true";
+    document.body.appendChild(editor);
+  });
+
+  afterEach(() => {
+    document.body.removeChild(editor);
+  });
+
+  it("wraps selected text in <u> when underline is applied", () => {
+    editor.innerHTML = "Essay text";
+    const textNode = editor.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5); // "Essay"
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "underline");
+
+    const u = editor.querySelector("u");
+    expect(u).not.toBeNull();
+    expect(u!.textContent).toBe("Essay");
+  });
+
+  it("removes <u> wrapper when underline is toggled off", () => {
+    editor.innerHTML = "<u>Essay</u> text";
+    const uEl = editor.querySelector("u")!;
+    const textNode = uEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "underline");
+
+    expect(editor.querySelector("u")).toBeNull();
+    expect(editor.textContent).toBe("Essay text");
+  });
+});
+
+describe("applyInlineFormat — selection edge cases", () => {
+  let editor: HTMLDivElement;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    editor = document.createElement("div");
+    editor.contentEditable = "true";
+    document.body.appendChild(editor);
+  });
+
+  afterEach(() => {
+    document.body.removeChild(editor);
+  });
+
+  it("restores selection (calls removeAllRanges + addRange) after toggling on", () => {
+    editor.innerHTML = "Hello";
+    const textNode = editor.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5);
+    const sel = mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(sel.removeAllRanges).toHaveBeenCalled();
+    expect(sel.addRange).toHaveBeenCalled();
+  });
+
+  it("restores selection (calls removeAllRanges + addRange) after toggling off", () => {
+    editor.innerHTML = "<b>Hello</b>";
+    const bEl = editor.querySelector("b")!;
+    const textNode = bEl.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5);
+    const sel = mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    expect(sel.removeAllRanges).toHaveBeenCalled();
+    expect(sel.addRange).toHaveBeenCalled();
+  });
+
+  it("handles nested ancestor: removes outermost matching tag when toggling off", () => {
+    // Selection inside <b><span>text</span></b> — the <b> ancestor should be lifted
+    editor.innerHTML = "<b><span>Hello</span></b> world";
+    const span = editor.querySelector("span")!;
+    const textNode = span.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 5);
+    mockSelectionWithRange(range);
+
+    applyInlineFormat(editor, "bold");
+
+    // <b> is gone; <span> is preserved as a plain child
+    expect(editor.querySelector("b")).toBeNull();
+    expect(editor.querySelector("span")).not.toBeNull();
+    expect(editor.textContent).toBe("Hello world");
+  });
+
+  it("applies multiple independent formats to the same text", () => {
+    // First apply bold, then italic — should produce <i><b>Hi</b></i> or similar
+    editor.innerHTML = "Hi";
+    const textNode = editor.firstChild!;
+
+    // Bold pass
+    const range1 = document.createRange();
+    range1.setStart(textNode, 0);
+    range1.setEnd(textNode, 2);
+    mockSelectionWithRange(range1);
+    applyInlineFormat(editor, "bold");
+
+    // After bold, find the new <b> text node and select it for italic
+    const bEl = editor.querySelector("b")!;
+    const bText = bEl.firstChild!;
+    const range2 = document.createRange();
+    range2.setStart(bText, 0);
+    range2.setEnd(bText, 2);
+    mockSelectionWithRange(range2);
+    applyInlineFormat(editor, "italic");
+
+    // Both formats present
+    expect(editor.querySelector("b")).not.toBeNull();
+    expect(editor.querySelector("i")).not.toBeNull();
   });
 });

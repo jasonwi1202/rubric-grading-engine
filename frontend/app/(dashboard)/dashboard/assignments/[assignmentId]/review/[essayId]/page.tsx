@@ -31,7 +31,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAssignment } from "@/lib/api/assignments";
 import { getGrade } from "@/lib/api/grades";
@@ -71,7 +71,26 @@ export default function EssayReviewPage() {
     assignmentId: string;
     essayId: string;
   }>();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+
+  // Queue navigation — list of essay IDs from the review queue, encoded as ?queue=id1,id2,...
+  // and current position as ?pos=N. Client-side only; never sent to server.
+  const queueParam = searchParams.get("queue") ?? "";
+  const queueIds: string[] = queueParam
+    ? queueParam.split(",").filter((id) => id.length > 0)
+    : [];
+  const currentPos = queueIds.indexOf(essayId);
+  const prevEssayId = currentPos > 0 ? queueIds[currentPos - 1] : null;
+  const nextEssayId = currentPos >= 0 && currentPos < queueIds.length - 1
+    ? queueIds[currentPos + 1]
+    : null;
+
+  /** Build the href for a sibling essay preserving the queue param. */
+  function siblingHref(siblingId: string): string {
+    const siblingPos = queueIds.indexOf(siblingId);
+    return `/dashboard/assignments/${assignmentId}/review/${siblingId}?queue=${encodeURIComponent(queueParam)}&pos=${siblingPos}`;
+  }
 
   // Local grade state — updated optimistically after each successful save
   const [localGrade, setLocalGrade] = useState<GradeResponse | null>(null);
@@ -230,37 +249,44 @@ export default function EssayReviewPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="mb-6 text-sm text-gray-500">
-        <Link href="/dashboard/classes" className="hover:text-gray-700 underline">
-          Classes
-        </Link>
-        {assignment?.class_id && (
-          <>
-            <span aria-hidden="true" className="mx-2">/</span>
+    <div className="mx-auto max-w-7xl">
+      {/* Prev / Next essay navigation bar */}
+      {queueIds.length > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-sm">
+          {/* Previous */}
+          {prevEssayId ? (
             <Link
-              href={`/dashboard/classes/${assignment.class_id}`}
-              className="hover:text-gray-700 underline"
+              href={siblingHref(prevEssayId)}
+              className="flex items-center gap-1 rounded px-2 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              aria-label="Previous essay"
             >
-              Class
+              <span aria-hidden="true">←</span> Previous
             </Link>
-          </>
-        )}
-        <span aria-hidden="true" className="mx-2">/</span>
-        {assignment ? (
-          <Link
-            href={`/dashboard/assignments/${assignmentId}`}
-            className="hover:text-gray-700 underline"
-          >
-            {assignment.title}
-          </Link>
-        ) : (
-          <span>{isLoading ? "Loading\u2026" : "Assignment"}</span>
-        )}
-        <span aria-hidden="true" className="mx-2">/</span>
-        <span className="text-gray-900">Review</span>
-      </nav>
+          ) : (
+            <span className="px-2 py-1 text-sm text-gray-300" aria-hidden="true">← Previous</span>
+          )}
+
+          {/* Position counter */}
+          <span className="text-xs text-gray-500">
+            {currentPos >= 0
+              ? `Essay ${currentPos + 1} of ${queueIds.length}`
+              : `${queueIds.length} in queue`}
+          </span>
+
+          {/* Next */}
+          {nextEssayId ? (
+            <Link
+              href={siblingHref(nextEssayId)}
+              className="flex items-center gap-1 rounded px-2 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              aria-label="Next essay"
+            >
+              Next <span aria-hidden="true">→</span>
+            </Link>
+          ) : (
+            <span className="px-2 py-1 text-sm text-gray-300" aria-hidden="true">Next →</span>
+          )}
+        </div>
+      )}
 
       {/* Page heading */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -275,11 +301,19 @@ export default function EssayReviewPage() {
           )}
         </div>
 
-        {grade?.is_locked && (
-          <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
-            Locked
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {grade?.is_locked && (
+            <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
+              Locked
+            </span>
+          )}
+          <Link
+            href={`/dashboard/assignments/${assignmentId}/review`}
+            className="text-sm font-medium text-gray-500 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            ↩ Back to queue
+          </Link>
+        </div>
       </div>
 
       {/* Loading skeleton */}
