@@ -86,7 +86,12 @@ def _sample_queues() -> dict[str, int]:
 
     depths: dict[str, int] = {}
 
-    with Redis.from_url(settings.celery_broker_url, decode_responses=False, socket_timeout=2) as r:
+    with Redis.from_url(
+        settings.celery_broker_url,
+        decode_responses=False,
+        socket_timeout=2,
+        socket_connect_timeout=2,  # prevent hangs on TCP connect to a blackholed host
+    ) as r:
         for queue in _MONITORED_QUEUES:
             depth = int(r.llen(queue))
             depths[queue] = depth

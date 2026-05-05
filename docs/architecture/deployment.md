@@ -54,6 +54,7 @@ Services within the same Railway project communicate over the private network us
 | Backend → Redis | `REDIS_URL` | Set to `redis://default:${{Redis.REDISPASSWORD}}@${{Redis.RAILWAY_PRIVATE_DOMAIN}}:6379` |
 | Worker → PostgreSQL | `DATABASE_URL` | Same as backend |
 | Worker → Redis | `REDIS_URL` | Same as backend |
+| Beat → Redis | `REDIS_URL` | Same as backend (broker URL defaults to `REDIS_URL`) |
 | Frontend → Backend | `NEXT_PUBLIC_API_URL` | Use the backend's **public** Railway domain (frontend is browser-side) |
 
 ---
@@ -66,6 +67,7 @@ This is a monorepo. Railway needs to know which subdirectory to build for each s
 |---|---|---|
 | `backend` | `backend` | `backend/Dockerfile` |
 | `worker` | `backend` | `backend/Dockerfile` (same image, different start command) |
+| `beat` | `backend` | `backend/Dockerfile` (same image, different start command) |
 | `frontend` | `frontend` | `frontend/Dockerfile` |
 
 Railway auto-detects the `Dockerfile` when present. A `railway.toml` at the repo root provides config-as-code for build and deploy settings — see the file at the root of this repository.
@@ -253,8 +255,8 @@ Emitted when the queue monitor cannot reach Redis.
 
 | Endpoint | Purpose | Railway use |
 |---|---|---|
-| `GET /api/v1/health` | **Liveness** — is the process alive? | Railway restarts the container when this returns 503 |
-| `GET /api/v1/readiness` | **Readiness** — is the service ready for traffic? | Railway holds traffic on the old instance until this returns 200 during rolling deploys |
+| `GET /api/v1/health` | **Liveness** — is the process alive? | Not polled by Railway directly in the current config; available for manual diagnostics and future use |
+| `GET /api/v1/readiness` | **Readiness** — is the service ready for traffic? | Railway `healthcheckPath` — gates both container restarts and rolling-deploy traffic cutover |
 
 Both probes return the same JSON envelope shape regardless of HTTP status code.
 

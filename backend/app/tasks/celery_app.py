@@ -96,6 +96,11 @@ celery.conf.update(
         "report-queue-metrics-every-minute": {
             "task": "tasks.monitor.report_queue_metrics",
             "schedule": 60.0,  # seconds — emit one depth sample per minute
+            # Discard the task if it hasn't started within 55 s of being
+            # enqueued.  This prevents stale samples from accumulating behind
+            # a backed-up queue and replaying in bulk after recovery — exactly
+            # the scenario this task is meant to detect.
+            "options": {"expires": 55},
         },
     },
 )

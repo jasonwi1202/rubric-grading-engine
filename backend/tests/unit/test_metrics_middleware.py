@@ -15,8 +15,7 @@ Security:
 
 from __future__ import annotations
 
-import logging
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -25,8 +24,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.middleware import RequestMetricsMiddleware, _METRICS_EXCLUDED_PATHS
-
+from app.middleware import _METRICS_EXCLUDED_PATHS, RateLimitMiddleware, RequestMetricsMiddleware
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -250,3 +248,61 @@ class TestRequestMetricsEmission:
         assert extra is not None
         assert extra["status_code"] == 500
 
+
+# ---------------------------------------------------------------------------
+# 429 capture regression — middleware ordering guard
+# ---------------------------------------------------------------------------
+
+
+class TestMetrics429Capture:
+    """Regression guard for middleware ordering.
+
+    ``RequestMetricsMiddleware`` sits **outside** ``RateLimitMiddleware`` so
+    that 429 responses emitted by the rate-limit layer are still captured.
+    If the order were ever swapped — metrics inside rate-limit — the rate-limit
+    short-circuit would bypass the metrics layer and the auth-flood signal
+    would silently disappear.
+    """
+
+    def _get_http_request_extra(self, mock_logger: MagicMock) -> dict | None:
+        for c in mock_logger.info.call_args_list:
+            extra = c.kwargs.get("extra", {})
+            if extra.get("event") == "http.request":
+                return extra
+        return None
+
+    def test_captures_429_when_rate_limit_middleware_short_circuits(self) -> None:
+        """http.request event must be emitted even when RateLimitMiddleware returns 429."""
+        from fastapi.responses import JSONResponse as _JSONResponse
+        from starlette.requests import Request as _Request
+
+        app = create_app()
+        mock_logger = MagicMock()
+
+        # Replace RateLimitMiddleware.dispatch with a function that short-circuits
+        # with 429 without calling call_next — exactly the real rate-limit path.
+        async def _always_429(
+            _self: object,
+            request: _Request,
+            call_next: object,
+        ) -> _JSONResponse:
+            return _JSONResponse(
+                status_code=429,
+                content={"error": {"code": "RATE_LIMITED", "message": "test", "field": None}},
+            )
+
+        with (
+            patch("app.middleware.logger", mock_logger),
+            patch.object(RateLimitMiddleware, "dispatch", _always_429),
+            TestClient(app, raise_server_exceptions=False) as c,
+        ):
+            c.post("/api/v1/auth/login", json={"email": "x@example.com", "password": "pw"})
+
+        extra = self._get_http_request_extra(mock_logger)
+        assert extra is not None, (
+            "Expected http.request log event for a rate-limited request — "
+            "check that RequestMetricsMiddleware is registered outside RateLimitMiddleware"
+        )
+        assert extra["status_code"] == 429, (
+            f"Expected status_code=429, got {extra.get('status_code')}"
+        )
