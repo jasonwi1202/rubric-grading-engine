@@ -152,7 +152,7 @@ def _register_middleware(application: FastAPI) -> None:
     #    are still measured and their latency is recorded.
     application.add_middleware(RateLimitMiddleware, redis_client=redis_client)
 
-    # 2. CORS — sits between RateLimit and SecurityHeaders so it handles
+    # 3. CORS — sits between RateLimit and SecurityHeaders so it handles
     #    preflight and adds Access-Control-* headers before SecurityHeaders
     #    wraps the final response.
     application.add_middleware(
@@ -164,11 +164,11 @@ def _register_middleware(application: FastAPI) -> None:
         expose_headers=["X-Correlation-Id"],
     )
 
-    # 3. Security headers — wraps CORS so headers are applied to every
+    # 4. Security headers — wraps CORS so headers are applied to every
     #    response, including CORS preflight 200s and rate-limit 429s.
     application.add_middleware(SecurityHeadersMiddleware)
 
-    # 4. Correlation ID — outermost (added last); runs first on a request so
+    # 5. Correlation ID — outermost (added last); runs first on a request so
     #    that correlation_id_var is set before any other middleware or handler
     #    emits log lines.
     application.add_middleware(CorrelationIdMiddleware)
