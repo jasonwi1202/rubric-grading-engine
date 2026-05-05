@@ -95,8 +95,99 @@ class TestHealthEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# Readiness endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestReadinessEndpoint:
+    def test_readiness_returns_200_when_deps_ok(self, client: TestClient) -> None:
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        assert resp.status_code == 200, f"Got {resp.status_code}"
+
+    def test_readiness_returns_503_when_database_down(self, client: TestClient) -> None:
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=False)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        assert resp.status_code == 503, f"Got {resp.status_code}"
+
+    def test_readiness_returns_503_when_redis_down(self, client: TestClient) -> None:
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        assert resp.status_code == 503, f"Got {resp.status_code}"
+
+    def test_readiness_returns_503_when_broker_down(self, client: TestClient) -> None:
+        """Broker Redis outage makes service not_ready even if cache Redis is fine."""
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=False)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        assert resp.status_code == 503, f"Got {resp.status_code}"
+        assert resp.json()["data"]["status"] == "not_ready"
+        assert resp.json()["data"]["dependencies"]["broker"] == "unavailable"
+
+    def test_readiness_body_status_ready_when_healthy(self, client: TestClient) -> None:
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        body = resp.json()["data"]
+        assert body["status"] == "ready", f"Got {body}"
+        assert body["dependencies"]["broker"] == "ok", f"Got {body}"
+
+    def test_readiness_body_status_not_ready_when_degraded(self, client: TestClient) -> None:
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=False)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=False)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=False)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        body = resp.json()["data"]
+        assert body["status"] == "not_ready", f"Got {body}"
+
+    def test_readiness_body_contains_service_and_version(self, client: TestClient) -> None:
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        body = resp.json()["data"]
+        assert "service" in body, f"Missing 'service' key: {body}"
+        assert "version" in body, f"Missing 'version' key: {body}"
+        assert "dependencies" in body, f"Missing 'dependencies' key: {body}"
+
+    def test_readiness_no_auth_required(self, client: TestClient) -> None:
+        """Readiness probe must be reachable without any auth header."""
+        with (
+            patch("app.routers.health._check_database", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_redis", new=AsyncMock(return_value=True)),
+            patch("app.routers.health._check_broker", new=AsyncMock(return_value=True)),
+        ):
+            resp = client.get("/api/v1/readiness")
+        assert resp.status_code != 401, "Readiness probe must not require auth"
+        assert resp.status_code != 403, "Readiness probe must not require auth"
+
+
+# ---------------------------------------------------------------------------
 # Correlation ID header propagation
 # ---------------------------------------------------------------------------
+
 
 
 class TestCorrelationId:

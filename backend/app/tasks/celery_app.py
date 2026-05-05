@@ -33,6 +33,7 @@ import logging
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import (
+    beat_init,
     before_task_publish,
     task_postrun,
     task_prerun,
@@ -59,6 +60,7 @@ celery = Celery(
         "app.tasks.auto_grouping",
         "app.tasks.worklist",
         "app.tasks.intervention",
+        "app.tasks.monitor",
     ],
 )
 
@@ -77,6 +79,14 @@ celery.conf.update(
     task_time_limit=settings.grading_task_hard_time_limit,
     # Do not store successful task results indefinitely
     result_expires=settings.celery_result_expires_seconds,
+    # Route the queue monitor to a dedicated low-traffic queue so it is not
+    # blocked behind the same `celery` queue it is trying to measure.  In a
+    # single-worker deployment both queues are consumed by the same worker, but
+    # Beat delivers the task to `monitoring` so it can still run even when the
+    # `celery` queue is deeply backed up.
+    task_routes={
+        "tasks.monitor.report_queue_metrics": {"queue": "monitoring"},
+    },
     # ---------------------------------------------------------------------------
     # Celery Beat schedule
     # ---------------------------------------------------------------------------
@@ -92,6 +102,15 @@ celery.conf.update(
             "task": "tasks.intervention.scan_intervention_signals",
             "schedule": crontab(hour=7, minute=0),
         },
+        "report-queue-metrics-every-minute": {
+            "task": "tasks.monitor.report_queue_metrics",
+            "schedule": 60.0,  # seconds — emit one depth sample per minute
+            # Discard the task if it hasn't started within 55 s of being
+            # enqueued.  This prevents stale samples from accumulating behind
+            # a backed-up queue and replaying in bulk after recovery — exactly
+            # the scenario this task is meant to detect.
+            "options": {"expires": 55},
+        },
     },
 )
 
@@ -99,6 +118,18 @@ celery.conf.update(
 # ---------------------------------------------------------------------------
 # Correlation ID propagation via Celery signals
 # ---------------------------------------------------------------------------
+
+
+@beat_init.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete
+def _configure_beat_logging(**_kwargs: object) -> None:
+    """Configure structured JSON logging when the Celery Beat process starts.
+
+    Without this handler, Beat emits logs in Celery's default plain-text
+    format.  Connecting here ensures the ``beat`` Railway service also
+    produces structured JSON log lines that can be parsed by log drains
+    (Logtail, etc.) alongside the backend and worker services.
+    """
+    configure_logging(settings.log_level)
 
 
 @worker_init.connect  # type: ignore[untyped-decorator]  # Celery signal stubs are incomplete

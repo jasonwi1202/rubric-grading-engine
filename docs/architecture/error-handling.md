@@ -226,13 +226,16 @@ A correlation ID is a UUID4 generated (or echoed from `X-Correlation-Id` request
 
 ---
 
-## Health Check Endpoint
+## Health Check Endpoints
 
-`GET /api/v1/health` returns dependency reachability status. No authentication is required (used by load balancers and Railway probes).
+Two probe endpoints return dependency reachability status. No authentication is required (load balancers and Railway probes must reach them without credentials).
 
-Follows the standard `{"data": ...}` response envelope from `api-design.md`.
+- **`GET /api/v1/health`** — *liveness probe*; checks database and cache Redis (`REDIS_URL`). Available for manual diagnostics; not the Railway-configured health-check path.
+- **`GET /api/v1/readiness`** — *readiness probe*; checks database, cache Redis (`REDIS_URL`), and broker Redis (`CELERY_BROKER_URL`). **This is the Railway `healthcheckPath`**: Railway restarts the container when this returns 503 and gates rolling-deploy traffic cutover until it returns 200.
 
-**Response shape (HTTP 200 — all healthy):**
+Both follow the standard `{"data": ...}` response envelope from `api-design.md`.
+
+**Liveness probe response shape (HTTP 200 — all healthy):**
 
 ```json
 {
@@ -248,7 +251,7 @@ Follows the standard `{"data": ...}` response envelope from `api-design.md`.
 }
 ```
 
-**Response shape (HTTP 503 — one or more dependencies unavailable):**
+**Liveness probe response shape (HTTP 503 — one or more dependencies unavailable):**
 
 ```json
 {
@@ -263,6 +266,10 @@ Follows the standard `{"data": ...}` response envelope from `api-design.md`.
   }
 }
 ```
+
+**Readiness probe response shape (HTTP 200):** same envelope, `status: "ready"`, with an additional `broker` key under `dependencies`.
+
+**Readiness probe response shape (HTTP 503):** `status: "not_ready"`; `broker` key present alongside `database` and `redis`.
 
 The response body is always present regardless of status code. Clients should parse `data.dependencies` to determine which specific dependency is unhealthy. The `version` field is read from `importlib.metadata` and reflects the installed package version from `pyproject.toml`.
 
